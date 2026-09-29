@@ -43,6 +43,10 @@ def resource_dir() -> Path:
     return Path(base) if base else Path(__file__).resolve().parent
 
 
+# Tailscale の端末に振られるアドレス（CGNAT 帯）。VPN 経由の管理を許可する
+TAILSCALE_V4 = ipaddress.ip_network("100.64.0.0/10")
+
+
 def is_lan(addr: str) -> bool:
     try:
         ip = ipaddress.ip_address(addr.split("%")[0])
@@ -50,7 +54,7 @@ def is_lan(addr: str) -> bool:
         return False
     if ip.version == 6 and ip.ipv4_mapped:
         ip = ip.ipv4_mapped
-    return ip.is_loopback or ip.is_private or ip.is_link_local
+    return ip.is_loopback or ip.is_private or ip.is_link_local or (ip.version == 4 and ip in TAILSCALE_V4)
 
 
 def is_local(addr: str) -> bool:
