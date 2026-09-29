@@ -32,7 +32,7 @@ import kotlin.math.abs
 
 /**
  * 全画面の再生画面。設定に応じて画面を区画に分け、区画ごとに
- * フォルダの画像・動画／天気予報／時計を表示する。操作はメイン区画（最初のフォルダ区画）に対して行う。
+ * フォルダの画像・動画／天気予報を表示する。操作はメイン区画（最初のフォルダ区画）に対して行う。
  */
 class PlayerActivity : Activity() {
     companion object {
@@ -91,7 +91,6 @@ class PlayerActivity : Activity() {
         return (0 until Prefs.zoneCount(prefs.layout)).map { i ->
             when (prefs.zoneType(i)) {
                 Prefs.ZONE_WEATHER -> WeatherZone(this, prefs)
-                Prefs.ZONE_CLOCK -> ClockZone(this)
                 else -> {
                     val isMain = !mainAssigned
                     mainAssigned = true

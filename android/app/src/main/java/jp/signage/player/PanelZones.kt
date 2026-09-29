@@ -8,9 +8,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.TextView
-import java.time.LocalDateTime
 import java.util.concurrent.Executors
-import kotlin.math.min
 
 /** 天気予報の各画面に表示するデータ一式 */
 class WeatherPages(
@@ -119,45 +117,5 @@ class WeatherZone(private val activity: Activity, private val prefs: Prefs) : Zo
         message.text = text
         message.visibility = if (text == null) View.GONE else View.VISIBLE
         if (text != null) message.bringToFront()
-    }
-}
-
-/** 大きな時計を表示する区画 */
-class ClockZone(activity: Activity) : Zone {
-    private val panel = ClockPanel(activity)
-    override val view: View = panel
-    private val handler = Handler(Looper.getMainLooper())
-    private val tick = object : Runnable {
-        override fun run() {
-            panel.refresh()
-            handler.postDelayed(this, 60_000 - System.currentTimeMillis() % 60_000 + 50)
-        }
-    }
-
-    override fun start() = tick.run()
-    override fun stop() = handler.removeCallbacks(tick)
-    override fun release() = stop()
-
-    private class ClockPanel(context: Context) : PanelView(context) {
-        override val hasData = true
-
-        fun refresh() = rerender()
-
-        override fun render(landscape: Boolean) {
-            val t = LocalDateTime.now()
-            val w = if (width > 0) width else resources.displayMetrics.widthPixels
-            val h = if (height > 0) height else resources.displayMetrics.heightPixels
-            // 区画の大きさいっぱいに時刻を表示
-            val timeSize = min(h * 0.38f, w * 0.26f) / u
-            gravity = Gravity.CENTER
-            addView(text("${t.year}年${t.monthValue}月${t.dayOfMonth}日", timeSize * 0.22f, color = DIM).apply {
-                gravity = Gravity.CENTER
-            })
-            addView(text(weekday(t.toLocalDate()) + "曜日", timeSize * 0.22f, bold = true,
-                color = dayColor(t.toLocalDate(), WHITE)).apply { gravity = Gravity.CENTER })
-            addView(text("${t.hour}:%02d".format(t.minute), timeSize, bold = true).apply {
-                gravity = Gravity.CENTER
-            })
-        }
     }
 }

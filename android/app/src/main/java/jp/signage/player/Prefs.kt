@@ -109,7 +109,11 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putInt("layout", v).apply()
 
     /** 区画 i の表示内容 (ZONE_*)。区画0 はメイン */
-    fun zoneType(i: Int): Int = sp.getInt("zoneType$i", if (i == 2) ZONE_WEATHER else ZONE_FOLDER)
+    fun zoneType(i: Int): Int {
+        val default = if (i == 2) ZONE_WEATHER else ZONE_FOLDER
+        // 以前の版の「時計」など、今は無い種類はその区画の既定値に戻す
+        return sp.getInt("zoneType$i", default).takeIf { it == ZONE_FOLDER || it == ZONE_WEATHER } ?: default
+    }
 
     fun setZoneType(i: Int, type: Int) = sp.edit().putInt("zoneType$i", type).apply()
 
@@ -142,7 +146,6 @@ class Prefs(context: Context) {
 
         const val ZONE_FOLDER = 0
         const val ZONE_WEATHER = 1
-        const val ZONE_CLOCK = 2
 
         const val CLOCK_TOP_RIGHT = 0
         const val CLOCK_BOTTOM_RIGHT = 1

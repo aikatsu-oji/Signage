@@ -186,7 +186,7 @@ class MainActivity : Activity() {
             }
             row.addView(label)
             val spinner = Spinner(this).apply {
-                adapter = adapter(listOf("フォルダの画像・動画", "天気予報", "時計"))
+                adapter = adapter(listOf("フォルダの画像・動画", "天気予報"))
                 setSelection(prefs.zoneType(i))
                 minimumHeight = (48 * density).toInt()
             }
