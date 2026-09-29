@@ -8,6 +8,8 @@ import android.content.Intent
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val prefs = Prefs(context)
+        // 管理画面は自動再生の設定に関係なく、電源ON時から使えるようにする
+        AdminService.sync(context)
         if (!prefs.autoStart) return
         context.startActivity(
             Intent(context, PlayerActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

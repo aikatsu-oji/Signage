@@ -162,7 +162,7 @@ class PlayerActivity : Activity() {
         clockTick.run()
         zones.forEach { it.start() }
         AdminServer.addListener(adminListener)
-        AdminServer.update(this)
+        AdminService.sync(this)
     }
 
     override fun onStop() {

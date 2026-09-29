@@ -6,6 +6,12 @@
     <!-- Android 10 以降でバックグラウンド（起動直後）から画面を開くために必要 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!-- 管理画面のサーバーを常駐させる（アプリが画面に出ていなくても応答できるように） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- 天気予報の取得 -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- フォルダ選択画面が無い端末で、ストレージを直接読むため -->
@@ -43,6 +49,15 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode"
             android:exported="false"
             android:theme="@style/Theme.Player" />
+
+        <service
+            android:name=".AdminService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="LAN内のPC・スマホからサイネージの内容を更新するための管理用Webサーバー" />
+        </service>
 
         <receiver
             android:name=".BootReceiver"

@@ -34,6 +34,7 @@ class MainActivity : Activity() {
         const val EXTRA_FROM_PLAYER = "fromPlayer"
         private const val REQ_FOLDER = 1
         private const val REQ_STORAGE = 2
+        private const val REQ_NOTIFICATION = 3
         private const val DEFAULT_OFFICE = "130000" // 東京都
         /** 2分割の比率の選択肢（区画1 の %） */
         private val SPLIT_CHOICES = listOf(25, 30, 40, 50, 60, 70, 75)
@@ -361,8 +362,23 @@ class MainActivity : Activity() {
     private fun setupAdmin() {
         bindSwitch(R.id.adminSwitch, prefs.adminEnabled) {
             prefs.adminEnabled = it
-            AdminServer.update(this)
+            AdminService.sync(this)
+            // 常駐中の通知を表示するため（Android 13 以降）
+            if (it && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIFICATION)
+            }
             updateAdminInfo()
+        }
+        findViewById<Button>(R.id.adminOpenLocal).setOnClickListener {
+            // この端末自身で開けるかを確かめる（開ければサーバーは動いている → 開けない端末側はネットワークの問題）
+            val url = "http://127.0.0.1:${AdminServer.port}/"
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            } catch (e: ActivityNotFoundException) {
+                Toast.makeText(this, "ブラウザがありません", Toast.LENGTH_SHORT).show()
+            }
         }
         findViewById<Button>(R.id.adminPinReset).setOnClickListener {
             prefs.resetAdminPin()
@@ -373,7 +389,9 @@ class MainActivity : Activity() {
 
     private fun updateAdminInfo() {
         val info = findViewById<TextView>(R.id.adminInfo)
+        val running = prefs.adminEnabled && AdminServer.isRunning
         findViewById<View>(R.id.adminPinReset).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.adminOpenLocal).visibility = if (running) View.VISIBLE else View.GONE
         info.text = when {
             !prefs.adminEnabled -> "ON にすると、PC・スマホのブラウザから画像・動画の追加や削除、設定の変更ができます。"
             !AdminServer.isRunning -> "起動中…"
@@ -383,6 +401,8 @@ class MainActivity : Activity() {
                     append(if (urls.isEmpty()) "Wi-Fi・LAN に接続されていません" else "ブラウザで開くアドレス：\n" + urls.joinToString("\n"))
                     append("\nPIN：${prefs.adminPin}")
                     append("\n\n同じネットワーク内の端末からのみ操作できます。")
+                    append("\n開けない場合：アドレス末尾の :${AdminServer.port} まで入力しているか、")
+                    append("PC・スマホが同じWi-Fi（ゲストWi-Fiではない）につながっているか確認してください。")
                 }
             }
         }
@@ -391,7 +411,7 @@ class MainActivity : Activity() {
     override fun onStart() {
         super.onStart()
         AdminServer.addListener(adminListener)
-        AdminServer.update(this)
+        AdminService.sync(this)
         updateAdminInfo()
     }
 

@@ -354,6 +354,13 @@
             android:textSize="15sp" />
 
         <Button
+            android:id="@+id/adminOpenLocal"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="この端末で管理画面を開く（動作確認）" />
+
+        <Button
             android:id="@+id/adminPinReset"
             style="?android:attr/borderlessButtonStyle"
             android:layout_width="wrap_content"
