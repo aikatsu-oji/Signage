@@ -268,6 +268,7 @@ class Server:
                           "application/json; charset=utf-8", extra)
 
             def body_json(self):
+                self.body_read = True
                 n = int(self.headers.get("Content-Length") or 0)
                 if n > 64 * 1024:
                     raise HttpError(413, "データが大きすぎます")
@@ -284,6 +285,26 @@ class Server:
             # -------- 振り分け
 
             def _dispatch(self, method):
+                self.body_read = False
+                try:
+                    self._handle(method)
+                finally:
+                    self.discard_body()
+
+            def discard_body(self):
+                """読まなかった送信データを捨てる（残ると、同じ接続の次のリクエストが壊れて 501 になる）"""
+                if self.body_read or self.close_connection:
+                    return
+                try:
+                    n = int(self.headers.get("Content-Length") or 0)
+                    if n > 1 << 20:
+                        self.close_connection = True
+                    elif n > 0:
+                        self.rfile.read(n)
+                except (ValueError, OSError):
+                    self.close_connection = True
+
+            def _handle(self, method):
                 client = self.client_address[0]
                 try:
                     if not is_lan(client):
@@ -365,6 +386,7 @@ class Server:
                     name = s.sanitize(query.get("name", ""))
                     if not name:
                         raise HttpError(400, "画像・動画のファイルのみアップロードできます")
+                    self.body_read = True
                     length = int(self.headers.get("Content-Length") or 0)
                     if length <= 0:
                         raise HttpError(400, "ファイルが空です")
