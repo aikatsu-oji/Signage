@@ -18,6 +18,8 @@ import android.widget.TextView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import java.util.concurrent.Executors
@@ -34,8 +36,10 @@ interface Zone {
 
 /**
  * フォルダ内の画像・動画をループ再生する区画。
+ * （デコーダーの切り替え設定に Media3 の UnstableApi を使う）
  * メイン区画 (isMain) だけが動画の音声を出し、一定間隔の天気予報を差し込む。
  */
+@androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 class MediaZone(
     private val activity: Activity,
     private val prefs: Prefs,
@@ -47,7 +51,10 @@ class MediaZone(
     private val onPanelShown: (Boolean) -> Unit = {},
 ) : Zone {
     override val view: FrameLayout =
-        LayoutInflater.from(activity).inflate(R.layout.zone_media, null) as FrameLayout
+        // 動画の互換モードでは、専用ボードでも安定しやすい SurfaceView で描画する
+        LayoutInflater.from(activity).inflate(
+            if (prefs.videoCompat) R.layout.zone_media_surface else R.layout.zone_media, null
+        ) as FrameLayout
     private val playerView: PlayerView = view.findViewById(R.id.playerView)
     private val imageA: ImageView = view.findViewById(R.id.imageA)
     private val imageB: ImageView = view.findViewById(R.id.imageB)
@@ -55,7 +62,16 @@ class MediaZone(
     private val weatherView = WeatherView(activity).apply { visibility = View.INVISIBLE }
     private val timeSeriesView = TimeSeriesView(activity).apply { visibility = View.INVISIBLE }
     private val layers: List<View> = listOf(playerView, imageA, imageB, weatherView, timeSeriesView)
-    private val player = ExoPlayer.Builder(activity).build()
+    // 端末の動画デコーダーが使えないときは、別のデコーダーに切り替えて再生する
+    private val player = ExoPlayer.Builder(
+        activity, DefaultRenderersFactory(activity).setEnableDecoderFallback(true)
+    ).build()
+
+    /** 動画が固まったことを見つけるための記録 */
+    private var lastPosition = -1L
+    private var lastProgressAt = 0L
+    private var recoveredOnce = false
+    private var stallCheck: Runnable? = null
 
     private val handler = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
@@ -93,6 +109,16 @@ class MediaZone(
 
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED && currentIsVideo) goto(1)
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (!isPlaying || !currentIsVideo) return
+                cancelWatchdog()
+                // 機種によっては「最初の1コマ」の通知が来ないので、再生が始まったら少し待って表示する
+                val my = token
+                handler.postDelayed({
+                    if (my == token && currentIsVideo && showing !== playerView) reveal(playerView)
+                }, 1500)
             }
 
             override fun onPlayerError(error: PlaybackException) {
@@ -205,7 +231,8 @@ class MediaZone(
             player.setMediaItem(MediaItem.fromUri(item.uri))
             player.prepare()
             player.playWhenReady = !paused
-            // 表示切り替えは onRenderedFirstFrame で行う
+            // 表示切り替えは onRenderedFirstFrame（来ない機種は onIsPlayingChanged）で行う
+            startStallCheck(my)
         } else {
             player.pause() // 動画から画像へ移る場合、音声が残らないように止める
             val target = if (showing === imageA) imageB else imageA
@@ -280,7 +307,42 @@ class MediaZone(
         watchdog = null
     }
 
+    /**
+     * 再生位置が一定時間進まなければ「固まった」とみなし、まずその位置から読み込み直す。
+     * それでも進まなければ次の項目へ進む（専用ボードなどで映像が止まったままになるのを防ぐ）。
+     */
+    private fun startStallCheck(my: Int) {
+        lastPosition = -1L
+        lastProgressAt = System.currentTimeMillis()
+        recoveredOnce = false
+        stallCheck = object : Runnable {
+            override fun run() {
+                if (my != token || !currentIsVideo) return
+                val now = System.currentTimeMillis()
+                val position = player.currentPosition
+                if (paused || !player.playWhenReady || position != lastPosition) {
+                    lastPosition = position
+                    lastProgressAt = now
+                } else if (now - lastProgressAt > 12_000) {
+                    if (!recoveredOnce) {
+                        recoveredOnce = true
+                        lastProgressAt = now
+                        player.prepare()
+                        player.seekTo(position + 500)
+                        player.playWhenReady = true
+                    } else {
+                        goto(1)
+                        return
+                    }
+                }
+                handler.postDelayed(this, 3000)
+            }
+        }.also { handler.postDelayed(it, 3000) }
+    }
+
     private fun cancelTimers() {
+        stallCheck?.let(handler::removeCallbacks)
+        stallCheck = null
         cancelWatchdog()
         nextImage?.let(handler::removeCallbacks)
         nextImage = null

@@ -70,6 +70,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         prefs = Prefs(this)
+        shownSettingsVersion = prefs.settingsVersion
 
         folderText = findViewById(R.id.folderText)
         scanResult = findViewById(R.id.scanResult)
@@ -85,6 +86,7 @@ class MainActivity : Activity() {
         bindSwitch(R.id.shuffleSwitch, prefs.shuffle) { prefs.shuffle = it }
         bindSwitch(R.id.recursiveSwitch, prefs.recursive) { prefs.recursive = it; refreshFolder() }
         bindSwitch(R.id.soundSwitch, prefs.videoSound) { prefs.videoSound = it }
+        bindSwitch(R.id.videoCompatSwitch, prefs.videoCompat) { prefs.videoCompat = it }
         bindSwitch(R.id.autoStartSwitch, prefs.autoStart) {
             prefs.autoStart = it
             if (it) ensureOverlayPermission()
@@ -146,6 +148,9 @@ class MainActivity : Activity() {
      * 画面の状態は保存しない。
      */
     private var reloadingFromAdmin = false
+
+    /** この画面が表示している設定の番号（管理画面で変わっていたら表示し直す） */
+    private var shownSettingsVersion = -1
 
     private fun reloadFromAdmin() {
         reloadingFromAdmin = true
@@ -542,6 +547,11 @@ class MainActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
+        // 再生画面などを表示している間に管理画面で設定が変わっていたら、表示し直す
+        if (prefs.settingsVersion != shownSettingsVersion) {
+            reloadFromAdmin()
+            return
+        }
         AdminServer.addListener(adminListener)
         AdminService.sync(this)
         updateAdminInfo()

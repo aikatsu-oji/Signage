@@ -303,12 +303,15 @@ object AdminServer {
             }
             "POST /api/pin" -> {
                 if (!prefs.setAdminPin(req.json().optString("pin"))) throw HttpError(400, "PIN は6桁の数字にしてください")
+                prefs.bumpSettingsVersion()
+                notify(EVENT_SETTINGS)
                 json(200, JSONObject().put("ok", true))
             }
             "POST /api/name" -> {
                 val name = req.json().optString("name").trim()
                 if (name.isEmpty()) throw HttpError(400, "端末名を入力してください")
                 prefs.deviceName = name
+                prefs.bumpSettingsVersion()
                 Peers.start(app, port) // 新しい名前で登録し直す
                 notify(EVENT_SETTINGS)
                 json(200, JSONObject().put("ok", true).put("name", prefs.deviceName))
@@ -337,6 +340,7 @@ object AdminServer {
             }
             "POST /api/settings" -> {
                 applySettings(prefs, req.json())
+                prefs.bumpSettingsVersion()
                 notify(EVENT_SETTINGS)
                 json(200, JSONObject().put("ok", true))
             }
@@ -427,6 +431,7 @@ object AdminServer {
             .put("shuffle", prefs.shuffle)
             .put("recursive", prefs.recursive)
             .put("videoSound", prefs.videoSound)
+            .put("videoCompat", prefs.videoCompat)
             .put("clockEnabled", prefs.clockEnabled)
             .put("clockPosition", prefs.clockPosition)
             .put("clockSize", prefs.clockSize)
@@ -464,6 +469,7 @@ object AdminServer {
         if (j.has("shuffle")) prefs.shuffle = j.getBoolean("shuffle")
         if (j.has("recursive")) prefs.recursive = j.getBoolean("recursive")
         if (j.has("videoSound")) prefs.videoSound = j.getBoolean("videoSound")
+        if (j.has("videoCompat")) prefs.videoCompat = j.getBoolean("videoCompat")
         if (j.has("clockEnabled")) prefs.clockEnabled = j.getBoolean("clockEnabled")
         if (j.has("clockPosition")) prefs.clockPosition = j.getInt("clockPosition").coerceIn(0, 3)
         if (j.has("clockSize")) prefs.clockSize = j.getInt("clockSize")

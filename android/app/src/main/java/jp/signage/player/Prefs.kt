@@ -28,6 +28,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("videoSound", true)
         set(v) = sp.edit().putBoolean("videoSound", v).apply()
 
+    /** 動画の互換モード（動画が途中で止まる機種向けに SurfaceView で描画する） */
+    var videoCompat: Boolean
+        get() = sp.getBoolean("videoCompat", false)
+        set(v) = sp.edit().putBoolean("videoCompat", v).apply()
+
     var autoStart: Boolean
         get() = sp.getBoolean("autoStart", false)
         set(v) = sp.edit().putBoolean("autoStart", v).apply()
@@ -102,6 +107,11 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putInt("clockSize", v.coerceIn(0, 2)).apply()
 
     // ---- 管理画面（同じネットワークの別端末から操作）
+
+    /** 管理画面から設定が変わるたびに増える番号（端末の設定画面が表示を更新するため） */
+    val settingsVersion: Int get() = sp.getInt("settingsVersion", 0)
+
+    fun bumpSettingsVersion() = sp.edit().putInt("settingsVersion", settingsVersion + 1).apply()
 
     var adminEnabled: Boolean
         get() = sp.getBoolean("adminEnabled", false)
