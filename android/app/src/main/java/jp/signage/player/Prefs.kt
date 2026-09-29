@@ -108,6 +108,11 @@ class Prefs(context: Context) {
         get() = sp.getInt("layout", LAYOUT_SINGLE)
         set(v) = sp.edit().putInt("layout", v).apply()
 
+    /** 2分割のときの区画1の割合（%）。残りが区画2 */
+    var splitPercent: Int
+        get() = sp.getInt("splitPercent", 50)
+        set(v) = sp.edit().putInt("splitPercent", v.coerceIn(10, 90)).apply()
+
     /** 区画 i の表示内容 (ZONE_*)。区画0 はメイン */
     fun zoneType(i: Int): Int {
         val default = if (i == 2) ZONE_WEATHER else ZONE_FOLDER

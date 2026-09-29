@@ -52,6 +52,24 @@
                 android:text="メイン＋サイド" />
         </RadioGroup>
 
+        <!-- 2分割のときの比率 -->
+        <LinearLayout
+            android:id="@+id/splitRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                style="@style/SubLabel"
+                android:text="画面の比率（区画1 : 区画2）" />
+
+            <Spinner
+                android:id="@+id/splitSpinner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp" />
+        </LinearLayout>
+
         <!-- 区画ごとの表示内容・フォルダ（コードで作成） -->
         <LinearLayout
             android:id="@+id/zonesContainer"

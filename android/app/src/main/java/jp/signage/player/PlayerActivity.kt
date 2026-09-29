@@ -128,8 +128,13 @@ class PlayerActivity : Activity() {
 
         val v = zones.map { it.view }
         val root: View = when (prefs.layout) {
-            Prefs.LAYOUT_LEFT_RIGHT -> box(vertical = false).apply { add(v[0], 1f); add(v[1], 1f) }
-            Prefs.LAYOUT_TOP_BOTTOM -> box(vertical = true).apply { add(v[0], 1f); add(v[1], 1f) }
+            Prefs.LAYOUT_LEFT_RIGHT, Prefs.LAYOUT_TOP_BOTTOM -> {
+                val first = prefs.splitPercent.toFloat()
+                box(vertical = prefs.layout == Prefs.LAYOUT_TOP_BOTTOM).apply {
+                    add(v[0], first)
+                    add(v[1], 100f - first)
+                }
+            }
             Prefs.LAYOUT_MAIN_SIDE -> box(vertical = !landscape).apply {
                 add(v[0], 7f)
                 add(box(vertical = landscape).apply { add(v[1], 1f); add(v[2], 1f) }, 3f)

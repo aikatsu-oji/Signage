@@ -35,6 +35,8 @@ class MainActivity : Activity() {
         private const val REQ_FOLDER = 1
         private const val REQ_STORAGE = 2
         private const val DEFAULT_OFFICE = "130000" // 東京都
+        /** 2分割の比率の選択肢（区画1 の %） */
+        private val SPLIT_CHOICES = listOf(25, 30, 40, 50, 60, 70, 75)
     }
 
     private lateinit var prefs: Prefs
@@ -172,6 +174,7 @@ class MainActivity : Activity() {
             updateZoneRows()
         }
 
+        setupSplit()
         val container = findViewById<LinearLayout>(R.id.zonesContainer)
         val density = resources.displayMetrics.density
         for (i in 0 until Prefs.MAX_ZONES) {
@@ -247,6 +250,26 @@ class MainActivity : Activity() {
         zoneRows.forEachIndexed { i, row ->
             row.visibility = if (i < count) View.VISIBLE else View.GONE
             row.findViewWithTag<TextView>("label")?.text = "区画${i + 1}（${names.getOrElse(i) { "" }}）の表示内容"
+        }
+
+        // 2分割のときだけ比率を選ぶ（例: 左 70% : 右 30%）
+        val split = count == 2
+        findViewById<View>(R.id.splitRow).visibility = if (split) View.VISIBLE else View.GONE
+        if (split) {
+            val spinner = findViewById<Spinner>(R.id.splitSpinner)
+            spinner.adapter = adapter(SPLIT_CHOICES.map { "${names[0]} $it% : ${names[1]} ${100 - it}%" })
+            val current = SPLIT_CHOICES.minByOrNull { kotlin.math.abs(it - prefs.splitPercent) } ?: 50
+            spinner.setSelection(SPLIT_CHOICES.indexOf(current))
+        }
+    }
+
+    private fun setupSplit() {
+        findViewById<Spinner>(R.id.splitSpinner).onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                SPLIT_CHOICES.getOrNull(position)?.let { prefs.splitPercent = it }
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
     }
 
