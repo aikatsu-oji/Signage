@@ -69,6 +69,7 @@ class MainActivity : Activity() {
 
         findViewById<Button>(R.id.pickFolder).setOnClickListener { pickFolder(0) }
         findViewById<Button>(R.id.pickFolderDirect).setOnClickListener { pickFolderDirect(0) }
+        findViewById<Button>(R.id.useAppFolder).setOnClickListener { useAppFolder(0) }
         setupLayout()
         findViewById<Button>(R.id.startButton).setOnClickListener { startPlayer() }
 
@@ -82,6 +83,7 @@ class MainActivity : Activity() {
 
         setupClock()
         setupWeather()
+        setupAdmin()
 
         val group = findViewById<RadioGroup>(R.id.orientationGroup)
         group.check(
@@ -139,7 +141,11 @@ class MainActivity : Activity() {
 
     private fun pickFolder(zone: Int) {
         pendingZone = zone
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        // 管理画面からのアップロード・削除のため、書き込みの許可も求める
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+        )
         prefs.zoneFolder(zone)?.takeIf { it.scheme == "content" }
             ?.let { intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, it) }
         try {
@@ -149,6 +155,17 @@ class MainActivity : Activity() {
             Toast.makeText(this, "フォルダ選択画面が無いため、端末内を直接参照します", Toast.LENGTH_LONG).show()
             pickFolderDirect(zone)
         }
+    }
+
+    /**
+     * アプリ専用のフォルダ（Android/data/…/files/zoneN）を使う。
+     * 権限なしで読み書きできるので、管理画面からのアップロード先に向く（アプリを削除すると中身も消える）
+     */
+    private fun useAppFolder(zone: Int) {
+        val dir = getExternalFilesDir("zone${zone + 1}") ?: File(filesDir, "zone${zone + 1}")
+        dir.mkdirs()
+        setZoneFolder(zone, Uri.fromFile(dir))
+        Toast.makeText(this, "アプリ専用フォルダを設定しました。管理画面から画像・動画を追加できます", Toast.LENGTH_LONG).show()
     }
 
     private fun setZoneFolder(zone: Int, uri: Uri) {
@@ -210,6 +227,10 @@ class MainActivity : Activity() {
                     text = "直接選択"
                     setOnClickListener { pickFolderDirect(i) }
                 })
+                buttons.addView(Button(this, null, android.R.attr.borderlessButtonStyle).apply {
+                    text = "アプリ専用"
+                    setOnClickListener { useAppFolder(i) }
+                })
                 folderRow.addView(buttons)
             } else {
                 folderRow.addView(TextView(this).apply {
@@ -241,12 +262,7 @@ class MainActivity : Activity() {
     /** 分割方法に合わせて、区画の名前と表示する区画数を切り替える */
     private fun updateZoneRows() {
         val count = Prefs.zoneCount(prefs.layout)
-        val names = when (prefs.layout) {
-            Prefs.LAYOUT_LEFT_RIGHT -> listOf("左", "右")
-            Prefs.LAYOUT_TOP_BOTTOM -> listOf("上", "下")
-            Prefs.LAYOUT_MAIN_SIDE -> listOf("メイン", "サイド1：横長画面では右上、縦長画面では左下", "サイド2：右下")
-            else -> listOf("全画面")
-        }
+        val names = Prefs.zoneNames(prefs.layout)
         zoneRows.forEachIndexed { i, row ->
             row.visibility = if (i < count) View.VISIBLE else View.GONE
             row.findViewWithTag<TextView>("label")?.text = "区画${i + 1}（${names.getOrElse(i) { "" }}）の表示内容"
@@ -330,6 +346,58 @@ class MainActivity : Activity() {
         contentResolver.persistedUriPermissions
             .filter { it.uri !in used }
             .forEach { contentResolver.releasePersistableUriPermission(it.uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+    }
+
+    // ---------------------------------------------------------------- 管理画面
+
+    private val adminListener: (String) -> Unit = { event ->
+        when (event) {
+            AdminServer.EVENT_SERVER -> updateAdminInfo()
+            AdminServer.EVENT_CONTENT -> refreshFolder()
+            AdminServer.EVENT_SETTINGS -> recreate() // 別の端末で設定が変わったので表示を作り直す
+        }
+    }
+
+    private fun setupAdmin() {
+        bindSwitch(R.id.adminSwitch, prefs.adminEnabled) {
+            prefs.adminEnabled = it
+            AdminServer.update(this)
+            updateAdminInfo()
+        }
+        findViewById<Button>(R.id.adminPinReset).setOnClickListener {
+            prefs.resetAdminPin()
+            updateAdminInfo()
+        }
+        updateAdminInfo()
+    }
+
+    private fun updateAdminInfo() {
+        val info = findViewById<TextView>(R.id.adminInfo)
+        findViewById<View>(R.id.adminPinReset).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
+        info.text = when {
+            !prefs.adminEnabled -> "ON にすると、PC・スマホのブラウザから画像・動画の追加や削除、設定の変更ができます。"
+            !AdminServer.isRunning -> "起動中…"
+            else -> {
+                val urls = AdminServer.localAddresses().map { "http://$it:${AdminServer.port}/" }
+                buildString {
+                    append(if (urls.isEmpty()) "Wi-Fi・LAN に接続されていません" else "ブラウザで開くアドレス：\n" + urls.joinToString("\n"))
+                    append("\nPIN：${prefs.adminPin}")
+                    append("\n\n同じネットワーク内の端末からのみ操作できます。")
+                }
+            }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        AdminServer.addListener(adminListener)
+        AdminServer.update(this)
+        updateAdminInfo()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        AdminServer.removeListener(adminListener)
     }
 
     // ---------------------------------------------------------------- 天気予報
@@ -467,7 +535,7 @@ class MainActivity : Activity() {
         if (requestCode != REQ_FOLDER || resultCode != RESULT_OK) return
         val uri: Uri = data?.data ?: return
         // 再起動後も読めるように権限を永続化し、使わなくなったフォルダの権限は解放
-        contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        FolderStore.takePermission(this, uri, data.flags)
         setZoneFolder(pendingZone, uri)
     }
 

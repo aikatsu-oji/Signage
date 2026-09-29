@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>サイネージ管理</title>
+<style>
+  :root {
+    --bg: #f4f6f9; --card: #fff; --text: #1d2330; --sub: #6b7385; --line: #dde2ea;
+    --brand: #1e88e5; --brand-weak: #e3f0fc; --danger: #d93025; --ok: #188038; --warn-bg: #fff4e5; --warn: #9a5b00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --card: #1c2029; --text: #e8eaf0; --sub: #9aa2b3; --line: #2c3240;
+      --brand: #5aa9f0; --brand-weak: #1d2c3d; --danger: #f28b82; --ok: #81c995; --warn-bg: #3a2c12; --warn: #fdd29d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+  header { position: sticky; top: 0; z-index: 5; background: var(--card); border-bottom: 1px solid var(--line); }
+  .bar { max-width: 1100px; margin: 0 auto; padding: 10px 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .bar h1 { font-size: 18px; margin: 0; flex: 1; min-width: 160px; }
+  .bar small { color: var(--sub); font-weight: normal; margin-left: 6px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  h2 { font-size: 16px; margin: 0 0 4px; }
+  .sub { color: var(--sub); font-size: 13px; word-break: break-all; }
+  button, .btn { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 8px; padding: 7px 14px; cursor: pointer; }
+  button.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  button.danger { color: var(--danger); }
+  button:disabled { opacity: .5; cursor: default; }
+  label.check { display: inline-flex; align-items: center; gap: 6px; }
+  .warn { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 8px 12px; margin: 10px 0; font-size: 14px; }
+  .drop { margin: 12px 0; border: 2px dashed var(--line); border-radius: 10px; padding: 18px; text-align: center; color: var(--sub); }
+  .drop.over { border-color: var(--brand); background: var(--brand-weak); }
+  .drop input { display: none; }
+  .queue { list-style: none; margin: 0 0 8px; padding: 0; font-size: 13px; }
+  .queue li { display: grid; grid-template-columns: 1fr 90px; gap: 8px; align-items: center; padding: 3px 0; }
+  .queue .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  progress { width: 100%; height: 8px; }
+  .queue .done { color: var(--ok); } .queue .fail { color: var(--danger); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .file { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
+  .thumb { aspect-ratio: 16 / 10; background: #0b0d12 center / contain no-repeat; display: flex; align-items: center; justify-content: center; color: #cfd6e4; font-size: 28px; cursor: pointer; }
+  .meta { padding: 6px 8px; font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
+  .meta .fname { word-break: break-all; }
+  .meta .row { display: flex; justify-content: space-between; align-items: center; color: var(--sub); }
+  .meta button { padding: 2px 8px; font-size: 12px; }
+  .form { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px 20px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field > span { font-size: 13px; color: var(--sub); }
+  select, input[type=number], input[type=password] { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); }
+  fieldset { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px 14px; margin: 0 0 14px; }
+  legend { font-weight: bold; padding: 0 6px; }
+  #login { max-width: 360px; margin: 12vh auto; text-align: center; }
+  #login input { width: 100%; font-size: 22px; letter-spacing: 6px; text-align: center; margin: 12px 0; }
+  #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #333; color: #fff; padding: 10px 18px; border-radius: 10px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px); }
+  #toast.show { opacity: 1; }
+  .empty { color: var(--sub); font-size: 14px; padding: 8px 0; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+</style>
+</head>
+<body>
+
+<div id="login" hidden>
+  <section>
+    <h2>サイネージ管理</h2>
+    <p class="sub">端末の設定画面に表示されている PIN（6桁）を入力してください。</p>
+    <form id="loginForm">
+      <input id="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••••">
+      <button class="primary" style="width:100%">ログイン</button>
+    </form>
+    <p id="loginError" class="sub" style="color:var(--danger)"></p>
+  </section>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <div class="bar">
+      <h1>サイネージ管理<small id="device"></small></h1>
+      <label class="check sub"><input type="checkbox" id="autoReload" checked> 変更後すぐ再生に反映</label>
+      <button class="primary" id="reloadBtn" title="フォルダを読み直して先頭から再生">今すぐ反映</button>
+      <button id="refreshBtn">一覧を更新</button>
+    </div>
+  </header>
+  <main>
+    <div id="zones"></div>
+    <section>
+      <h2>設定</h2>
+      <p class="sub">保存すると、再生画面にすぐ反映されます。フォルダと天気予報の地域は、端末の設定画面で変更してください。</p>
+      <form id="settings">
+        <fieldset>
+          <legend>画面分割</legend>
+          <div class="form">
+            <label class="field"><span>分割方法</span>
+              <select name="layout">
+                <option value="0">1画面</option><option value="1">左右2分割</option>
+                <option value="2">上下2分割</option><option value="3">メイン＋サイド</option>
+              </select></label>
+            <label class="field" id="splitField"><span>比率（区画1 : 区画2）</span>
+              <select name="splitPercent"></select></label>
+            <label class="field"><span>区画1 の表示内容</span><select name="zone0"></select></label>
+            <label class="field" data-zone="1"><span>区画2 の表示内容</span><select name="zone1"></select></label>
+            <label class="field" data-zone="2"><span>区画3 の表示内容</span><select name="zone2"></select></label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>再生</legend>
+          <div class="form">
+            <label class="field"><span>画像1枚あたりの表示秒数</span><input type="number" name="imageSeconds" min="1" max="3600"></label>
+            <label class="check"><input type="checkbox" name="shuffle"> シャッフル再生</label>
+            <label class="check"><input type="checkbox" name="recursive"> サブフォルダも含める</label>
+            <label class="check"><input type="checkbox" name="videoSound"> 動画の音声を再生</label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>時計</legend>
+          <div class="form">
+            <label class="check"><input type="checkbox" name="clockEnabled"> 再生中に常に時計を表示</label>
+            <label class="field"><span>位置</span>
+              <select name="clockPosition"><option value="0">右上</option><option value="1">右下</option><option value="2">左上</option><option value="3">左下</option></select></label>
+            <label class="field"><span>大きさ</span>
+              <select name="clockSize"><option value="0">小</option><option value="1">中</option><option value="2">大</option></select></label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>天気予報 <span class="sub" id="weatherPlace"></span></legend>
+          <div class="form">
+            <label class="check"><input type="checkbox" name="weatherEnabled"> 一定間隔で天気予報を表示</label>
+            <label class="field"><span>表示間隔（分）</span><input type="number" name="weatherIntervalMin" min="1" max="1440"></label>
+            <label class="field"><span>1画面の表示秒数</span><input type="number" name="weatherSeconds" min="3" max="600"></label>
+            <label class="check"><input type="checkbox" name="weatherTimeSeries"> 3時間ごとの予報も表示</label>
+          </div>
+        </fieldset>
+        <button class="primary">設定を保存</button>
+      </form>
+    </section>
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(() => {
+  const $ = (s, el = document) => el.querySelector(s);
+  const PIN_KEY = 'signage-pin';
+  let pin = '';
+  try { pin = localStorage.getItem(PIN_KEY) || ''; } catch (e) {}
+  let state = null;
+  const blobUrls = [];
+
+  function toast(msg) {
+    const t = $('#toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(() => t.classList.remove('show'), 3000);
+  }
+
+  async function api(path, opts = {}) {
+    const res = await fetch(path, { ...opts, headers: { 'X-Pin': pin, ...(opts.headers || {}) } });
+    if (res.status === 401) { showLogin('PIN が違います'); throw new Error('unauthorized'); }
+    const type = res.headers.get('Content-Type') || '';
+    if (!res.ok) {
+      const err = type.includes('json') ? (await res.json()).error : res.statusText;
+      throw new Error(err || ('エラー ' + res.status));
+    }
+    return type.includes('json') ? res.json() : res;
+  }
+
+  function showLogin(error = '') {
+    $('#app').hidden = true;
+    $('#login').hidden = false;
+    $('#loginError').textContent = error;
+    $('#pin').value = '';
+    $('#pin').focus();
+  }
+
+  $('#loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    pin = $('#pin').value.trim();
+    try { localStorage.setItem(PIN_KEY, pin); } catch (e) {}
+    await load();
+  });
+
+  async function load() {
+    try {
+      state = await api('/api/state');
+    } catch (e) {
+      if (e.message !== 'unauthorized') toast(e.message);
+      return;
+    }
+    $('#login').hidden = true;
+    $('#app').hidden = false;
+    $('#device').textContent = `${state.device}  v${state.version}`;
+    renderZones();
+    renderSettings();
+  }
+
+  const fmtSize = (n) => n >= 1e9 ? (n / 1e9).toFixed(1) + ' GB' : n >= 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1e3)) + ' KB';
+
+  // ------------------------------------------------------------ 区画とファイル
+
+  function renderZones() {
+    blobUrls.splice(0).forEach(URL.revokeObjectURL);
+    const root = $('#zones');
+    root.replaceChildren();
+    for (const z of state.zones) {
+      const sec = document.createElement('section');
+      if (z.type !== 0) {
+        sec.innerHTML = `<h2></h2><p class="sub">天気予報を表示中（地域：<span></span>）</p>`;
+        $('h2', sec).textContent = z.label;
+        $('span', sec).textContent = state.settings.weatherPlace || '未設定';
+        root.append(sec);
+        continue;
+      }
+      const files = z.files || [];
+      sec.innerHTML = `
+        <h2></h2>
+        <div class="sub folder"></div>
+        <div class="warn" hidden></div>
+        <label class="drop"><input type="file" multiple accept="image/*,video/*">
+          ここに画像・動画をドラッグ＆ドロップ、または<u>タップして選択</u></label>
+        <ul class="queue"></ul>
+        <div class="grid"></div>`;
+      $('h2', sec).textContent = `${z.label}　${files.length} 件`;
+      $('.folder', sec).textContent = 'フォルダ：' + (z.folder || '未設定');
+      const warn = $('.warn', sec);
+      const drop = $('.drop', sec);
+      if (!z.folder) {
+        warn.hidden = false; warn.textContent = 'この区画のフォルダが未設定です。端末の設定画面で選んでください。';
+        drop.hidden = true;
+      } else if (!z.writable) {
+        warn.hidden = false;
+        warn.textContent = 'このフォルダには書き込めないため、アップロード・削除はできません。端末の設定画面で「フォルダを選択」から選び直すか、「アプリ専用フォルダを使う」を選んでください。';
+        drop.hidden = true;
+      }
+      if (z.error) { warn.hidden = false; warn.textContent = z.error; }
+
+      const input = $('input', drop);
+      input.addEventListener('change', () => upload(z, [...input.files], sec));
+      drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+      drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+      drop.addEventListener('drop', (e) => {
+        e.preventDefault(); drop.classList.remove('over');
+        upload(z, [...e.dataTransfer.files], sec);
+      });
+
+      const grid = $('.grid', sec);
+      if (!files.length && z.folder) grid.outerHTML = '<p class="empty">画像・動画がありません</p>';
+      for (const f of files) grid.append(fileCard(z, f));
+      root.append(sec);
+    }
+    observeThumbs();
+  }
+
+  function fileCard(z, f) {
+    const card = document.createElement('div');
+    card.className = 'file';
+    card.innerHTML = `<div class="thumb"></div>
+      <div class="meta"><div class="fname"></div>
+        <div class="row"><span></span><button class="danger" type="button">削除</button></div></div>`;
+    const thumb = $('.thumb', card);
+    thumb.textContent = f.video ? '▶' : '';
+    if (!f.video) { thumb.dataset.zone = z.index; thumb.dataset.name = f.name; }
+    thumb.addEventListener('click', () => openFile(z, f));
+    $('.fname', card).textContent = f.name;
+    $('.row span', card).textContent = (f.video ? '動画・' : '画像・') + fmtSize(f.size);
+    const del = $('button', card);
+    del.disabled = !z.writable;
+    del.addEventListener('click', () => remove(z, f));
+    return card;
+  }
+
+  const fileUrl = (z, f) => `/api/file?zone=${z.index ?? z}&name=${encodeURIComponent(f.name ?? f)}`;
+
+  // 画像のサムネイルは、見える位置に来たら PIN 付きで取得する
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      const el = e.target;
+      io.unobserve(el);
+      api(fileUrl(el.dataset.zone, el.dataset.name))
+        .then((res) => res.blob())
+        .then((b) => { const u = URL.createObjectURL(b); blobUrls.push(u); el.style.backgroundImage = `url("${u}")`; })
+        .catch(() => { el.textContent = '？'; });
+    }
+  }, { rootMargin: '200px' });
+  const observeThumbs = () => document.querySelectorAll('.thumb[data-name]').forEach((el) => io.observe(el));
+
+  async function openFile(z, f) {
+    const w = window.open('', '_blank');
+    try {
+      const blob = await (await api(fileUrl(z, f))).blob();
+      const u = URL.createObjectURL(blob);
+      if (w) w.location = u; else location.href = u;
+    } catch (e) { if (w) w.close(); toast(e.message); }
+  }
+
+  function uploadOne(z, file, li) {
+    return new Promise((resolve) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', `/api/upload?zone=${z.index}&name=${encodeURIComponent(file.name)}`);
+      xhr.setRequestHeader('X-Pin', pin);
+      const bar = $('progress', li);
+      const status = $('.st', li);
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) bar.value = e.loaded / e.total; };
+      xhr.onload = () => {
+        let msg = '';
+        try { msg = JSON.parse(xhr.responseText).error || ''; } catch (e) {}
+        if (xhr.status === 200) { bar.value = 1; status.textContent = '完了'; status.className = 'st done'; resolve(true); }
+        else { status.textContent = msg || ('失敗 ' + xhr.status); status.className = 'st fail'; resolve(false); }
+      };
+      xhr.onerror = () => { status.textContent = '通信エラー'; status.className = 'st fail'; resolve(false); };
+      xhr.send(file);
+    });
+  }
+
+  async function upload(z, files, sec) {
+    files = files.filter((f) => /^(image|video)\//.test(f.type) || /\.(jpe?g|png|gif|webp|bmp|heic|heif|avif|mp4|m4v|webm|mkv|3gp|mov|ts)$/i.test(f.name));
+    if (!files.length) { toast('画像・動画のファイルを選んでください'); return; }
+    const queue = $('.queue', sec);
+    const items = files.map((f) => {
+      const li = document.createElement('li');
+      li.innerHTML = '<div><div class="name"></div><div class="st sub">待機中</div></div><progress max="1" value="0"></progress>';
+      $('.name', li).textContent = `${f.name}（${fmtSize(f.size)}）`;
+      queue.append(li);
+      return li;
+    });
+    let ok = 0;
+    for (let i = 0; i < files.length; i++) {
+      $('.st', items[i]).textContent = '送信中…';
+      if (await uploadOne(z, files[i], items[i])) ok++;
+    }
+    toast(`${ok} / ${files.length} 件アップロードしました`);
+    if (ok && $('#autoReload').checked) await reloadPlayer(false);
+    setTimeout(load, 800);
+  }
+
+  async function remove(z, f) {
+    if (!confirm(`「${f.name}」を削除しますか？\n端末からファイルが削除されます。`)) return;
+    try {
+      await api('/api/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ zone: z.index, name: f.name }) });
+      toast('削除しました');
+      if ($('#autoReload').checked) await reloadPlayer(false);
+      load();
+    } catch (e) { toast(e.message); }
+  }
+
+  async function reloadPlayer(showToast = true) {
+    try {
+      await api('/api/reload', { method: 'POST' });
+      if (showToast) toast('再生内容を読み直しました');
+    } catch (e) { toast(e.message); }
+  }
+
+  // ------------------------------------------------------------ 設定
+
+  const ZONE_TYPES = [['0', 'フォルダの画像・動画'], ['1', '天気予報']];
+  const SPLITS = [25, 30, 40, 50, 60, 70, 75];
+
+  function renderSettings() {
+    const s = state.settings;
+    const f = $('#settings');
+    for (const i of [0, 1, 2]) {
+      const sel = f.elements['zone' + i];
+      sel.innerHTML = ZONE_TYPES.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
+      sel.value = String(s.zoneTypes[i] ?? 0);
+    }
+    f.elements.splitPercent.innerHTML = SPLITS.map((p) => `<option value="${p}">${p} : ${100 - p}</option>`).join('');
+    for (const el of f.elements) {
+      if (!el.name || el.name.startsWith('zone')) continue;
+      const v = s[el.name];
+      if (v === undefined) continue;
+      if (el.type === 'checkbox') el.checked = !!v; else el.value = String(v);
+    }
+    if (!SPLITS.includes(s.splitPercent)) f.elements.splitPercent.value = '50';
+    $('#weatherPlace').textContent = s.weatherPlace ? `（地域：${s.weatherPlace}）` : '';
+    syncLayoutFields();
+  }
+
+  function syncLayoutFields() {
+    const f = $('#settings');
+    const layout = Number(f.elements.layout.value);
+    const count = layout === 3 ? 3 : layout === 0 ? 1 : 2;
+    $('#splitField').hidden = count !== 2;
+    f.querySelectorAll('[data-zone]').forEach((el) => { el.hidden = Number(el.dataset.zone) >= count; });
+  }
+  $('#settings').elements.layout.addEventListener('change', syncLayoutFields);
+
+  $('#settings').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const body = { zoneTypes: [0, 1, 2].map((i) => Number(f.elements['zone' + i].value)) };
+    for (const el of f.elements) {
+      if (!el.name || el.name.startsWith('zone')) continue;
+      body[el.name] = el.type === 'checkbox' ? el.checked : Number(el.value);
+    }
+    try {
+      await api('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      toast('設定を保存し、再生画面に反映しました');
+      setTimeout(load, 1000);
+    } catch (err) { toast(err.message); }
+  });
+
+  $('#reloadBtn').addEventListener('click', () => reloadPlayer(true));
+  $('#refreshBtn').addEventListener('click', load);
+
+  if (pin) load(); else showLogin();
+})();
+</script>
+</body>
+</html>

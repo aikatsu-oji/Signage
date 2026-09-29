@@ -110,6 +110,16 @@ class MediaZone(
         goto(1)
     }
 
+    /** フォルダを読み直して先頭から再生し直す（管理画面でファイルが変わったとき） */
+    fun reload() {
+        playlist = emptyList()
+        index = -1
+        showingWeather = false
+        weatherPages.clear()
+        paused = false
+        goto(1)
+    }
+
     override fun stop() {
         token++
         cancelTimers()

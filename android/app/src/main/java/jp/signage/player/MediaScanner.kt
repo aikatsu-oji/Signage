@@ -12,6 +12,8 @@ data class MediaEntry(
     /** フォルダからの相対パス（表示・並び替え用） */
     val name: String,
     val isVideo: Boolean,
+    /** バイト数（不明なら 0） */
+    val size: Long = 0,
 )
 
 /**
@@ -43,12 +45,12 @@ object MediaScanner {
                 continue
             }
             val kind = kindOf(f.name, "") ?: continue
-            out += MediaEntry(Uri.fromFile(f), prefix + f.name, kind)
+            out += MediaEntry(Uri.fromFile(f), prefix + f.name, kind, f.length())
         }
     }
 
     /** 動画なら true、画像なら false、どちらでもなければ null */
-    private fun kindOf(name: String, mime: String): Boolean? {
+    fun kindOf(name: String, mime: String = ""): Boolean? {
         val ext = name.substringAfterLast('.', "").lowercase()
         return when {
             mime.startsWith("video/") || ext in VIDEO_EXTS -> true
@@ -62,7 +64,7 @@ object MediaScanner {
         recursive: Boolean, out: MutableList<MediaEntry>,
     ) {
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId)
-        val projection = arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE)
+        val projection = arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE, Document.COLUMN_SIZE)
         resolver.query(children, projection, null, null, null)?.use { c ->
             while (c.moveToNext()) {
                 val id = c.getString(0) ?: continue
@@ -74,7 +76,8 @@ object MediaScanner {
                     continue
                 }
                 val isVideo = kindOf(name, mime) ?: continue
-                out += MediaEntry(DocumentsContract.buildDocumentUriUsingTree(tree, id), prefix + name, isVideo)
+                val size = if (c.isNull(3)) 0L else c.getLong(3)
+                out += MediaEntry(DocumentsContract.buildDocumentUriUsingTree(tree, id), prefix + name, isVideo, size)
             }
         }
     }

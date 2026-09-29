@@ -101,6 +101,22 @@ class Prefs(context: Context) {
         get() = sp.getInt("clockSize", 1)
         set(v) = sp.edit().putInt("clockSize", v.coerceIn(0, 2)).apply()
 
+    // ---- 管理画面（同じネットワークの別端末から操作）
+
+    var adminEnabled: Boolean
+        get() = sp.getBoolean("adminEnabled", false)
+        set(v) = sp.edit().putBoolean("adminEnabled", v).apply()
+
+    /** 管理画面の合言葉（6桁）。未設定なら作る */
+    val adminPin: String
+        get() = sp.getString("adminPin", null) ?: resetAdminPin()
+
+    fun resetAdminPin(): String {
+        val pin = "%06d".format(java.security.SecureRandom().nextInt(1_000_000))
+        sp.edit().putString("adminPin", pin).apply()
+        return pin
+    }
+
     // ---- 画面分割
 
     /** 画面の分割方法 (LAYOUT_*) */
@@ -142,6 +158,14 @@ class Prefs(context: Context) {
         /** 大きなメイン区画＋小さなサイド区画2つ */
         const val LAYOUT_MAIN_SIDE = 3
         const val MAX_ZONES = 3
+
+        /** 区画の呼び名（設定画面・管理画面の表示用） */
+        fun zoneNames(layout: Int): List<String> = when (layout) {
+            LAYOUT_LEFT_RIGHT -> listOf("左", "右")
+            LAYOUT_TOP_BOTTOM -> listOf("上", "下")
+            LAYOUT_MAIN_SIDE -> listOf("メイン", "サイド1：横長画面では右上、縦長画面では左下", "サイド2：右下")
+            else -> listOf("全画面")
+        }
 
         fun zoneCount(layout: Int) = when (layout) {
             LAYOUT_LEFT_RIGHT, LAYOUT_TOP_BOTTOM -> 2

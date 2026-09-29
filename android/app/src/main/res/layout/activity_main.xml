@@ -102,6 +102,14 @@
             android:text="端末内のフォルダを直接選択（フォルダ選択画面が出ない端末向け）"
             android:textSize="13sp" />
 
+        <Button
+            android:id="@+id/useAppFolder"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="アプリ専用フォルダを使う（管理画面からのアップロード用）"
+            android:textSize="13sp" />
+
         <TextView
             android:id="@+id/scanResult"
             android:layout_width="match_parent"
@@ -326,6 +334,31 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="天気予報をプレビュー" />
+
+        <TextView
+            style="@style/Label"
+            android:layout_marginTop="28dp"
+            android:text="管理画面（別の端末から操作）" />
+
+        <Switch
+            android:id="@+id/adminSwitch"
+            style="@style/Option"
+            android:text="同じWi-FiのPC・スマホから操作できるようにする" />
+
+        <TextView
+            android:id="@+id/adminInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:lineSpacingExtra="4dp"
+            android:textIsSelectable="true"
+            android:textSize="15sp" />
+
+        <Button
+            android:id="@+id/adminPinReset"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="PINを変更" />
 
         <Button
             android:id="@+id/startButton"

@@ -149,14 +149,25 @@ class PlayerActivity : Activity() {
         if (prefs.layout == Prefs.LAYOUT_MAIN_SIDE) arrangeZones()
     }
 
+    /** 管理画面（別の端末）からの変更 */
+    private val adminListener: (String) -> Unit = { event ->
+        when (event) {
+            AdminServer.EVENT_CONTENT -> zones.filterIsInstance<MediaZone>().forEach { it.reload() }
+            AdminServer.EVENT_SETTINGS -> recreate() // 区画の構成なども変わるので作り直す
+        }
+    }
+
     override fun onStart() {
         super.onStart()
         clockTick.run()
         zones.forEach { it.start() }
+        AdminServer.addListener(adminListener)
+        AdminServer.update(this)
     }
 
     override fun onStop() {
         super.onStop()
+        AdminServer.removeListener(adminListener)
         handler.removeCallbacks(clockTick)
         zones.forEach { it.stop() }
     }
