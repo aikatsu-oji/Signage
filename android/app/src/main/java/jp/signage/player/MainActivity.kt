@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.view.View
@@ -119,6 +120,7 @@ class MainActivity : Activity() {
         super.onResume()
         refreshFolder()
         if (offices.isEmpty()) loadOffices()
+        updateAdminInfo() // 電池の最適化の設定から戻ってきたとき
     }
 
     override fun onPause() {
@@ -364,6 +366,7 @@ class MainActivity : Activity() {
             prefs.adminEnabled = it
             AdminService.sync(this)
             // 常駐中の通知を表示するため（Android 13 以降）
+            if (it && !isIgnoringBatteryOptimizations()) requestIgnoreBatteryOptimizations()
             if (it && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
             ) {
@@ -371,6 +374,7 @@ class MainActivity : Activity() {
             }
             updateAdminInfo()
         }
+        findViewById<Button>(R.id.adminBattery).setOnClickListener { requestIgnoreBatteryOptimizations() }
         findViewById<Button>(R.id.adminOpenLocal).setOnClickListener {
             // この端末自身で開けるかを確かめる（開ければサーバーは動いている → 開けない端末側はネットワークの問題）
             val url = "http://127.0.0.1:${AdminServer.port}/"
@@ -392,6 +396,10 @@ class MainActivity : Activity() {
         val running = prefs.adminEnabled && AdminServer.isRunning
         findViewById<View>(R.id.adminPinReset).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
         findViewById<View>(R.id.adminOpenLocal).visibility = if (running) View.VISIBLE else View.GONE
+        // 省電力の対象のままだと、再生画面を出していないときに外から接続できない端末がある
+        val batteryLimited = prefs.adminEnabled && !isIgnoringBatteryOptimizations()
+        findViewById<View>(R.id.adminBatteryNote).visibility = if (batteryLimited) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.adminBattery).visibility = if (batteryLimited) View.VISIBLE else View.GONE
         info.text = when {
             !prefs.adminEnabled -> "ON にすると、PC・スマホのブラウザから画像・動画の追加や削除、設定の変更ができます。"
             !AdminServer.isRunning -> "起動中…"
@@ -406,6 +414,27 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+    private fun isIgnoringBatteryOptimizations() =
+        getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
+
+    /** 「電池の最適化を無視しますか？」の確認を出す。出せない端末は一覧の設定画面を開く */
+    private fun requestIgnoreBatteryOptimizations() {
+        val intents = listOf(
+            Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")),
+            Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")),
+        )
+        for (intent in intents) {
+            try {
+                startActivity(intent)
+                return
+            } catch (e: ActivityNotFoundException) {
+                // 次の方法を試す
+            }
+        }
+        Toast.makeText(this, "設定画面を開けませんでした。端末の設定 → アプリ → サイネージ → バッテリー で「制限なし」にしてください", Toast.LENGTH_LONG).show()
     }
 
     override fun onStart() {

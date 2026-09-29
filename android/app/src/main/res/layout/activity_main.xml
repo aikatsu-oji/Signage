@@ -353,6 +353,22 @@
             android:textIsSelectable="true"
             android:textSize="15sp" />
 
+        <TextView
+            android:id="@+id/adminBatteryNote"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="#33FF9800"
+            android:padding="10dp"
+            android:text="この端末では、再生画面を表示していないときは省電力のため管理画面につながらないことがあります。下のボタンで電池の最適化の対象外にしてください。"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/adminBattery"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="電池の最適化の対象外にする" />
+
         <Button
             android:id="@+id/adminOpenLocal"
             style="?android:attr/borderlessButtonStyle"
