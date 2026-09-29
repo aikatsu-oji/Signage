@@ -73,6 +73,18 @@
   #toast.show { opacity: 1; }
   .empty { color: var(--sub); font-size: 14px; padding: 8px 0; }
   .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+  textarea { font: inherit; width: 100%; min-height: 64px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); resize: vertical; }
+  .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; margin: 8px 0; }
+  .opts label { display: flex; flex-direction: column; font-size: 12px; color: var(--sub); gap: 2px; }
+  .templates { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+  .templates button { font-size: 12px; padding: 3px 8px; }
+  .sched { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .sched td, .sched th { border-bottom: 1px solid var(--line); padding: 6px 4px; text-align: left; vertical-align: middle; }
+  .sched th { color: var(--sub); font-weight: normal; font-size: 12px; }
+  .days { display: flex; gap: 4px; flex-wrap: wrap; }
+  .days label { display: inline-flex; align-items: center; gap: 2px; font-size: 13px; }
+  .badge { display: inline-block; border-radius: 6px; padding: 0 6px; font-size: 12px; color: #fff; }
+  .badge.s0 { background: #333; } .badge.s1 { background: #1565c0; } .badge.s2 { background: #c62828; }
   .log { font-size: 13px; max-height: 220px; overflow: auto; margin: 6px 0 0; padding-left: 18px; }
 </style>
 </head>
@@ -123,6 +135,19 @@
           <ol class="log" id="bulkLog"></ol>
         </div>
       </section>
+
+      <section id="tickerSec">
+        <h2>テロップを流す</h2>
+        <p class="sub" id="tickerTarget"></p>
+        <div class="templates" id="templates"></div>
+        <textarea id="tickerText" placeholder="例：10番でお待ちのお客様、カウンターまでお越しください"></textarea>
+        <div class="opts" id="tickerOpts"></div>
+        <div class="row" style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="primary" id="tickerSend">流す</button>
+          <button class="danger" id="tickerStop" title="流れているテロップと、止めるまで流すテロップを止める">止める</button>
+        </div>
+        <p class="sub" id="tickerStatus"></p>
+      </section>
     </aside>
 
     <main>
@@ -141,6 +166,28 @@
         <div class="warn" id="devWarn" hidden></div>
       </section>
       <div id="zones"></div>
+      <section id="scheduleSec">
+        <div class="head">
+          <div>
+            <h2>予約テロップ</h2>
+            <p class="sub">決まった時刻に自動で流します（例：閉店30分前のご案内）。予約は端末に保存され、管理画面を閉じていても流れます。</p>
+          </div>
+          <button class="small" id="copySchedules" title="この端末の予約を、チェックした端末にも同じ内容で設定する">チェックした端末にコピー</button>
+        </div>
+        <table class="sched"><thead><tr><th>時刻</th><th>曜日</th><th>内容</th><th>有効</th><th></th></tr></thead><tbody id="schedList"></tbody></table>
+        <fieldset style="margin-top:12px">
+          <legend>予約を追加</legend>
+          <div class="form">
+            <label class="field"><span>時刻</span><input type="text" id="schedTime" placeholder="20:30" inputmode="numeric" maxlength="5"></label>
+            <div class="field"><span>曜日</span><div class="days" id="schedDays"></div></div>
+          </div>
+          <div class="templates" id="schedTemplates"></div>
+          <textarea id="schedText" placeholder="例：本日のご来店まことにありがとうございます。まもなく閉店のお時間です。"></textarea>
+          <div class="opts" id="schedOpts"></div>
+          <button class="primary" id="schedAdd">予約を追加</button>
+        </fieldset>
+      </section>
+
       <section id="settingsSec">
         <h2>設定</h2>
         <p class="sub">保存すると、この端末の再生画面にすぐ反映されます。フォルダと天気予報の地域は、端末の設定画面で変更してください。</p>
@@ -431,6 +478,8 @@
     $('#reloadBtn').disabled = !ok;
     $('#renameBtn').disabled = !ok;
     $('#settingsSec').hidden = !ok;
+    $('#scheduleSec').hidden = !ok;
+    renderTickerTarget();
     blobUrls.splice(0).forEach(URL.revokeObjectURL);
     $('#zones').replaceChildren();
     warn.hidden = ok;
@@ -450,6 +499,7 @@
     }
     renderZones(dev);
     renderSettings(dev);
+    renderSchedules(dev);
   }
 
   async function askPin(dev) {
@@ -694,6 +744,7 @@
     const list = targets();
     $('#bulk').hidden = list.length === 0;
     $('#bulkTitle').textContent = `チェックした ${list.length} 台をまとめて操作`;
+    if (typeof renderTickerTarget === 'function') renderTickerTarget();
   }
 
   function logLine(text, cls = '') {
@@ -779,6 +830,197 @@
       return `${ok} 件送りました`;
     });
     setTimeout(() => refreshDevice(selected()), 800);
+  });
+
+  // ------------------------------------------------------------ テロップ
+
+  const TEMPLATES = [
+    { label: '呼び出し', text: '〇番でお待ちのお客様、カウンターまでお越しください', style: 2, repeat: 3, chime: true, speak: true },
+    { label: '閉店のご案内', text: '本日のご来店まことにありがとうございます。まもなく閉店のお時間です。', style: 1, repeat: 3, chime: true, speak: false },
+    { label: '閉店時刻', text: '本日は〇時で閉店いたします。', style: 1, repeat: 2, chime: false, speak: false },
+    { label: 'タイムセール', text: 'ただいまタイムセール実施中！', style: 0, repeat: 0, chime: false, speak: false },
+  ];
+  const OPTS = [
+    ['style', '種類', [['0', '通常（黒）'], ['1', 'お知らせ（青）'], ['2', '呼び出し（赤）']]],
+    ['repeat', '流す回数', [['1', '1回'], ['2', '2回'], ['3', '3回'], ['5', '5回'], ['0', '止めるまでずっと']]],
+    ['position', '位置', [['0', '画面の下'], ['1', '画面の上']]],
+    ['size', '文字の大きさ', [['0', '小'], ['1', '中'], ['2', '大']]],
+    ['speed', '速さ', [['0', 'ゆっくり'], ['1', 'ふつう'], ['2', 'はやい']]],
+  ];
+
+  /** テロップの設定欄（種類・回数など）を作る。noForever は予約用（ずっと流すは選べない） */
+  function buildOpts(root, noForever) {
+    root.innerHTML = '';
+    for (const [name, label, options] of OPTS) {
+      const l = document.createElement('label');
+      l.textContent = label;
+      const sel = document.createElement('select');
+      sel.name = name;
+      for (const [v, t] of options) {
+        if (noForever && name === 'repeat' && v === '0') continue;
+        sel.add(new Option(t, v));
+      }
+      sel.value = { style: '0', repeat: '2', position: '0', size: '1', speed: '1' }[name];
+      l.append(sel);
+      root.append(l);
+    }
+    for (const [name, label] of [['chime', 'チャイム（ピンポーン）'], ['speak', '読み上げ']]) {
+      const l = document.createElement('label');
+      l.className = 'check';
+      l.style.flexDirection = 'row';
+      l.innerHTML = `<input type="checkbox" name="${name}"> ${label}`;
+      root.append(l);
+    }
+  }
+
+  function readOpts(root, text) {
+    const m = { text: text.trim() };
+    root.querySelectorAll('select').forEach((el) => { m[el.name] = Number(el.value); });
+    root.querySelectorAll('input[type=checkbox]').forEach((el) => { m[el.name] = el.checked; });
+    return m;
+  }
+
+  function applyTemplate(t, textEl, optsEl) {
+    textEl.value = t.text;
+    const set = (n, v) => { const el = optsEl.querySelector(`[name=${n}]`); if (!el) return; if (el.type === 'checkbox') el.checked = v; else el.value = String(v); };
+    set('style', t.style);
+    const rep = optsEl.querySelector('[name=repeat]');
+    set('repeat', t.repeat === 0 && ![...rep.options].some((o) => o.value === '0') ? 3 : t.repeat);
+    set('chime', t.chime);
+    set('speak', t.speak);
+    textEl.focus();
+  }
+
+  function buildTemplates(root, textEl, optsEl) {
+    for (const t of TEMPLATES) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = t.label;
+      b.addEventListener('click', () => applyTemplate(t, textEl, optsEl));
+      root.append(b);
+    }
+  }
+
+  buildOpts($('#tickerOpts'), false);
+  buildOpts($('#schedOpts'), true);
+  buildTemplates($('#templates'), $('#tickerText'), $('#tickerOpts'));
+  buildTemplates($('#schedTemplates'), $('#schedText'), $('#schedOpts'));
+
+  /** テロップの送り先：チェックした端末、なければ選択中の端末 */
+  const tickerTargets = () => (targets().length ? targets() : [selected()]);
+
+  function renderTickerTarget() {
+    const list = tickerTargets();
+    $('#tickerTarget').textContent = list.length > 1
+      ? `送り先：チェックした ${list.length} 台（${list.map((d) => d.name).join('、')}）`
+      : `送り先：${list[0]?.name || ''}（複数台に送るときは端末一覧でチェック）`;
+  }
+
+  async function sendToTickerTargets(label, fn) {
+    const list = tickerTargets();
+    const results = [];
+    for (const dev of list) {
+      try {
+        if (dev.status !== 'ok') await check(dev);
+        if (dev.status !== 'ok') throw new Error('接続できません');
+        await fn(dev);
+        results.push(`${dev.name}：OK`);
+      } catch (e) { results.push(`${dev.name}：${e.message}`); }
+    }
+    $('#tickerStatus').textContent = `${label} … ${results.join(' ／ ')}`;
+    toast(`${label}：${results.filter((r) => r.endsWith('OK')).length} / ${list.length} 台`);
+  }
+
+  $('#tickerSend').addEventListener('click', async () => {
+    const m = readOpts($('#tickerOpts'), $('#tickerText').value);
+    if (!m.text) { toast('テロップの文字を入力してください'); return; }
+    if (m.text.includes('〇')) { if (!confirm('文字に「〇」が残っています。このまま送りますか？')) return; }
+    await sendToTickerTargets('テロップを流しました', (dev) => post(dev, '/api/ticker', m));
+  });
+
+  $('#tickerStop').addEventListener('click', () =>
+    sendToTickerTargets('テロップを止めました', (dev) => post(dev, '/api/ticker/stop', {})));
+
+  // ---- 予約
+
+  const DAY_NAMES = ['月', '火', '水', '木', '金', '土', '日'];
+  $('#schedDays').innerHTML = DAY_NAMES.map((d, i) => `<label><input type="checkbox" value="${i}" checked>${d}</label>`).join('');
+  const daysLabel = (bits) => bits === 0x7F ? '毎日' : bits === 0x1F ? '平日' : bits === 0x60 ? '土日' :
+    DAY_NAMES.filter((_, i) => bits & (1 << i)).join('');
+
+  let schedules = [];
+
+  function renderSchedules(dev) {
+    schedules = (dev.state?.ticker?.schedules || []).map((x) => ({ ...x }));
+    const body = $('#schedList');
+    body.replaceChildren();
+    if (!schedules.length) {
+      body.innerHTML = '<tr><td colspan="5" class="sub">予約はありません</td></tr>';
+    }
+    schedules.forEach((sc, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td><strong></strong></td><td></td><td><span class="badge"></span> <span class="txt"></span></td>
+        <td><input type="checkbox"></td><td><button class="small danger" type="button">削除</button></td>`;
+      $('strong', tr).textContent = sc.time;
+      tr.children[1].textContent = daysLabel(sc.days);
+      const badge = $('.badge', tr);
+      badge.classList.add('s' + sc.message.style);
+      badge.textContent = ['通常', 'お知らせ', '呼び出し'][sc.message.style] || '';
+      $('.txt', tr).textContent = sc.message.text + `（${sc.message.repeat}回${sc.message.chime ? '・チャイム' : ''}${sc.message.speak ? '・読み上げ' : ''}）`;
+      const en = $('input', tr);
+      en.checked = sc.enabled;
+      en.addEventListener('change', () => { schedules[i].enabled = en.checked; saveSchedules(dev); });
+      $('button', tr).addEventListener('click', () => {
+        if (!confirm(`${sc.time} の予約を削除しますか？`)) return;
+        schedules.splice(i, 1);
+        saveSchedules(dev);
+      });
+      body.append(tr);
+    });
+  }
+
+  async function saveSchedules(dev, list = schedules) {
+    try {
+      await post(dev, '/api/ticker/schedules', { schedules: list });
+      await check(dev);
+      if (dev.key === selectedKey) renderSchedules(dev);
+      return true;
+    } catch (e) { toast(e.message); return false; }
+  }
+
+  $('#schedAdd').addEventListener('click', async () => {
+    const dev = selected();
+    let time = $('#schedTime').value.trim().replace('：', ':');
+    if (/^\d{3,4}$/.test(time)) time = time.padStart(4, '0').replace(/(\d\d)(\d\d)/, '$1:$2');
+    if (/^\d:\d\d$/.test(time)) time = '0' + time;
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) { toast('時刻は 20:30 のように入力してください'); return; }
+    let days = 0;
+    $('#schedDays').querySelectorAll('input').forEach((el) => { if (el.checked) days |= 1 << Number(el.value); });
+    if (!days) { toast('曜日を1つ以上選んでください'); return; }
+    const message = readOpts($('#schedOpts'), $('#schedText').value);
+    if (!message.text) { toast('テロップの文字を入力してください'); return; }
+    const list = [...schedules, { time, days, enabled: true, message }];
+    if (await saveSchedules(dev, list)) {
+      toast(`「${dev.name}」に ${time} の予約を追加しました`);
+      $('#schedText').value = '';
+    }
+  });
+
+  $('#copySchedules').addEventListener('click', async () => {
+    const src = selected();
+    const list = targets().filter((d) => d.key !== src.key);
+    if (!list.length) { toast('コピー先の端末を端末一覧でチェックしてください'); return; }
+    if (!confirm(`「${src.name}」の予約（${schedules.length} 件）を、${list.map((d) => d.name).join('、')} にコピーします。\nコピー先の予約は置き換わります。`)) return;
+    const copy = schedules.map(({ id, ...rest }) => rest);
+    let ok = 0;
+    for (const dev of list) {
+      try {
+        if (dev.status !== 'ok') await check(dev);
+        await post(dev, '/api/ticker/schedules', { schedules: copy });
+        ok++;
+      } catch (e) {}
+    }
+    toast(`予約をコピーしました：${ok} / ${list.length} 台`);
   });
 
   // 端末の状態をときどき確認する

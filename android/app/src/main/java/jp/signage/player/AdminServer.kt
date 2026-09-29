@@ -313,6 +313,24 @@ object AdminServer {
                 notify(EVENT_SETTINGS)
                 json(200, JSONObject().put("ok", true).put("name", prefs.deviceName))
             }
+            "POST /api/ticker" -> {
+                val m = Ticker.Message.fromJson(req.json())
+                if (m.text.isEmpty()) throw HttpError(400, "テロップの文字を入力してください")
+                Ticker.post(app, m.copy(text = m.text.replace(Regex("\\s*\\n\\s*"), "　")))
+                json(200, JSONObject().put("ok", true))
+            }
+            "POST /api/ticker/stop" -> {
+                Ticker.stop(app)
+                json(200, JSONObject().put("ok", true))
+            }
+            "POST /api/ticker/schedules" -> {
+                val a = req.json().optJSONArray("schedules") ?: JSONArray()
+                val list = (0 until a.length()).map {
+                    Ticker.Schedule.fromJson(a.getJSONObject(it)) ?: throw HttpError(400, "予約の時刻や文字が正しくありません")
+                }
+                Ticker.setSchedules(app, list)
+                json(200, JSONObject().put("ok", true))
+            }
             "POST /api/reload" -> {
                 notify(EVENT_CONTENT)
                 json(200, JSONObject().put("ok", true))
@@ -416,7 +434,11 @@ object AdminServer {
             .put("weatherTimeSeries", prefs.weatherTimeSeries)
             .put("weatherPlace", prefs.weatherCityName ?: prefs.weatherAreaName ?: "")
         val version = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull()
+        val ticker = JSONObject()
+            .put("standing", Ticker.standing(app)?.toJson() ?: JSONObject.NULL)
+            .put("schedules", JSONArray(Ticker.schedules(app).map { it.toJson() }))
         return JSONObject()
+            .put("ticker", ticker)
             .put("id", prefs.deviceId)
             .put("name", prefs.deviceName)
             .put("device", android.os.Build.MODEL)

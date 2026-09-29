@@ -44,6 +44,10 @@ class PlayerActivity : Activity() {
     private lateinit var zonesFrame: FrameLayout
     private lateinit var infoView: TextView
     private lateinit var clockView: TextView
+    private lateinit var tickerView: TickerView
+    private lateinit var announcer: Announcer
+    /** 読み上げ・チャイムを済ませた「止めるまで流す」テロップ（割り込み後に再開したとき鳴らさない） */
+    private var announcedStandingId: String? = null
     private var zones: List<Zone> = emptyList()
     /** スワイプ・一時停止などの操作対象 */
     private var mainZone: MediaZone? = null
@@ -52,6 +56,7 @@ class PlayerActivity : Activity() {
     private val clockTick = object : Runnable {
         override fun run() {
             updateClock()
+            Ticker.checkSchedules(this@PlayerActivity) // 予約したテロップの時刻か確認
             handler.postDelayed(this, 60_000 - System.currentTimeMillis() % 60_000 + 50) // 分が変わった直後に更新
         }
     }
@@ -78,6 +83,14 @@ class PlayerActivity : Activity() {
         infoView = findViewById(R.id.info)
         clockView = createClock()
         findViewById<FrameLayout>(R.id.root).addView(clockView)
+        tickerView = TickerView(this).apply {
+            onFinished = { showNextTicker() }
+            addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> avoidTicker() }
+        }
+        findViewById<FrameLayout>(R.id.root).addView(
+            tickerView, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM)
+        )
+        announcer = Announcer(this)
         infoView.bringToFront()
 
         zones = createZones()
@@ -163,11 +176,14 @@ class PlayerActivity : Activity() {
         zones.forEach { it.start() }
         AdminServer.addListener(adminListener)
         AdminService.sync(this)
+        Ticker.addListener(tickerListener)
+        showNextTicker()
     }
 
     override fun onStop() {
         super.onStop()
         AdminServer.removeListener(adminListener)
+        Ticker.removeListener(tickerListener)
         handler.removeCallbacks(clockTick)
         zones.forEach { it.stop() }
     }
@@ -176,6 +192,8 @@ class PlayerActivity : Activity() {
         super.onDestroy()
         handler.removeCallbacksAndMessages(null)
         zones.forEach { it.release() }
+        tickerView.stop()
+        announcer.release()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -188,6 +206,50 @@ class PlayerActivity : Activity() {
         WindowInsetsControllerCompat(window, window.decorView).apply {
             hide(WindowInsetsCompat.Type.systemBars())
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
+
+    // ---------------------------------------------------------------- テロップ
+
+    private val tickerListener: () -> Unit = { showNextTicker() }
+
+    /**
+     * 次のテロップを流す。回数指定のもの（呼び出しなど）を優先し、なければ「止めるまで流す」ものを流す。
+     * 回数指定のものを流している間は、終わるまで次を待つ。
+     */
+    private fun showNextTicker() {
+        if (Ticker.consumeStop()) tickerView.stop().also { avoidTicker() }
+        val current = tickerView.message
+        if (current != null && !current.isStanding) return
+        val queued = Ticker.nextQueued()
+        val next = queued ?: Ticker.standing(this)
+        if (next == null) {
+            tickerView.stop()
+            avoidTicker()
+            return
+        }
+        if (current != null && current.id == next.id) return // 同じものを流し中
+        (tickerView.layoutParams as FrameLayout.LayoutParams).gravity =
+            if (next.position == 1) Gravity.TOP else Gravity.BOTTOM
+        tickerView.bringToFront()
+        infoView.bringToFront()
+        tickerView.show(next)
+        if (queued != null || announcedStandingId != next.id) {
+            announcer.announce(next)
+            if (next.isStanding) announcedStandingId = next.id
+        }
+    }
+
+    /** 時計がテロップと同じ側（上・下）にあるときは、帯の分だけずらして重ならないようにする */
+    private fun avoidTicker() {
+        val m = tickerView.message
+        val h = tickerView.bandHeight.toFloat()
+        val clockBottom = prefs.clockPosition == Prefs.CLOCK_BOTTOM_LEFT || prefs.clockPosition == Prefs.CLOCK_BOTTOM_RIGHT
+        clockView.translationY = when {
+            m == null || h == 0f -> 0f
+            clockBottom && m.position == 0 -> -h
+            !clockBottom && m.position == 1 -> h
+            else -> 0f
         }
     }
 
