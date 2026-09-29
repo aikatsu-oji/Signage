@@ -28,6 +28,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("videoSound", true)
         set(v) = sp.edit().putBoolean("videoSound", v).apply()
 
+    /** 画像・動画の表示方法（FitMode.*）。初期値は余白をなるべく残さない「おまかせ」 */
+    var fitMode: Int
+        get() = sp.getInt("fitMode", FitMode.AUTO)
+        set(v) = sp.edit().putInt("fitMode", v.coerceIn(0, 3)).apply()
+
     /** 動画の互換モード（動画が途中で止まる機種向けに SurfaceView で描画する） */
     var videoCompat: Boolean
         get() = sp.getBoolean("videoCompat", false)

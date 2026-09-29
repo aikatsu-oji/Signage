@@ -63,6 +63,7 @@ DEFAULTS = {
     "shuffle": False,
     "recursive": True,
     "videoSound": True,
+    "fitMode": 3,  # 0: 全体を表示 / 1: 全体＋ぼかし背景 / 2: 画面いっぱい / 3: おまかせ
     "clockEnabled": False,
     "clockPosition": 0,
     "clockSize": 1,

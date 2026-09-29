@@ -256,8 +256,9 @@ def main():
     p.add_argument("--no-player", action="store_true", help="再生画面を開かない")
     p.add_argument("--no-tray", action="store_true", help="タスクトレイを使わない（テスト用）")
     p.add_argument("--no-mdns", action="store_true", help="端末の検出を行わない（テスト用）")
+    p.add_argument("--test-instance", action="store_true", help="二重起動の確認をしない（開発中のテスト用）")
     args = p.parse_args()
-    if not single_instance():
+    if not args.test_instance and not single_instance():
         # すでに起動している場合は設定画面を開くだけ
         for port in range(8080, 8090):
             try:

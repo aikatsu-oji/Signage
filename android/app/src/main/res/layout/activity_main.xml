@@ -171,6 +171,16 @@
                 android:text="縦" />
         </RadioGroup>
 
+        <TextView
+            style="@style/Label"
+            android:text="画像・動画の表示方法" />
+
+        <Spinner
+            android:id="@+id/fitSpinner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp" />
+
         <Switch
             android:id="@+id/shuffleSwitch"
             style="@style/Option"

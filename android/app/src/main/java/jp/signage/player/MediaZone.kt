@@ -1,6 +1,7 @@
 package jp.signage.player
 
 import android.app.Activity
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.graphics.drawable.AnimatedImageDrawable
@@ -13,14 +14,15 @@ import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.TextView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import java.util.concurrent.Executors
 import kotlin.math.max
@@ -56,12 +58,12 @@ class MediaZone(
             if (prefs.videoCompat) R.layout.zone_media_surface else R.layout.zone_media, null
         ) as FrameLayout
     private val playerView: PlayerView = view.findViewById(R.id.playerView)
-    private val imageA: ImageView = view.findViewById(R.id.imageA)
-    private val imageB: ImageView = view.findViewById(R.id.imageB)
+    private val imageA = ImageLayer(view.findViewById(R.id.imageA))
+    private val imageB = ImageLayer(view.findViewById(R.id.imageB))
     private val messageView: TextView = view.findViewById(R.id.message)
     private val weatherView = WeatherView(activity).apply { visibility = View.INVISIBLE }
     private val timeSeriesView = TimeSeriesView(activity).apply { visibility = View.INVISIBLE }
-    private val layers: List<View> = listOf(playerView, imageA, imageB, weatherView, timeSeriesView)
+    private val layers: List<View> = listOf(playerView, imageA.root, imageB.root, weatherView, timeSeriesView)
     // 端末の動画デコーダーが使えないときは、別のデコーダーに切り替えて再生する
     private val player = ExoPlayer.Builder(
         activity, DefaultRenderersFactory(activity).setEnableDecoderFallback(true)
@@ -109,6 +111,17 @@ class MediaZone(
 
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED && currentIsVideo) goto(1)
+            }
+
+            /** 動画の縦横比が分かったら、表示方法（全体を表示／画面いっぱい）を決める */
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                val w = (videoSize.width * videoSize.pixelWidthHeightRatio).toInt()
+                val fit = FitMode.decide(prefs.fitMode, w, videoSize.height, playerView.width, playerView.height)
+                playerView.resizeMode = if (fit == FitMode.FILL) {
+                    AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                } else {
+                    AspectRatioFrameLayout.RESIZE_MODE_FIT
+                }
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -235,11 +248,18 @@ class MediaZone(
             startStallCheck(my)
         } else {
             player.pause() // 動画から画像へ移る場合、音声が残らないように止める
-            val target = if (showing === imageA) imageB else imageA
+            val target = if (showing === imageA.root) imageB else imageA
+            val mode = prefs.fitMode
             val maxSide = max(view.width, view.height).takeIf { it > 0 }
                 ?: activity.resources.displayMetrics.let { max(it.widthPixels, it.heightPixels) }
             io.execute {
                 val drawable = loadImage(item.uri, maxSide)
+                // 余白をぼかして埋める場合に使う、小さく縮めた画像
+                val blur = if (drawable != null && (mode == FitMode.FIT_BLUR || mode == FitMode.AUTO)) {
+                    loadBlur(item.uri)
+                } else {
+                    null
+                }
                 handler.post {
                     if (my != token) return@post
                     cancelWatchdog()
@@ -247,9 +267,9 @@ class MediaZone(
                         goto(1)
                         return@post
                     }
-                    target.setImageDrawable(drawable)
+                    target.show(drawable, blur, mode)
                     startAnimation(drawable)
-                    reveal(target)
+                    reveal(target.root)
                     startImageTimer(prefs.imageSeconds * 1000L, my)
                 }
             }
@@ -420,9 +440,10 @@ class MediaZone(
         }
         v.visibility = View.INVISIBLE
         v.alpha = 0f
-        if (v is ImageView) {
-            stopAnimation(v.drawable)
-            v.setImageDrawable(null)
+        val layer = if (v === imageA.root) imageA else if (v === imageB.root) imageB else null
+        if (layer != null) {
+            stopAnimation(layer.drawable)
+            layer.clear()
         }
     }
 
@@ -457,6 +478,32 @@ class MediaZone(
             val opts = BitmapFactory.Options().apply { inSampleSize = sample }
             resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
                 ?.let { BitmapDrawable(activity.resources, it) }
+        }
+    } catch (t: Throwable) {
+        null
+    }
+
+    /** ぼかし背景用に、画像をとても小さく（長い辺 32px）読み込む。拡大して表示するとぼけて見える */
+    private fun loadBlur(uri: Uri): Bitmap? = try {
+        val resolver = activity.contentResolver
+        val small = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            ImageDecoder.decodeBitmap(ImageDecoder.createSource(resolver, uri)) { decoder, info, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                val r = 96f / max(info.size.width, info.size.height)
+                if (r < 1f) decoder.setTargetSize(max(1, (info.size.width * r).toInt()), max(1, (info.size.height * r).toInt()))
+            }
+        } else {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+            var sample = 1
+            while (max(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 96) sample *= 2
+            resolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+            }
+        }
+        small?.let {
+            val r = 32f / max(it.width, it.height)
+            Bitmap.createScaledBitmap(it, max(1, (it.width * r).toInt()), max(1, (it.height * r).toInt()), true)
         }
     } catch (t: Throwable) {
         null

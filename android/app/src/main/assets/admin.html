@@ -215,6 +215,13 @@
             <legend>再生</legend>
             <div class="form">
               <label class="field"><span>画像1枚あたりの表示秒数</span><input type="number" name="imageSeconds" min="1" max="3600"></label>
+              <label class="field"><span>画像・動画の表示方法</span>
+                <select name="fitMode">
+                  <option value="3">おまかせ（なるべく余白を残さない）</option>
+                  <option value="1">全体を表示＋余白をぼかした背景</option>
+                  <option value="2">画面いっぱい（はみ出す部分は切り取り）</option>
+                  <option value="0">全体を表示（余白は黒）</option>
+                </select></label>
               <label class="check"><input type="checkbox" name="shuffle"> シャッフル再生</label>
               <label class="check"><input type="checkbox" name="recursive"> サブフォルダも含める</label>
               <label class="check"><input type="checkbox" name="videoSound"> 動画の音声を再生</label>

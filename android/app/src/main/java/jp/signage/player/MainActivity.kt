@@ -84,6 +84,7 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.startButton).setOnClickListener { startPlayer() }
 
         bindSwitch(R.id.shuffleSwitch, prefs.shuffle) { prefs.shuffle = it }
+        setupFitMode()
         bindSwitch(R.id.recursiveSwitch, prefs.recursive) { prefs.recursive = it; refreshFolder() }
         bindSwitch(R.id.soundSwitch, prefs.videoSound) { prefs.videoSound = it }
         bindSwitch(R.id.videoCompatSwitch, prefs.videoCompat) { prefs.videoCompat = it }
@@ -326,6 +327,27 @@ class MainActivity : Activity() {
             val side = findViewById<Spinner>(R.id.splitSpinner2)
             side.adapter = adapter(SIDE_CHOICES.map { "サイド1 $it% : サイド2 ${100 - it}%" })
             side.setSelection(nearest(SIDE_CHOICES, prefs.sidePercent))
+        }
+    }
+
+    /** 表示方法の選択肢（表示順）と FitMode の値 */
+    private val fitChoices = listOf(
+        FitMode.AUTO to "おまかせ（なるべく余白を残さない）",
+        FitMode.FIT_BLUR to "全体を表示し、余白をぼかした背景で埋める",
+        FitMode.FILL to "画面いっぱい（はみ出す部分は切り取り）",
+        FitMode.FIT to "全体を表示（余白は黒）",
+    )
+
+    private fun setupFitMode() {
+        val spinner = findViewById<Spinner>(R.id.fitSpinner)
+        spinner.adapter = adapter(fitChoices.map { it.second })
+        spinner.setSelection(fitChoices.indexOfFirst { it.first == prefs.fitMode }.coerceAtLeast(0))
+        spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                fitChoices.getOrNull(position)?.let { prefs.fitMode = it.first }
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
     }
 

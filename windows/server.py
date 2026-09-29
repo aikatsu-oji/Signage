@@ -33,7 +33,7 @@ mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 
 def resource_dir() -> Path:
@@ -97,6 +97,20 @@ def local_addresses() -> list:
     return result
 
 
+class _HTTPServer(ThreadingHTTPServer):
+    """
+    使用中のポートには重ねて待ち受けない（Windows では「アドレスの再利用」を有効にすると
+    ほかのアプリが使っているポートでも待ち受けできてしまうため、排他で待ち受ける）
+    """
+    allow_reuse_address = False
+    daemon_threads = True
+
+    def server_bind(self):
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 class HttpError(Exception):
     def __init__(self, status, message):
         super().__init__(message)
@@ -120,8 +134,7 @@ class Server:
         handler = self._handler_class()
         for p in range(DEFAULT_PORT, DEFAULT_PORT + 10):
             try:
-                self.httpd = ThreadingHTTPServer(("0.0.0.0", p), handler)
-                self.httpd.daemon_threads = True
+                self.httpd = _HTTPServer(("0.0.0.0", p), handler)
                 self.port = p
                 break
             except OSError:
@@ -160,6 +173,7 @@ class Server:
             zones.append(z)
         settings = {k: s.get(k) for k in (
             "layout", "splitPercent", "mainPercent", "sidePercent", "imageSeconds", "shuffle", "recursive", "videoSound",
+            "fitMode",
             "clockEnabled", "clockPosition", "clockSize", "weatherEnabled", "weatherIntervalMin",
             "weatherSeconds", "weatherTimeSeries")}
         settings["zoneTypes"] = [s.zone_type(i) for i in range(st.MAX_ZONES)]
@@ -188,7 +202,7 @@ class Server:
                 if t in (st.ZONE_FOLDER, st.ZONE_WEATHER):
                     types[i] = t
             u["zoneTypes"] = types
-        for k, lo, hi in (("imageSeconds", 1, 3600), ("clockPosition", 0, 3), ("clockSize", 0, 2),
+        for k, lo, hi in (("imageSeconds", 1, 3600), ("clockPosition", 0, 3), ("clockSize", 0, 2), ("fitMode", 0, 3),
                           ("weatherIntervalMin", 1, 1440), ("weatherSeconds", 3, 600)):
             if k in j: u[k] = clamp(j[k], lo, hi)
         for k in ("shuffle", "recursive", "videoSound", "clockEnabled", "weatherEnabled", "weatherTimeSeries"):

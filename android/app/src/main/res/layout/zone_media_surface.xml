@@ -17,22 +17,20 @@
         app:surface_type="surface_view"
         app:use_controller="false" />
 
-    <ImageView
+    <!-- 画像1枚分（ぼかした背景＋画像本体。中身は ImageLayer が作る） -->
+    <FrameLayout
         android:id="@+id/imageA"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@android:color/black"
-        android:importantForAccessibility="no"
-        android:scaleType="fitCenter"
         android:visibility="invisible" />
 
-    <ImageView
+    <!-- 画像1枚分（ぼかした背景＋画像本体。中身は ImageLayer が作る） -->
+    <FrameLayout
         android:id="@+id/imageB"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@android:color/black"
-        android:importantForAccessibility="no"
-        android:scaleType="fitCenter"
         android:visibility="invisible" />
 
     <TextView
