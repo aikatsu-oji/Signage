@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>サイネージ</title>
+<style>
+  :root { --fade: 800ms; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body.idle { cursor: none; }
+  .layer {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity var(--fade) ease;
+  }
+  .layer.show { opacity: 1; }
+  .layer img, .layer video { width: 100%; height: 100%; object-fit: contain; }
+  #message {
+    position: absolute; inset: 0; display: none;
+    align-items: center; justify-content: center; text-align: center;
+    color: #aaa; font: 24px/1.6 system-ui, sans-serif; white-space: pre-line;
+  }
+  #info {
+    position: absolute; left: 16px; bottom: 16px; max-width: calc(100% - 32px);
+    padding: 8px 14px; border-radius: 6px;
+    background: rgba(0,0,0,.6); color: #fff; font: 14px/1.5 system-ui, sans-serif;
+    display: none; word-break: break-all;
+  }
+  body.show-info #info { display: block; }
+  #help {
+    position: absolute; right: 16px; top: 16px; padding: 10px 14px; border-radius: 6px;
+    background: rgba(0,0,0,.6); color: #fff; font: 13px/1.7 system-ui, sans-serif;
+    display: none;
+  }
+  body.show-info #help { display: block; }
+  kbd { background: #333; border-radius: 3px; padding: 0 5px; }
+</style>
+</head>
+<body>
+<div class="layer" id="layerA"></div>
+<div class="layer" id="layerB"></div>
+<div id="message"></div>
+<div id="info"></div>
+<div id="help">
+  <kbd>→</kbd> 次へ　<kbd>←</kbd> 前へ<br>
+  <kbd>Space</kbd> 一時停止/再開<br>
+  <kbd>F</kbd> / ダブルクリック 全画面<br>
+  <kbd>M</kbd> 動画の音声 ON/OFF<br>
+  <kbd>I</kbd> 情報表示 ON/OFF
+</div>
+
+<script>
+(() => {
+  const layers = [document.getElementById('layerA'), document.getElementById('layerB')];
+  const messageEl = document.getElementById('message');
+  const infoEl = document.getElementById('info');
+
+  let playlist = [];      // 現在のループの再生順
+  let index = -1;         // 再生中の位置
+  let front = 0;          // 表示中のレイヤー
+  let duration = 10;      // 画像の表示秒数
+  let shuffle = false;
+  let paused = false;
+  let muted = true;       // 自動再生のため初期はミュート
+  let token = 0;          // 古い非同期処理を無効化するための世代番号
+  let imageTimer = null, imageStart = 0, imageRemain = 0;
+  let watchdog = null;
+
+  const params = new URLSearchParams(location.search);
+
+  async function fetchList() {
+    const res = await fetch('/api/list', { cache: 'no-store' });
+    const data = await res.json();
+    duration = Number(params.get('duration')) || data.duration;
+    shuffle = params.has('shuffle') ? params.get('shuffle') !== '0' : data.shuffle;
+    let items = data.items;
+    if (shuffle) {
+      items = items.slice();
+      for (let i = items.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [items[i], items[j]] = [items[j], items[i]];
+      }
+    }
+    return { folder: data.folder, items };
+  }
+
+  function showMessage(text) {
+    messageEl.textContent = text;
+    messageEl.style.display = text ? 'flex' : 'none';
+  }
+
+  function clearTimers() {
+    clearTimeout(imageTimer); imageTimer = null;
+    clearTimeout(watchdog); watchdog = null;
+  }
+
+  function disposeLayer(layer) {
+    for (const v of layer.querySelectorAll('video')) {
+      v.pause(); v.removeAttribute('src'); v.load();
+    }
+    layer.replaceChildren();
+  }
+
+  // ループの先頭に戻ったらフォルダを再スキャンして追加・削除を反映
+  async function goto(step) {
+    const my = ++token;
+    clearTimers();
+    let next = index + step;
+    if (playlist.length === 0 || next >= playlist.length || next < 0) {
+      const wrapBack = next < 0;
+      try {
+        const { folder, items } = await fetchList();
+        if (my !== token) return;
+        playlist = items;
+        if (playlist.length === 0) {
+          disposeLayer(layers[0]); disposeLayer(layers[1]);
+          layers[0].classList.remove('show'); layers[1].classList.remove('show');
+          showMessage(`再生できる画像・動画がありません\n${folder}\n\n5秒ごとに再確認します`);
+          setTimeout(() => { if (my === token) { index = -1; goto(1); } }, 5000);
+          return;
+        }
+      } catch (e) {
+        showMessage('サーバーに接続できません。再試行中…');
+        setTimeout(() => { if (my === token) goto(step); }, 5000);
+        return;
+      }
+      next = wrapBack ? playlist.length - 1 : 0;
+    }
+    showMessage('');
+    index = next;
+    play(playlist[index], my);
+  }
+
+  function play(item, my) {
+    const back = 1 - front;
+    const layer = layers[back];
+    disposeLayer(layer);
+    updateInfo(item);
+
+    const reveal = () => {
+      if (my !== token) return;
+      layer.classList.add('show');
+      layers[front].classList.remove('show');
+      const old = layers[front];
+      setTimeout(() => { if (!old.classList.contains('show')) disposeLayer(old); }, 1000);
+      front = back;
+    };
+    const skip = () => { if (my === token) goto(1); };
+
+    // 読み込みが進まないファイルで止まらないように保険
+    watchdog = setTimeout(skip, 20000);
+
+    if (item.type === 'image') {
+      const img = new Image();
+      img.onload = () => {
+        if (my !== token) return;
+        clearTimeout(watchdog);
+        reveal();
+        startImageTimer(duration * 1000, my);
+      };
+      img.onerror = skip;
+      img.src = item.url + '?v=' + item.mtime;
+      layer.appendChild(img);
+    } else {
+      const v = document.createElement('video');
+      v.muted = muted;
+      v.playsInline = true;
+      v.preload = 'auto';
+      v.onloadeddata = () => {
+        if (my !== token) return;
+        clearTimeout(watchdog);
+        reveal();
+        if (!paused) v.play().catch(() => { v.muted = true; v.play().catch(skip); });
+      };
+      v.onended = skip;
+      v.onerror = skip;
+      v.src = item.url + '?v=' + item.mtime;
+      layer.appendChild(v);
+    }
+  }
+
+  function startImageTimer(ms, my) {
+    imageStart = Date.now();
+    imageRemain = ms;
+    if (paused) return;
+    imageTimer = setTimeout(() => { if (my === token) goto(1); }, ms);
+  }
+
+  function currentVideo() {
+    return layers[front].querySelector('video');
+  }
+
+  function togglePause() {
+    paused = !paused;
+    const v = currentVideo();
+    if (v) {
+      paused ? v.pause() : v.play().catch(() => {});
+    } else if (playlist[index]?.type === 'image') {
+      if (paused) {
+        clearTimeout(imageTimer);
+        imageRemain -= Date.now() - imageStart;
+      } else {
+        startImageTimer(Math.max(imageRemain, 0), token);
+      }
+    }
+    updateInfo(playlist[index]);
+  }
+
+  function updateInfo(item) {
+    if (!item) return;
+    infoEl.textContent =
+      `${index + 1} / ${playlist.length}　[${item.type === 'image' ? '画像' : '動画'}] ${item.name}` +
+      (paused ? '　⏸ 一時停止中' : '') + (muted ? '' : '　🔊');
+  }
+
+  function toggleFullscreen() {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen().catch(() => {});
+  }
+
+  document.addEventListener('keydown', (e) => {
+    switch (e.key) {
+      case 'ArrowRight': paused = false; goto(1); break;
+      case 'ArrowLeft': paused = false; goto(-1); break;
+      case ' ': e.preventDefault(); togglePause(); break;
+      case 'f': case 'F': toggleFullscreen(); break;
+      case 'i': case 'I': document.body.classList.toggle('show-info'); break;
+      case 'm': case 'M': {
+        muted = !muted;
+        const v = currentVideo();
+        if (v) v.muted = muted;
+        updateInfo(playlist[index]);
+        break;
+      }
+    }
+  });
+  document.addEventListener('dblclick', toggleFullscreen);
+
+  // 操作がなければマウスカーソルを隠す
+  let idleTimer;
+  const wake = () => {
+    document.body.classList.remove('idle');
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => document.body.classList.add('idle'), 3000);
+  };
+  document.addEventListener('mousemove', wake);
+  wake();
+
+  if (params.has('fade')) document.documentElement.style.setProperty('--fade', params.get('fade') + 'ms');
+  goto(1);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,331 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="サイネージ設定"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <TextView
+            style="@style/Label"
+            android:text="画面分割" />
+
+        <RadioGroup
+            android:id="@+id/layoutGroup"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <RadioButton
+                android:id="@+id/layoutSingle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="1画面" />
+
+            <RadioButton
+                android:id="@+id/layoutLeftRight"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="左右2分割" />
+
+            <RadioButton
+                android:id="@+id/layoutTopBottom"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="上下2分割" />
+
+            <RadioButton
+                android:id="@+id/layoutMainSide"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="メイン＋サイド" />
+        </RadioGroup>
+
+        <!-- 区画ごとの表示内容・フォルダ（コードで作成） -->
+        <LinearLayout
+            android:id="@+id/zonesContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <TextView
+            style="@style/Label"
+            android:text="再生フォルダ（区画1・メイン）" />
+
+        <TextView
+            android:id="@+id/folderText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="未選択"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/pickFolder"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="フォルダを選択" />
+
+        <Button
+            android:id="@+id/pickFolderDirect"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="端末内のフォルダを直接選択（フォルダ選択画面が出ない端末向け）"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/scanResult"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#9E9E9E"
+            android:textSize="13sp" />
+
+        <TextView
+            style="@style/Label"
+            android:text="画像1枚あたりの表示秒数" />
+
+        <EditText
+            android:id="@+id/secondsEdit"
+            android:layout_width="120dp"
+            android:layout_height="wrap_content"
+            android:importantForAutofill="no"
+            android:inputType="number"
+            android:maxLength="4" />
+
+        <TextView
+            style="@style/Label"
+            android:text="画面の向き" />
+
+        <RadioGroup
+            android:id="@+id/orientationGroup"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/orientAuto"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="自動" />
+
+            <RadioButton
+                android:id="@+id/orientLandscape"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="横" />
+
+            <RadioButton
+                android:id="@+id/orientPortrait"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="縦" />
+        </RadioGroup>
+
+        <Switch
+            android:id="@+id/shuffleSwitch"
+            style="@style/Option"
+            android:text="シャッフル再生（ループごとに並べ替え）" />
+
+        <Switch
+            android:id="@+id/recursiveSwitch"
+            style="@style/Option"
+            android:text="サブフォルダも含める" />
+
+        <Switch
+            android:id="@+id/soundSwitch"
+            style="@style/Option"
+            android:text="動画の音声を再生" />
+
+        <Switch
+            android:id="@+id/autoStartSwitch"
+            style="@style/Option"
+            android:text="自動再生（アプリ起動時・端末の電源ON時）" />
+
+        <TextView
+            style="@style/Label"
+            android:layout_marginTop="28dp"
+            android:text="時計" />
+
+        <Switch
+            android:id="@+id/clockSwitch"
+            style="@style/Option"
+            android:text="再生中に常に時計を表示" />
+
+        <TextView
+            style="@style/SubLabel"
+            android:text="位置" />
+
+        <RadioGroup
+            android:id="@+id/clockPositionGroup"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/clockTopRight"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="右上" />
+
+            <RadioButton
+                android:id="@+id/clockBottomRight"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="右下" />
+
+            <RadioButton
+                android:id="@+id/clockTopLeft"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="左上" />
+
+            <RadioButton
+                android:id="@+id/clockBottomLeft"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="左下" />
+        </RadioGroup>
+
+        <TextView
+            style="@style/SubLabel"
+            android:text="大きさ" />
+
+        <RadioGroup
+            android:id="@+id/clockSizeGroup"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/clockSmall"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="小" />
+
+            <RadioButton
+                android:id="@+id/clockMedium"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="中" />
+
+            <RadioButton
+                android:id="@+id/clockLarge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="大" />
+        </RadioGroup>
+
+        <TextView
+            style="@style/Label"
+            android:layout_marginTop="28dp"
+            android:text="天気予報（気象庁）" />
+
+        <Switch
+            android:id="@+id/weatherSwitch"
+            style="@style/Option"
+            android:text="一定間隔で天気予報を表示" />
+
+        <Switch
+            android:id="@+id/weatherTimeSeriesSwitch"
+            style="@style/Option"
+            android:text="3時間ごとの予報も続けて表示" />
+
+        <TextView
+            style="@style/SubLabel"
+            android:text="地方" />
+
+        <Spinner
+            android:id="@+id/officeSpinner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp" />
+
+        <TextView
+            style="@style/SubLabel"
+            android:text="市区町村（予報は右側の地域単位です）" />
+
+        <Spinner
+            android:id="@+id/areaSpinner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical">
+
+            <EditText
+                android:id="@+id/weatherIntervalEdit"
+                android:layout_width="80dp"
+                android:layout_height="wrap_content"
+                android:gravity="end"
+                android:importantForAutofill="no"
+                android:inputType="number"
+                android:maxLength="4" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="分ごとに" />
+
+            <EditText
+                android:id="@+id/weatherSecondsEdit"
+                android:layout_width="80dp"
+                android:layout_height="wrap_content"
+                android:gravity="end"
+                android:importantForAutofill="no"
+                android:inputType="number"
+                android:maxLength="3" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="秒間表示" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/weatherStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#9E9E9E"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/weatherPreview"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="天気予報をプレビュー" />
+
+        <Button
+            android:id="@+id/startButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:backgroundTint="@color/brand"
+            android:minHeight="56dp"
+            android:text="▶ 再生開始"
+            android:textSize="18sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:lineSpacingExtra="4dp"
+            android:text="再生中の操作\n・タップ：情報表示\n・左右スワイプ：前へ / 次へ\n・ダブルタップ：一時停止 / 再開\n・長押し / 戻る：この設定画面へ\n\nリモコン：←→ 前後、決定 一時停止、↑↓ 情報表示、戻る 設定画面\n\nフォルダ内のファイルを追加・削除すると、ループが一周するたびに自動で反映されます。"
+            android:textColor="#9E9E9E"
+            android:textSize="13sp" />
+    </LinearLayout>
+</ScrollView>

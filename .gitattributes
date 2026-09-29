@@ -1,2 +1,8 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# シェルスクリプトは LF、バッチファイルは CRLF に固定
+gradlew text eol=lf
+*.bat text eol=crlf
+*.jar binary
+*.png binary

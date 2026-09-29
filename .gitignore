@@ -1,0 +1,11 @@
+# ビルド成果物（APK はリリースに添付）
+dist/
+
+# 再生する素材は各自のフォルダに置く
+media/*
+!media/.gitkeep
+
+__pycache__/
+*.pyc
+.idea/
+.vscode/

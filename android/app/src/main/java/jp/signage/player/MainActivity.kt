@@ -1,0 +1,513 @@
+package jp.signage.player
+
+import android.app.Activity
+import android.app.AlertDialog
+import android.content.ActivityNotFoundException
+import android.Manifest
+import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.provider.DocumentsContract
+import android.provider.Settings
+import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.RadioGroup
+import android.widget.Spinner
+import android.widget.Switch
+import android.widget.TextView
+import android.widget.Toast
+import java.io.File
+import java.util.concurrent.Executors
+
+/** 設定画面 */
+class MainActivity : Activity() {
+    companion object {
+        const val EXTRA_FROM_PLAYER = "fromPlayer"
+        private const val REQ_FOLDER = 1
+        private const val REQ_STORAGE = 2
+        private const val DEFAULT_OFFICE = "130000" // 東京都
+    }
+
+    private lateinit var prefs: Prefs
+    private lateinit var folderText: TextView
+    private lateinit var scanResult: TextView
+    private lateinit var secondsEdit: EditText
+    private lateinit var weatherIntervalEdit: EditText
+    private lateinit var weatherSecondsEdit: EditText
+    private lateinit var weatherStatus: TextView
+    private lateinit var officeSpinner: Spinner
+    private lateinit var areaSpinner: Spinner
+    private var offices: List<Office> = emptyList()
+    /** フォルダを選択中の区画 */
+    private var pendingZone = 0
+    private val zoneFolderTexts = mutableMapOf<Int, TextView>()
+    private val zoneRows = mutableListOf<View>()
+    private val io = Executors.newSingleThreadExecutor()
+    private val main = Handler(Looper.getMainLooper())
+    private var scanGeneration = 0
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+        prefs = Prefs(this)
+
+        folderText = findViewById(R.id.folderText)
+        scanResult = findViewById(R.id.scanResult)
+        secondsEdit = findViewById(R.id.secondsEdit)
+        secondsEdit.setText(prefs.imageSeconds.toString())
+
+        findViewById<Button>(R.id.pickFolder).setOnClickListener { pickFolder(0) }
+        findViewById<Button>(R.id.pickFolderDirect).setOnClickListener { pickFolderDirect(0) }
+        setupLayout()
+        findViewById<Button>(R.id.startButton).setOnClickListener { startPlayer() }
+
+        bindSwitch(R.id.shuffleSwitch, prefs.shuffle) { prefs.shuffle = it }
+        bindSwitch(R.id.recursiveSwitch, prefs.recursive) { prefs.recursive = it; refreshFolder() }
+        bindSwitch(R.id.soundSwitch, prefs.videoSound) { prefs.videoSound = it }
+        bindSwitch(R.id.autoStartSwitch, prefs.autoStart) {
+            prefs.autoStart = it
+            if (it) ensureOverlayPermission()
+        }
+
+        setupClock()
+        setupWeather()
+
+        val group = findViewById<RadioGroup>(R.id.orientationGroup)
+        group.check(
+            when (prefs.orientation) {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE -> R.id.orientLandscape
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT -> R.id.orientPortrait
+                else -> R.id.orientAuto
+            }
+        )
+        group.setOnCheckedChangeListener { _, id ->
+            prefs.orientation = when (id) {
+                R.id.orientLandscape -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                R.id.orientPortrait -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
+        }
+
+        // 自動再生が有効なら、ランチャーから起動したときはそのまま再生画面へ
+        val fromPlayer = intent.getBooleanExtra(EXTRA_FROM_PLAYER, false)
+        if (savedInstanceState == null && !fromPlayer && prefs.autoStart) {
+            startPlayer()
+        }
+    }
+
+    private fun bindSwitch(id: Int, value: Boolean, onChange: (Boolean) -> Unit): Switch =
+        findViewById<Switch>(id).apply {
+            isChecked = value
+            setOnCheckedChangeListener { _, checked -> onChange(checked) }
+        }
+
+    override fun onResume() {
+        super.onResume()
+        refreshFolder()
+        if (offices.isEmpty()) loadOffices()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        saveSeconds()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        io.shutdownNow()
+    }
+
+    private fun saveSeconds() {
+        secondsEdit.text.toString().toIntOrNull()?.let { prefs.imageSeconds = it }
+        secondsEdit.setText(prefs.imageSeconds.toString())
+        weatherIntervalEdit.text.toString().toIntOrNull()?.let { prefs.weatherIntervalMin = it }
+        weatherIntervalEdit.setText(prefs.weatherIntervalMin.toString())
+        weatherSecondsEdit.text.toString().toIntOrNull()?.let { prefs.weatherSeconds = it }
+        weatherSecondsEdit.setText(prefs.weatherSeconds.toString())
+    }
+
+    private fun pickFolder(zone: Int) {
+        pendingZone = zone
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        prefs.zoneFolder(zone)?.takeIf { it.scheme == "content" }
+            ?.let { intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, it) }
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(intent, REQ_FOLDER)
+        } catch (e: ActivityNotFoundException) {
+            Toast.makeText(this, "フォルダ選択画面が無いため、端末内を直接参照します", Toast.LENGTH_LONG).show()
+            pickFolderDirect(zone)
+        }
+    }
+
+    private fun setZoneFolder(zone: Int, uri: Uri) {
+        prefs.setZoneFolder(zone, uri)
+        releaseUnusedTreePermissions()
+        refreshFolder()
+        refreshZoneFolders()
+    }
+
+    // ---------------------------------------------------------------- 画面分割
+
+    private fun setupLayout() {
+        bindRadio(
+            R.id.layoutGroup, prefs.layout,
+            mapOf(
+                Prefs.LAYOUT_SINGLE to R.id.layoutSingle,
+                Prefs.LAYOUT_LEFT_RIGHT to R.id.layoutLeftRight,
+                Prefs.LAYOUT_TOP_BOTTOM to R.id.layoutTopBottom,
+                Prefs.LAYOUT_MAIN_SIDE to R.id.layoutMainSide,
+            ),
+        ) {
+            prefs.layout = it
+            updateZoneRows()
+        }
+
+        val container = findViewById<LinearLayout>(R.id.zonesContainer)
+        val density = resources.displayMetrics.density
+        for (i in 0 until Prefs.MAX_ZONES) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, (8 * density).toInt(), 0, 0)
+            }
+            val label = TextView(this).apply {
+                textSize = 13f
+                setTextColor(getColor(R.color.brand))
+                tag = "label"
+            }
+            row.addView(label)
+            val spinner = Spinner(this).apply {
+                adapter = adapter(listOf("フォルダの画像・動画", "天気予報", "時計"))
+                setSelection(prefs.zoneType(i))
+                minimumHeight = (48 * density).toInt()
+            }
+            row.addView(spinner)
+
+            // 区画2・3 はここでフォルダを選ぶ（区画1 は下の「再生フォルダ」）
+            val folderRow = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            if (i > 0) {
+                val folderText = TextView(this).apply { textSize = 14f }
+                zoneFolderTexts[i] = folderText
+                folderRow.addView(folderText)
+                val buttons = LinearLayout(this)
+                buttons.addView(Button(this).apply {
+                    text = "フォルダを選択"
+                    setOnClickListener { pickFolder(i) }
+                })
+                buttons.addView(Button(this, null, android.R.attr.borderlessButtonStyle).apply {
+                    text = "直接選択"
+                    setOnClickListener { pickFolderDirect(i) }
+                })
+                folderRow.addView(buttons)
+            } else {
+                folderRow.addView(TextView(this).apply {
+                    text = "フォルダは下の「再生フォルダ（区画1・メイン）」で選びます。動画の音声と天気予報の差し込みは、最初のフォルダ区画で行います。"
+                    textSize = 12f
+                    setTextColor(0xFF9E9E9E.toInt())
+                })
+            }
+            row.addView(folderRow)
+            fun syncFolderRow() {
+                folderRow.visibility = if (prefs.zoneType(i) == Prefs.ZONE_FOLDER) View.VISIBLE else View.GONE
+            }
+            syncFolderRow()
+            spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                    prefs.setZoneType(i, position)
+                    syncFolderRow()
+                }
+
+                override fun onNothingSelected(parent: AdapterView<*>?) {}
+            }
+            zoneRows += row
+            container.addView(row)
+        }
+        updateZoneRows()
+        refreshZoneFolders()
+    }
+
+    /** 分割方法に合わせて、区画の名前と表示する区画数を切り替える */
+    private fun updateZoneRows() {
+        val count = Prefs.zoneCount(prefs.layout)
+        val names = when (prefs.layout) {
+            Prefs.LAYOUT_LEFT_RIGHT -> listOf("左", "右")
+            Prefs.LAYOUT_TOP_BOTTOM -> listOf("上", "下")
+            Prefs.LAYOUT_MAIN_SIDE -> listOf("メイン", "サイド1：横長画面では右上、縦長画面では左下", "サイド2：右下")
+            else -> listOf("全画面")
+        }
+        zoneRows.forEachIndexed { i, row ->
+            row.visibility = if (i < count) View.VISIBLE else View.GONE
+            row.findViewWithTag<TextView>("label")?.text = "区画${i + 1}（${names.getOrElse(i) { "" }}）の表示内容"
+        }
+    }
+
+    private fun refreshZoneFolders() {
+        zoneFolderTexts.forEach { (i, view) ->
+            view.text = prefs.zoneFolder(i)?.let { "フォルダ: " + MediaScanner.describe(it) } ?: "フォルダ: 未選択"
+        }
+    }
+
+    // ---------------------------------------------------------------- 端末内を直接参照
+
+    private fun storagePermissions(): Array<String> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
+        } else {
+            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+
+    private fun hasStoragePermission() =
+        storagePermissions().all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+
+    /** システムのフォルダ選択画面を使わず、アプリ内のブラウザでフォルダを選ぶ */
+    private fun pickFolderDirect(zone: Int) {
+        pendingZone = zone
+        if (!hasStoragePermission()) {
+            requestPermissions(storagePermissions(), REQ_STORAGE)
+            return
+        }
+        val current = prefs.zoneFolder(zone)?.takeIf { it.scheme == "file" }?.path?.let(::File)
+        FolderBrowser(this) { dir -> setZoneFolder(zone, Uri.fromFile(dir)) }.show(current)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQ_STORAGE) return
+        if (hasStoragePermission()) {
+            pickFolderDirect(pendingZone)
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("写真と動画へのアクセス")
+            .setMessage(
+                "端末内の画像・動画を読み込むには、写真と動画へのアクセスを「すべて許可」してください。\n\n" +
+                    "許可の画面が出ない場合は、端末の設定 → アプリ → サイネージ → 権限 から許可できます。"
+            )
+            .setPositiveButton("アプリの設定を開く") { _, _ ->
+                runCatching {
+                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+                }
+            }
+            .setNegativeButton("閉じる", null)
+            .show()
+    }
+
+    /** どの区画でも使っていないフォルダの永続アクセス権を解放 */
+    private fun releaseUnusedTreePermissions() {
+        val used = prefs.allZoneFolders()
+        contentResolver.persistedUriPermissions
+            .filter { it.uri !in used }
+            .forEach { contentResolver.releasePersistableUriPermission(it.uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+    }
+
+    // ---------------------------------------------------------------- 天気予報
+
+    private fun setupClock() {
+        bindSwitch(R.id.clockSwitch, prefs.clockEnabled) { prefs.clockEnabled = it }
+        bindRadio(
+            R.id.clockPositionGroup, prefs.clockPosition,
+            mapOf(
+                Prefs.CLOCK_TOP_RIGHT to R.id.clockTopRight,
+                Prefs.CLOCK_BOTTOM_RIGHT to R.id.clockBottomRight,
+                Prefs.CLOCK_TOP_LEFT to R.id.clockTopLeft,
+                Prefs.CLOCK_BOTTOM_LEFT to R.id.clockBottomLeft,
+            ),
+        ) { prefs.clockPosition = it }
+        bindRadio(
+            R.id.clockSizeGroup, prefs.clockSize,
+            mapOf(0 to R.id.clockSmall, 1 to R.id.clockMedium, 2 to R.id.clockLarge),
+        ) { prefs.clockSize = it }
+    }
+
+    /** 値 → ラジオボタンID の対応でラジオグループを設定と結びつける */
+    private fun bindRadio(groupId: Int, value: Int, ids: Map<Int, Int>, onChange: (Int) -> Unit) {
+        val group = findViewById<RadioGroup>(groupId)
+        ids[value]?.let(group::check)
+        group.setOnCheckedChangeListener { _, id ->
+            ids.entries.firstOrNull { it.value == id }?.let { onChange(it.key) }
+        }
+    }
+
+    private fun setupWeather() {
+        bindSwitch(R.id.weatherSwitch, prefs.weatherEnabled) { prefs.weatherEnabled = it }
+        bindSwitch(R.id.weatherTimeSeriesSwitch, prefs.weatherTimeSeries) { prefs.weatherTimeSeries = it }
+        weatherIntervalEdit = findViewById(R.id.weatherIntervalEdit)
+        weatherSecondsEdit = findViewById(R.id.weatherSecondsEdit)
+        weatherStatus = findViewById(R.id.weatherStatus)
+        officeSpinner = findViewById(R.id.officeSpinner)
+        areaSpinner = findViewById(R.id.areaSpinner)
+        weatherIntervalEdit.setText(prefs.weatherIntervalMin.toString())
+        weatherSecondsEdit.setText(prefs.weatherSeconds.toString())
+
+        officeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val office = offices.getOrNull(position) ?: return
+                if (office.code != prefs.weatherOffice) {
+                    prefs.weatherOffice = office.code
+                    prefs.weatherCity = null
+                    prefs.weatherArea = null
+                }
+                showCities(office)
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+        areaSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val office = offices.getOrNull(officeSpinner.selectedItemPosition) ?: return
+                selectCity(office, position)
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        findViewById<Button>(R.id.weatherPreview).setOnClickListener {
+            saveSeconds()
+            if (prefs.weatherOffice == null) {
+                Toast.makeText(this, "地方の一覧を取得できていません", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            startActivity(Intent(this, PlayerActivity::class.java).putExtra(PlayerActivity.EXTRA_WEATHER_NOW, true))
+        }
+    }
+
+    private fun loadOffices() {
+        weatherStatus.text = "地方の一覧を取得中…"
+        io.execute {
+            val list = Weather.offices(this)
+            main.post {
+                if (isDestroyed) return@post
+                offices = list
+                if (list.isEmpty()) {
+                    weatherStatus.text = "地方の一覧を取得できません。インターネット接続を確認してください。"
+                    return@post
+                }
+                weatherStatus.text = ""
+                if (prefs.weatherOffice == null) prefs.weatherOffice = DEFAULT_OFFICE
+                officeSpinner.adapter = adapter(list.map { it.name })
+                officeSpinner.setSelection(list.indexOfFirst { it.code == prefs.weatherOffice }.coerceAtLeast(0))
+            }
+        }
+    }
+
+    /** 市区町村の一覧（「千代田区 — 東京地方」のように予報を出している地域も併記） */
+    private fun showCities(office: Office) {
+        if (office.cities.isEmpty()) {
+            // 市区町村の情報が無い場合は地域で選ぶ
+            areaSpinner.adapter = adapter(office.areas.map { it.second })
+        } else {
+            areaSpinner.adapter = adapter(office.cities.map { "${it.name}　— ${it.areaName}" })
+        }
+        val index = if (office.cities.isEmpty()) {
+            office.areas.indexOfFirst { it.first == prefs.weatherArea }
+        } else {
+            office.cities.indexOfFirst { it.code == prefs.weatherCity }
+                .takeIf { it >= 0 } ?: office.cities.indexOfFirst { it.areaCode == prefs.weatherArea }
+        }.coerceAtLeast(0)
+        areaSpinner.setSelection(index)
+        selectCity(office, index)
+    }
+
+    private fun selectCity(office: Office, position: Int) {
+        val city = office.cities.getOrNull(position)
+        if (city != null) {
+            prefs.weatherCity = city.code
+            prefs.weatherCityName = city.name
+            prefs.weatherArea = city.areaCode
+            prefs.weatherAreaName = city.areaName
+        } else {
+            val area = office.areas.getOrNull(position) ?: return
+            prefs.weatherCity = null
+            prefs.weatherCityName = null
+            prefs.weatherArea = area.first
+            prefs.weatherAreaName = area.second
+        }
+    }
+
+    private fun adapter(items: List<String>) =
+        ArrayAdapter(this, android.R.layout.simple_spinner_item, items).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_FOLDER || resultCode != RESULT_OK) return
+        val uri: Uri = data?.data ?: return
+        // 再起動後も読めるように権限を永続化し、使わなくなったフォルダの権限は解放
+        contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        setZoneFolder(pendingZone, uri)
+    }
+
+    /** 選択中フォルダの表示と、中身の件数・一覧の更新 */
+    private fun refreshFolder() {
+        val uri = prefs.folderUri
+        val gen = ++scanGeneration
+        if (uri == null) {
+            folderText.text = "未選択"
+            scanResult.text = ""
+            return
+        }
+        folderText.text = MediaScanner.describe(uri)
+        scanResult.text = "読み込み中…"
+        val recursive = prefs.recursive
+        io.execute {
+            val result = runCatching { MediaScanner.scan(contentResolver, uri, recursive) }
+            main.post {
+                if (gen != scanGeneration || isDestroyed) return@post
+                val items = result.getOrNull()
+                scanResult.text = when {
+                    items == null -> "フォルダを読み込めません。もう一度選択してください。"
+                    items.isEmpty() -> "再生できる画像・動画がありません"
+                    else -> buildString {
+                        append("画像 ${items.count { !it.isVideo }} 件 / 動画 ${items.count { it.isVideo }} 件\n")
+                        items.take(100).forEachIndexed { i, it ->
+                            append("${i + 1}. [${if (it.isVideo) "動画" else "画像"}] ${it.name}\n")
+                        }
+                        if (items.size > 100) append("… ほか ${items.size - 100} 件")
+                    }
+                }
+            }
+        }
+    }
+
+    private fun startPlayer() {
+        saveSeconds()
+        val missing = (0 until Prefs.zoneCount(prefs.layout))
+            .filter { prefs.zoneType(it) == Prefs.ZONE_FOLDER && prefs.zoneFolder(it) == null }
+        if (missing.isNotEmpty()) {
+            val names = missing.joinToString("・") { "${it + 1}" }
+            Toast.makeText(this, "区画$names のフォルダを選択してください", Toast.LENGTH_SHORT).show()
+            return
+        }
+        startActivity(Intent(this, PlayerActivity::class.java))
+    }
+
+    /** Android 10 以降、電源ON時に画面を自動で開くには「他のアプリの上に表示」の許可が必要 */
+    private fun ensureOverlayPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || Settings.canDrawOverlays(this)) return
+        AlertDialog.Builder(this)
+            .setTitle("権限が必要です")
+            .setMessage("端末の電源ON時に自動で再生を始めるには「他のアプリの上に重ねて表示」を許可してください。\n\n次の画面でアプリ一覧が出た場合は「サイネージ」を選んで ON にしてください。\n（アプリ起動時の自動再生はこの権限なしでも動作します）")
+            .setPositiveButton("設定を開く") { _, _ ->
+                try {
+                    startActivity(
+                        Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+                    )
+                } catch (e: ActivityNotFoundException) {
+                    Toast.makeText(this, "設定画面を開けませんでした", Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNegativeButton("あとで", null)
+            .show()
+    }
+}
