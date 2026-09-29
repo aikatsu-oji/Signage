@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>サイネージ</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; color: #fff;
+    font-family: system-ui, "Yu Gothic UI", "Meiryo", sans-serif; user-select: none; }
+  body.idle { cursor: none; }
+  #zones { position: absolute; inset: 0; display: flex; }
+  .box { display: flex; flex: 1; min-width: 0; min-height: 0; }
+  .zone { position: relative; overflow: hidden; background: #000; margin: 2px; flex: 1; min-width: 0; min-height: 0; }
+  .layer { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0;
+    transition: opacity .8s ease; background: #000; }
+  .layer.show { opacity: 1; }
+  .msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
+    color: #aaa; font-size: 20px; white-space: pre-line; padding: 24px; z-index: 5; }
+
+  /* 天気予報 */
+  .panel { position: absolute; inset: 0; opacity: 0; transition: opacity .8s ease; overflow: hidden;
+    background: linear-gradient(#1565c0, #0d2a5c); display: flex; flex-direction: column;
+    padding: calc(var(--u) * 1.2); box-sizing: border-box; font-size: var(--u); text-shadow: 0 .05em .15em #0006; }
+  .panel.show { opacity: 1; }
+  .panel .t22 { font-size: 2.2em; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .panel .head { display: flex; align-items: flex-end; gap: 1em; }
+  .panel .head .t22 { flex: 1; min-width: 0; }
+  .panel .clock { font-size: 1.6em; font-weight: bold; white-space: nowrap; }
+  .panel .note { font-size: .9em; opacity: .7; }
+  .panel .foot { font-size: .8em; opacity: .6; text-align: right; }
+  .cards { display: flex; gap: .6em; flex: 1.7; min-height: 0; margin: .3em 0; }
+  .panel.portrait .cards { flex-direction: column; flex: 2.6; }
+  .card { flex: 1; background: #ffffff26; border-radius: .8em; padding: .8em; display: flex; flex-direction: column;
+    align-items: center; min-height: 0; min-width: 0; }
+  .card .label { font-size: 1.4em; font-weight: bold; align-self: flex-start; }
+  .card .mid { flex: 1; display: flex; align-items: center; justify-content: center; gap: .8em; min-height: 0; }
+  .icon { line-height: 1; } .icon small { font-size: .55em; }
+  .hot { color: #ff8a80; } .cold { color: #82b1ff; } .dim { opacity: .7; }
+  .temps { font-size: 1.7em; font-weight: bold; }
+  .card .wtext { font-size: 1.2em; text-align: center; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .pops { display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; text-align: center; }
+  .pops .h { font-size: .8em; opacity: .7; } .pops .v { font-size: 1.3em; font-weight: bold; }
+  .week { display: flex; gap: .6em; flex: 1; min-height: 0; margin-top: .3em; }
+  .wcell { flex: 1; background: #ffffff1a; border-radius: .8em; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; min-width: 0; text-align: center; }
+  .sat { color: #82b1ff; } .sun { color: #ff8a80; }
+  .slots { display: flex; gap: .6em; flex: 2.4; min-height: 0; margin: .3em 0; }
+  .slot { flex: 1; background: #ffffff26; border-radius: .8em; display: flex; flex-direction: column; align-items: center;
+    justify-content: space-between; padding: .6em .3em; min-width: 0; text-align: center; }
+  .panel.portrait .slots { flex-direction: column; flex: 1; }
+  .panel.portrait .slot { flex-direction: row; padding: 0 .6em; background: #ffffff1a; }
+  .panel.portrait .slot > * { flex: 1; }
+  .graph { flex: 1; min-height: 0; }
+
+  /* 時計 */
+  #clock { position: absolute; z-index: 20; background: #0006; border-radius: .35em; padding: .35em .7em; font-weight: bold;
+    line-height: 1.1; text-align: right; display: none; transition: transform .3s; }
+  #clock .d { font-size: .45em; display: block; }
+
+  /* テロップ */
+  #ticker { position: absolute; left: 0; right: 0; z-index: 30; overflow: hidden; display: none; white-space: nowrap; }
+  #ticker span { position: absolute; top: 50%; transform: translate(0, -50%); font-weight: bold; will-change: left; }
+
+  #info { position: absolute; left: 16px; bottom: 16px; z-index: 40; background: #000a; padding: 10px 14px; border-radius: 8px;
+    font-size: 14px; display: none; white-space: pre-line; }
+  #hint { position: absolute; left: 50%; top: 16px; transform: translateX(-50%); z-index: 40; background: #000c; padding: 10px 16px;
+    border-radius: 8px; font-size: 14px; transition: opacity 1s; }
+</style>
+</head>
+<body>
+<div id="zones"></div>
+<div id="clock"></div>
+<div id="ticker"><span></span></div>
+<div id="info"></div>
+<div id="hint">設定はタスクトレイのアイコンから開けます（全画面を閉じる：Alt + F4）</div>
+
+<script>
+(() => {
+  const $ = (s, el = document) => el.querySelector(s);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const getJson = async (url) => { const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error(r.status); return r.json(); };
+  const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
+
+  let cfg = null;
+  let zones = [];
+  let mainZone = null;
+
+  setTimeout(() => { $('#hint').style.opacity = 0; }, 6000);
+
+  // ------------------------------------------------------------ 天気予報の画面
+
+  function dateOf(iso) { return new Date(iso.length <= 10 ? iso + 'T00:00:00' : iso); }
+  function dayClass(d) { return d.getDay() === 6 ? 'sat' : d.getDay() === 0 ? 'sun' : ''; }
+  function dateLabel(iso) { const d = dateOf(iso); return `${d.getMonth() + 1}/${d.getDate()}(${WEEK[d.getDay()]})`; }
+  function clockText() { const t = new Date(); return `${t.getMonth() + 1}月${t.getDate()}日(${WEEK[t.getDay()]}) ${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')}`; }
+  function iconEl(icon, size) {
+    const e = el('div', 'icon');
+    e.style.fontSize = size + 'em';
+    e.textContent = icon[0];
+    if (icon[1]) e.append(el('small', '', icon[1]));
+    return e;
+  }
+
+  /** パネルの大きさから文字の単位（--u）と向きを決める */
+  function sizePanel(panel) {
+    const w = panel.clientWidth || panel.parentElement.clientWidth;
+    const h = panel.clientHeight || panel.parentElement.clientHeight;
+    const landscape = w > h;
+    panel.style.setProperty('--u', (Math.min(w, h) / (landscape ? 34 : 30)) + 'px');
+    panel.classList.toggle('portrait', !landscape);
+    return { landscape, compact: Math.max(w, h) < 1300 };
+  }
+
+  function header(panel, title, report, stale, extra) {
+    const head = el('div', 'head');
+    head.append(el('div', 't22', title), el('div', 'clock', clockText()));
+    const r = dateOf(report);
+    const note = `${r.getMonth() + 1}月${r.getDate()}日 ${r.getHours()}時 気象庁発表` + (extra ? '　' + extra : '') +
+      (stale ? '（通信できないため前回取得した予報を表示中）' : '');
+    panel.append(head, el('div', 'note', note));
+  }
+
+  function renderDaily(panel, d, city) {
+    panel.replaceChildren();
+    const { landscape, compact } = sizePanel(panel);
+    header(panel, `${city || d.areaName}の天気`, d.reportTime, d.stale, city ? `予報区域：${d.areaName}` : '');
+    const cards = el('div', 'cards');
+    d.days.forEach((day, i) => {
+      const c = el('div', 'card');
+      const dt = dateOf(day.date);
+      const label = el('div', 'label ' + dayClass(dt), `${i === 0 ? '今日' : '明日'}  ${dateLabel(day.date)}`);
+      const mid = el('div', 'mid');
+      const temps = el('div', 'temps');
+      temps.append(el('div', 'hot', `最高 ${day.max ? day.max + '℃' : '--'}`), el('div', 'cold', `最低 ${day.min ? day.min + '℃' : '--'}`));
+      if (compact) temps.style.fontSize = '1.3em';
+      mid.append(iconEl(day.icon, compact ? 3 : 5), temps);
+      c.append(label, mid);
+      if (day.text) c.append(el('div', 'wtext', day.text));
+      if (day.pops6h && !compact) {
+        const pops = el('div', 'pops');
+        ['0-6時', '6-12時', '12-18時', '18-24時'].forEach((h, k) => {
+          const cell = el('div');
+          cell.append(el('div', 'h', h), el('div', 'v', day.pops6h[k] ? day.pops6h[k] + '%' : '--'));
+          pops.append(cell);
+        });
+        c.append(el('div', 'dim', '降水確率'), pops);
+      }
+      cards.append(c);
+    });
+    panel.append(cards);
+    if (d.week.length) {
+      panel.append(el('div', '', '週間予報'));
+      const week = el('div', 'week');
+      d.week.slice(0, compact ? 4 : 7).forEach((w) => {
+        const c = el('div', 'wcell');
+        const t = el('div');
+        t.innerHTML = `<span class="hot"></span> / <span class="cold"></span>`;
+        t.children[0].textContent = w.max || '--';
+        t.children[1].textContent = w.min || '--';
+        c.append(el('div', dayClass(dateOf(w.date)), dateLabel(w.date)), iconEl(w.icon, 2.4), t, el('div', 'dim', w.pop ? `☂ ${w.pop}%` : ''));
+        week.append(c);
+      });
+      panel.append(week);
+    }
+    panel.append(el('div', 'foot', '出典：気象庁ホームページ'));
+  }
+
+  function renderSeries(panel, d, city, area) {
+    panel.replaceChildren();
+    const { landscape, compact } = sizePanel(panel);
+    const place = city || d.pointName;
+    const extra = [area && `予報区域：${area}`, d.pointName && `気温：${d.pointName}の予報`].filter(Boolean).join('　');
+    header(panel, '3時間ごとの天気' + (place ? `（${place}）` : ''), d.reportTime, d.stale, extra);
+    const slots = d.slots.slice(0, compact ? 4 : 8);
+    const box = el('div', 'slots');
+    slots.forEach((s, i) => {
+      const t = dateOf(s.time);
+      const showDate = i === 0 || dateOf(slots[i - 1].time).getDate() !== t.getDate();
+      const c = el('div', 'slot');
+      const wind = [s.windDir, s.windRange && s.windRange + 'm/s'].filter(Boolean).join(' ');
+      const time = el('div');
+      time.append(el('div', 'dim ' + dayClass(t), showDate ? dateLabel(s.time) : ' '), el('div', '', `${t.getHours()}時`));
+      time.lastChild.style.cssText = 'font-size:1.5em;font-weight:bold';
+      const temp = el('div', '', s.temp ? s.temp + '℃' : '--');
+      temp.style.cssText = 'font-size:1.7em;font-weight:bold';
+      c.append(time, iconEl(s.icon, landscape ? 3.2 : 2.2), el('div', '', s.weather), temp, el('div', 'dim', wind));
+      box.append(c);
+    });
+    panel.append(box);
+    if (landscape) {
+      panel.append(el('div', 'dim', '気温の変化'));
+      panel.append(graph(slots.map((s) => (s.temp == null ? null : Number(s.temp)))));
+    }
+    panel.append(el('div', 'foot', '出典：気象庁ホームページ'));
+  }
+
+  function graph(temps) {
+    const vals = temps.filter((v) => v != null);
+    const wrap = el('div', 'graph');
+    if (vals.length < 2) return wrap;
+    const lo = Math.min(...vals), hi = Math.max(...vals), n = temps.length;
+    const y = (t) => (hi === lo ? 50 : 85 - (t - lo) / (hi - lo) * 60);
+    const pts = temps.map((t, i) => (t == null ? null : [(i + 0.5) / n * 100, y(t)])).filter(Boolean);
+    wrap.innerHTML = `<svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%;height:100%;overflow:visible">
+      <polyline fill="none" stroke="#ff8a80" stroke-width="1.2" vector-effect="non-scaling-stroke" points="${pts.map((p) => p.join(',')).join(' ')}"/>
+    </svg>`;
+    // 点と数値は縦横比の影響を受けないよう HTML で重ねる
+    wrap.style.position = 'relative';
+    temps.forEach((t, i) => {
+      if (t == null) return;
+      const dot = el('div', '', `${Math.round(t)}°`);
+      dot.style.cssText = `position:absolute;left:${(i + 0.5) / n * 100}%;top:${y(t)}%;transform:translate(-50%,-130%);font-weight:bold;font-size:.9em`;
+      const c = el('div');
+      c.style.cssText = `position:absolute;left:${(i + 0.5) / n * 100}%;top:${y(t)}%;width:.55em;height:.55em;border-radius:50%;background:#fff;transform:translate(-50%,-50%)`;
+      wrap.append(dot, c);
+    });
+    return wrap;
+  }
+
+  // ------------------------------------------------------------ フォルダの区画
+
+  class MediaZone {
+    constructor(index, isMain) {
+      this.index = index;
+      this.isMain = isMain;
+      this.root = el('div', 'zone');
+      this.imgA = el('img', 'layer'); this.imgB = el('img', 'layer');
+      this.video = el('video', 'layer');
+      this.video.playsInline = true;
+      this.daily = el('div', 'panel'); this.series = el('div', 'panel');
+      this.msg = el('div', 'msg'); this.msg.hidden = true;
+      this.root.append(this.video, this.imgA, this.imgB, this.daily, this.series, this.msg);
+      this.layers = [this.video, this.imgA, this.imgB, this.daily, this.series];
+      this.playlist = []; this.index_ = -1; this.token = 0;
+      this.showing = null; this.paused = false;
+      this.lastWeatherAt = Date.now(); this.showingWeather = false; this.weatherPages = [];
+      this.timer = null; this.remain = 0; this.startedAt = 0;
+      this.video.addEventListener('ended', () => { if (this.current?.video) this.goto(1); });
+      this.video.addEventListener('error', () => { if (this.current?.video) this.goto(1); });
+      this.video.addEventListener('playing', () => { if (this.current?.video) { clearTimeout(this.watchdog); this.reveal(this.video); } });
+    }
+
+    start() { this.goto(1); }
+
+    reload() {
+      this.playlist = []; this.index_ = -1; this.showingWeather = false; this.weatherPages = []; this.paused = false;
+      this.goto(1);
+    }
+
+    message(text) { this.msg.textContent = text || ''; this.msg.hidden = !text; }
+
+    reveal(target) {
+      for (const l of this.layers) l.classList.toggle('show', l === target);
+      if (target !== this.video) { this.video.pause(); }
+      this.showing = target;
+      if (this.isMain) onPanelShown(target === this.daily || target === this.series);
+    }
+
+    clearTimers() { clearTimeout(this.timer); clearTimeout(this.watchdog); this.timer = null; }
+
+    startTimer(ms, my) {
+      this.startedAt = Date.now(); this.remain = ms;
+      if (this.paused) return;
+      this.timer = setTimeout(() => { if (my === this.token) this.goto(1); }, ms);
+    }
+
+    weatherDue() {
+      if (!this.isMain || !cfg.weatherOffice) return false;
+      if (forceWeather) return true;
+      return cfg.weatherEnabled && Date.now() - this.lastWeatherAt >= cfg.weatherIntervalMin * 60000;
+    }
+
+    async goto(step) {
+      const my = ++this.token;
+      this.clearTimers();
+      if (step > 0 && this.showingWeather && this.weatherPages.length) {
+        return this.showPage(this.weatherPages.shift(), my);
+      }
+      this.weatherPages = [];
+      if (step > 0 && !this.showingWeather && this.weatherDue()) return this.showWeather(my);
+      this.showingWeather = false;
+      let next = this.index_ + step;
+      if (next < 0 || next >= this.playlist.length) {
+        const wrapBack = next < 0;
+        if (!cfg.zoneFolders[this.index]) { this.message('この区画のフォルダが設定されていません\n設定はタスクトレイのアイコンから'); return; }
+        let items;
+        try { items = await getJson(`/local/playlist?zone=${this.index}`); }
+        catch (e) {
+          if (my !== this.token) return;
+          this.message('フォルダを読み込めません。\n5秒後に再試行します');
+          setTimeout(() => { if (my === this.token) this.goto(step); }, 5000);
+          return;
+        }
+        if (my !== this.token) return;
+        if (cfg.shuffle) items.sort(() => Math.random() - 0.5);
+        this.playlist = items;
+        if (!items.length) {
+          this.index_ = -1; this.current = null;
+          this.reveal(null);
+          this.message('再生できる画像・動画がありません\n5秒ごとに再確認します');
+          setTimeout(() => { if (my === this.token) this.goto(1); }, 5000);
+          return;
+        }
+        next = wrapBack ? items.length - 1 : 0;
+      }
+      this.index_ = next;
+      this.play(this.playlist[next], my);
+    }
+
+    play(item, my) {
+      this.message('');
+      this.current = item;
+      updateInfo();
+      this.watchdog = setTimeout(() => { if (my === this.token) this.goto(1); }, 20000);
+      if (item.video) {
+        this.video.muted = !(this.isMain && cfg.videoSound);
+        this.video.src = item.url;
+        this.video.play().catch(() => { this.video.muted = true; this.video.play().catch(() => {}); });
+        if (this.paused) this.video.pause();
+      } else {
+        const target = this.showing === this.imgA ? this.imgB : this.imgA;
+        const img = new Image();
+        img.onload = () => {
+          if (my !== this.token) return;
+          clearTimeout(this.watchdog);
+          target.src = img.src;
+          this.reveal(target);
+          this.startTimer(cfg.imageSeconds * 1000, my);
+        };
+        img.onerror = () => { if (my === this.token) this.goto(1); };
+        img.src = item.url;
+      }
+    }
+
+    async showWeather(my) {
+      forceWeather = false;
+      this.lastWeatherAt = Date.now();
+      this.showingWeather = true;
+      this.current = null;
+      this.video.pause();
+      this.watchdog = setTimeout(() => { if (my === this.token) this.goto(1); }, 20000);
+      let data = null;
+      try { data = await getJson('/local/weather'); } catch (e) {}
+      if (my !== this.token) return;
+      clearTimeout(this.watchdog);
+      this.weatherPages = [];
+      this.weatherData = data;
+      if (data?.daily) { renderDaily(this.daily, data.daily, data.cityName); this.weatherPages.push(this.daily); }
+      if (data?.series) { renderSeries(this.series, data.series, data.cityName, data.areaName); this.weatherPages.push(this.series); }
+      if (!this.weatherPages.length) return this.goto(1);
+      this.showPage(this.weatherPages.shift(), my);
+    }
+
+    showPage(page, my) {
+      this.reveal(page);
+      updateInfo();
+      this.startTimer(cfg.weatherSeconds * 1000, my);
+    }
+
+    /** 大きさが変わったら、表示中の天気予報を描き直す */
+    relayout() {
+      const d = this.weatherData;
+      if (!d || !this.showingWeather) return;
+      if (d.daily) renderDaily(this.daily, d.daily, d.cityName);
+      if (d.series) renderSeries(this.series, d.series, d.cityName, d.areaName);
+    }
+
+    togglePause() {
+      this.paused = !this.paused;
+      if (this.current?.video) {
+        this.paused ? this.video.pause() : this.video.play().catch(() => {});
+      } else if (this.paused) {
+        clearTimeout(this.timer);
+        this.remain -= Date.now() - this.startedAt;
+      } else {
+        this.startTimer(Math.max(this.remain, 0), this.token);
+      }
+      updateInfo();
+    }
+
+    info() {
+      const p = this.paused ? '　⏸ 一時停止中' : '';
+      if (this.showingWeather) return '天気予報' + p;
+      if (!this.current) return '';
+      return `${this.index_ + 1} / ${this.playlist.length}　[${this.current.video ? '動画' : '画像'}] ${this.current.name}${p}`;
+    }
+  }
+
+  // ------------------------------------------------------------ 天気予報の区画
+
+  class WeatherZone {
+    constructor() {
+      this.root = el('div', 'zone');
+      this.root.style.background = '#0d2a5c';
+      this.daily = el('div', 'panel'); this.series = el('div', 'panel');
+      this.msg = el('div', 'msg'); this.msg.hidden = true;
+      this.root.append(this.daily, this.series, this.msg);
+      this.token = 0;
+    }
+
+    start() { this.reload(++this.token); }
+    reloadContent() {}
+
+    async reload(my) {
+      let data = null;
+      try { data = await getJson('/local/weather'); } catch (e) {}
+      if (my !== this.token) return;
+      if (!data) {
+        this.msg.hidden = false;
+        this.msg.textContent = '天気予報を取得できません\nインターネット接続を確認してください（1分後に再試行）';
+        setTimeout(() => { if (my === this.token) this.reload(my); }, 60000);
+        return;
+      }
+      this.msg.hidden = true;
+      this.pages = [];
+      if (data.daily) { renderDaily(this.daily, data.daily, data.cityName); this.pages.push(this.daily); }
+      if (data.series) { renderSeries(this.series, data.series, data.cityName, data.areaName); this.pages.push(this.series); }
+      this.data = data;
+      this.show(0, my);
+    }
+
+    show(i, my) {
+      this.pages.forEach((p, k) => p.classList.toggle('show', k === i));
+      setTimeout(() => {
+        if (my !== this.token) return;
+        if (i + 1 < this.pages.length) this.show(i + 1, my); else this.reload(my);
+      }, cfg.weatherSeconds * 1000);
+    }
+
+    /** 大きさが変わったら描き直す */
+    relayout() {
+      if (!this.data) return;
+      if (this.data.daily) renderDaily(this.daily, this.data.daily, this.data.cityName);
+      if (this.data.series) renderSeries(this.series, this.data.series, this.data.cityName, this.data.areaName);
+    }
+  }
+
+  // ------------------------------------------------------------ 区画の配置
+
+  function arrange() {
+    const root = $('#zones');
+    zones.forEach((z) => z.root.remove());
+    root.replaceChildren();
+    const v = zones.map((z) => z.root);
+    const landscape = innerWidth > innerHeight;
+    const box = (vertical, items, weights) => {
+      const b = el('div', 'box');
+      b.style.flexDirection = vertical ? 'column' : 'row';
+      items.forEach((it, i) => { it.style.flex = String(weights[i]); b.append(it); });
+      return b;
+    };
+    let top;
+    const p = cfg.splitPercent || 50;
+    if (cfg.layout === 1) top = box(false, v, [p, 100 - p]);
+    else if (cfg.layout === 2) top = box(true, v, [p, 100 - p]);
+    else if (cfg.layout === 3) {
+      const main = cfg.mainPercent || 70, sp = cfg.sidePercent || 50;
+      const side = box(landscape, [v[1], v[2]], [sp, 100 - sp]);
+      side.style.margin = '0';
+      top = box(!landscape, [v[0], side], [main, 100 - main]);
+    } else top = box(false, [v[0]], [1]);
+    top.style.flex = '1';
+    root.append(top);
+  }
+
+  let resizeTimer;
+  addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (cfg.layout === 3) arrange();
+      zones.forEach((z) => z.relayout?.());
+    }, 300);
+  });
+
+  // ------------------------------------------------------------ 時計
+
+  let clockHiddenForPanel = false;
+  function onPanelShown(panel) { clockHiddenForPanel = panel && zones.length === 1; updateClock(); }
+
+  function updateClock() {
+    const c = $('#clock');
+    if (!cfg.clockEnabled || clockHiddenForPanel) { c.style.display = 'none'; return; }
+    const t = new Date();
+    c.innerHTML = `<span class="d">${t.getMonth() + 1}/${t.getDate()}(${WEEK[t.getDay()]})</span>${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')}`;
+    const base = Math.min(innerWidth, innerHeight);
+    c.style.fontSize = base / [26, 18, 12][cfg.clockSize ?? 1] + 'px';
+    const m = base * 0.03 + 'px';
+    const pos = cfg.clockPosition || 0; // 0右上 1右下 2左上 3左下
+    c.style.top = pos === 0 || pos === 2 ? m : '';
+    c.style.bottom = pos === 1 || pos === 3 ? m : '';
+    c.style.right = pos <= 1 ? m : '';
+    c.style.left = pos >= 2 ? m : '';
+    c.style.display = 'block';
+    avoidTicker();
+  }
+
+  function clockLoop() {
+    updateClock();
+    const now = new Date();
+    setTimeout(clockLoop, 60000 - (now.getSeconds() * 1000 + now.getMilliseconds()) + 50);
+  }
+
+  // ------------------------------------------------------------ テロップ
+
+  const ticker = { el: $('#ticker'), span: $('#ticker span'), msg: null, offset: 0, passes: 0, raf: 0, last: 0, width: 0 };
+  let announcedStandingId = null;
+
+  function avoidTicker() {
+    const c = $('#clock');
+    const m = ticker.msg;
+    const h = m ? ticker.el.offsetHeight : 0;
+    const bottom = (cfg.clockPosition || 0) % 2 === 1;
+    c.style.transform = !m || !h ? '' : bottom && m.position === 0 ? `translateY(${-h}px)` : !bottom && m.position === 1 ? `translateY(${h}px)` : '';
+  }
+
+  function stopTicker() {
+    cancelAnimationFrame(ticker.raf);
+    ticker.msg = null;
+    ticker.el.style.display = 'none';
+    avoidTicker();
+  }
+
+  function showTicker(m) {
+    ticker.msg = m;
+    const base = Math.min(innerWidth, innerHeight);
+    const size = base / [20, 13, 9][m.size ?? 1];
+    const t = ticker.el;
+    t.style.display = 'block';
+    t.style.height = size * 1.7 + 'px';
+    t.style.top = m.position === 1 ? '0' : '';
+    t.style.bottom = m.position === 1 ? '' : '0';
+    t.style.background = ['#000c', '#1565c0e6', '#c62828f0'][m.style ?? 0];
+    ticker.span.style.fontSize = size + 'px';
+    ticker.span.textContent = m.text;
+    ticker.width = ticker.span.offsetWidth;
+    ticker.offset = innerWidth;
+    ticker.passes = 0;
+    ticker.last = 0;
+    ticker.size = size;
+    cancelAnimationFrame(ticker.raf);
+    ticker.raf = requestAnimationFrame(frame);
+    avoidTicker();
+  }
+
+  function frame(ts) {
+    const m = ticker.msg;
+    if (!m) return;
+    const dt = ticker.last ? (ts - ticker.last) / 1000 : 0;
+    ticker.last = ts;
+    // 1秒に 3.5 / 5 / 7 文字分進む
+    ticker.offset -= ticker.size * [3.5, 5, 7][m.speed ?? 1] * dt;
+    if (ticker.offset < -ticker.width) {
+      ticker.passes++;
+      if (m.repeat >= 1 && ticker.passes >= m.repeat) {
+        stopTicker();
+        nextTicker();
+        return;
+      }
+      ticker.offset = innerWidth;
+    }
+    ticker.span.style.left = ticker.offset + 'px';
+    ticker.raf = requestAnimationFrame(frame);
+  }
+
+  /** 次のテロップを流す（回数指定のものを優先し、流している間は終わるまで待つ） */
+  async function nextTicker() {
+    const current = ticker.msg;
+    let r;
+    try {
+      if (current && current.repeat !== 0) {
+        r = await getJson('/local/ticker?take=0');
+        if (r.stop) stopTicker();
+        else return; // 回数指定のものが終わるまで待つ
+      }
+      r = await getJson('/local/ticker?take=1');
+    } catch (e) { return; }
+    if (r.stop) stopTicker();
+    const next = r.queued || r.standing;
+    if (!next) { stopTicker(); return; }
+    if (ticker.msg && ticker.msg.id === next.id) return;
+    showTicker(next);
+    if (r.queued || announcedStandingId !== next.id) {
+      announce(next);
+      if (next.repeat === 0) announcedStandingId = next.id;
+    }
+  }
+
+  let audio;
+  async function announce(m) {
+    if (m.chime) {
+      try {
+        audio = audio || new AudioContext();
+        if (audio.state === 'suspended') await audio.resume();
+        const t0 = audio.currentTime + 0.05;
+        [[659.25, 0], [523.25, 0.55]].forEach(([f, s]) => {
+          for (const [mul, vol] of [[1, 0.35], [2, 0.09]]) {
+            const o = audio.createOscillator(); const g = audio.createGain();
+            o.frequency.value = f * mul;
+            g.gain.setValueAtTime(0, t0 + s);
+            g.gain.linearRampToValueAtTime(vol, t0 + s + 0.005);
+            g.gain.exponentialRampToValueAtTime(0.0001, t0 + s + 1.6);
+            o.connect(g).connect(audio.destination);
+            o.start(t0 + s); o.stop(t0 + s + 1.7);
+          }
+        });
+        await sleep(1800);
+      } catch (e) {}
+    }
+    if (m.speak && 'speechSynthesis' in window) {
+      const u = new SpeechSynthesisUtterance(m.text);
+      u.lang = 'ja-JP';
+      const voices = speechSynthesis.getVoices().filter((v) => v.lang === 'ja-JP');
+      u.voice = voices.find((v) => /Nanami|Online/.test(v.name)) || voices[0] || null;
+      speechSynthesis.speak(u);
+    }
+  }
+
+  // ------------------------------------------------------------ 情報表示・操作
+
+  let forceWeather = false;
+  let infoTimer;
+  function updateInfo() {
+    $('#info').textContent = (mainZone?.info() || '（フォルダの区画がありません）') +
+      '\n→ ← 前・次　Space 一時停止　I 情報　（設定はタスクトレイのアイコンから）';
+  }
+  function showInfo() {
+    updateInfo();
+    $('#info').style.display = 'block';
+    clearTimeout(infoTimer);
+    infoTimer = setTimeout(() => { $('#info').style.display = 'none'; }, 5000);
+  }
+
+  addEventListener('keydown', (e) => {
+    if (!mainZone) return;
+    if (e.key === 'ArrowRight') { if (mainZone.paused) mainZone.togglePause(); mainZone.goto(1); showInfo(); }
+    else if (e.key === 'ArrowLeft') { if (mainZone.paused) mainZone.togglePause(); mainZone.goto(-1); showInfo(); }
+    else if (e.key === ' ') { e.preventDefault(); mainZone.togglePause(); showInfo(); }
+    else if (e.key === 'i' || e.key === 'I') { $('#info').style.display === 'block' ? ($('#info').style.display = 'none') : showInfo(); }
+  });
+
+  let idle;
+  addEventListener('mousemove', () => {
+    document.body.classList.remove('idle');
+    clearTimeout(idle);
+    idle = setTimeout(() => document.body.classList.add('idle'), 3000);
+  });
+  document.body.classList.add('idle');
+
+  // ------------------------------------------------------------ 起動
+
+  async function start() {
+    try { cfg = await getJson('/local/config'); }
+    catch (e) { setTimeout(start, 3000); return; }
+    forceWeather = new URLSearchParams(location.search).has('weather');
+    zones = [];
+    let main = true;
+    for (let i = 0; i < cfg.zoneCount; i++) {
+      if (cfg.zoneTypes[i] === 1) zones.push(new WeatherZone());
+      else { zones.push(new MediaZone(i, main)); main = false; }
+    }
+    mainZone = zones.find((z) => z instanceof MediaZone) || null;
+    arrange();
+    zones.forEach((z) => z.start());
+    clockLoop();
+    nextTicker();
+    // 設定・ファイル・テロップの変更をサーバーから受け取る
+    if (new URLSearchParams(location.search).has('noevents')) return;
+    const es = new EventSource('/local/events');
+    es.onmessage = (e) => {
+      if (e.data === 'settings') location.reload();
+      else if (e.data === 'content') zones.forEach((z) => (z instanceof MediaZone ? z.reload() : null));
+      else if (e.data === 'ticker') nextTicker();
+    };
+  }
+  start();
+})();
+</script>
+</body>
+</html>

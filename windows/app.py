@@ -1,0 +1,275 @@
+"""
+サイネージ（Windows 版）
+タスクトレイに常駐し、再生サーバーを動かして Edge を全画面（キオスクモード）で開く。
+
+  Signage.exe                 通常の起動
+  Signage.exe --no-player     再生画面を開かずに起動（設定・管理だけ）
+"""
+
+import argparse
+import ctypes
+import ctypes.wintypes as wt
+import os
+import subprocess
+import sys
+import threading
+import time
+import webbrowser
+from datetime import datetime
+from pathlib import Path
+
+import store as st
+from peers import Peers
+from server import VERSION, Server, local_addresses
+
+APP_NAME = "SignagePlayer"
+EDGE_PROFILE = st.APP_DIR / "edge"
+
+
+# ---------------------------------------------------------------- Windows の機能
+
+def single_instance() -> bool:
+    """二重起動していなければ True"""
+    handle = ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\SignagePlayerMutex")
+    single_instance.handle = handle  # 終了するまで保持
+    return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
+
+
+def keep_awake(on: bool):
+    """再生中は画面の消灯・スリープを防ぐ"""
+    ES_CONTINUOUS, ES_SYSTEM_REQUIRED, ES_DISPLAY_REQUIRED = 0x80000000, 0x00000001, 0x00000002
+    flags = ES_CONTINUOUS | (ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED if on else 0)
+    ctypes.windll.kernel32.SetThreadExecutionState(flags)
+
+
+def monitors() -> list:
+    """接続されているモニターの一覧 [{index, name, x, y, width, height, primary}]"""
+    result = []
+
+    class MONITORINFOEXW(ctypes.Structure):
+        _fields_ = [("cbSize", wt.DWORD), ("rcMonitor", wt.RECT), ("rcWork", wt.RECT),
+                    ("dwFlags", wt.DWORD), ("szDevice", wt.WCHAR * 32)]
+
+    MonitorEnumProc = ctypes.WINFUNCTYPE(ctypes.c_int, wt.HMONITOR, wt.HDC, ctypes.POINTER(wt.RECT), wt.LPARAM)
+
+    def callback(hmon, hdc, rect, data):
+        info = MONITORINFOEXW()
+        info.cbSize = ctypes.sizeof(MONITORINFOEXW)
+        ctypes.windll.user32.GetMonitorInfoW(hmon, ctypes.byref(info))
+        r = info.rcMonitor
+        result.append({
+            "index": len(result),
+            "name": info.szDevice.replace("\\\\.\\", ""),
+            "x": r.left, "y": r.top, "width": r.right - r.left, "height": r.bottom - r.top,
+            "primary": bool(info.dwFlags & 1),
+        })
+        return 1
+
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+    ctypes.windll.user32.EnumDisplayMonitors(None, None, MonitorEnumProc(callback), 0)
+    result.sort(key=lambda m: (not m["primary"], m["x"], m["y"]))
+    for i, m in enumerate(result):
+        m["index"] = i
+    return result
+
+
+def exe_command() -> str:
+    if getattr(sys, "frozen", False):
+        return f'"{sys.executable}"'
+    return f'"{Path(sys.executable).with_name("pythonw.exe")}" "{Path(__file__).resolve()}"'
+
+
+def set_autostart(on: bool):
+    """Windows にサインインしたときに自動で起動する（このユーザーのみ）"""
+    import winreg
+    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0,
+                         winreg.KEY_SET_VALUE)
+    with key:
+        if on:
+            winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, exe_command())
+        else:
+            try:
+                winreg.DeleteValue(key, APP_NAME)
+            except FileNotFoundError:
+                pass
+
+
+def find_edge():
+    import winreg
+    for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+        try:
+            with winreg.OpenKey(root, r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe") as k:
+                path = winreg.QueryValue(k, None)
+                if path and Path(path).exists():
+                    return path
+        except OSError:
+            pass
+    for base in (os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles"), os.environ.get("LOCALAPPDATA")):
+        if base:
+            p = Path(base) / "Microsoft" / "Edge" / "Application" / "msedge.exe"
+            if p.exists():
+                return str(p)
+    return None
+
+
+# ---------------------------------------------------------------- アプリ
+
+class App:
+    def __init__(self, args):
+        self.args = args
+        self.first_run = not st.CONFIG_FILE.exists()
+        self.store = st.Store()
+        self.server = Server(self.store)
+        self.server.monitors = monitors
+        self.server.open_player = self.open_player
+        self.server.set_autostart = set_autostart
+        self.peers = None
+        self.tray = None
+        self.player_open = False
+
+    def run(self):
+        self.server.start()
+        if not self.args.no_mdns:
+            self.peers = Peers(self.store, self.server.port, VERSION, local_addresses)
+            self.server.peers = self.peers
+            threading.Thread(target=self.peers.start, daemon=True).start()
+        threading.Thread(target=self.schedule_loop, daemon=True).start()
+        if self.store.get("autoStart"):
+            set_autostart(True)  # 実行ファイルの場所が変わっていても登録し直す
+        if not self.args.no_player:
+            self.open_player()
+        if self.first_run:
+            self.open_settings()
+        if self.args.no_tray:
+            try:
+                while True:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                self.quit()
+        else:
+            self.run_tray()
+
+    def schedule_loop(self):
+        """1分ごとに予約したテロップの時刻を確認する"""
+        while True:
+            now = datetime.now()
+            time.sleep(60 - now.second - now.microsecond / 1e6 + 0.2)
+            try:
+                self.store.check_schedules()
+            except Exception:
+                pass
+
+    # -------- 再生画面（Edge のキオスクモード）
+
+    def open_player(self):
+        self.close_player()
+        edge = find_edge()
+        url = f"http://127.0.0.1:{self.server.port}/player"
+        mons = monitors()
+        idx = self.store.get("monitor") or 0
+        m = mons[idx] if 0 <= idx < len(mons) else (mons[0] if mons else None)
+        if not edge:
+            webbrowser.open(url)
+            return
+        args = [
+            edge, f"--user-data-dir={EDGE_PROFILE}", "--no-first-run", "--no-default-browser-check",
+            "--kiosk", url, "--edge-kiosk-type=fullscreen",
+            "--autoplay-policy=no-user-gesture-required",
+            "--disable-features=Translate,msEdgeTranslate",
+            "--overscroll-history-navigation=0", "--disable-pinch",
+        ]
+        if m:
+            args += [f"--window-position={m['x']},{m['y']}", f"--window-size={m['width']},{m['height']}"]
+        subprocess.Popen(args, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        self.player_open = True
+        keep_awake(True)
+
+    def close_player(self):
+        """このアプリ用のプロファイルで開いた Edge だけを閉じる（普段使いの Edge には触れない）"""
+        profile = str(EDGE_PROFILE).replace("'", "''")
+        ps = ("Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | "
+              f"Where-Object {{ $_.CommandLine -like '*{profile}*' }} | "
+              "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), capture_output=True)
+        if self.player_open:
+            self.player_open = False
+            keep_awake(False)
+
+    def open_settings(self):
+        webbrowser.open(f"http://127.0.0.1:{self.server.port}/settings")
+
+    def open_admin(self):
+        webbrowser.open(f"http://127.0.0.1:{self.server.port}/")
+
+    def quit(self):
+        self.close_player()
+        if self.peers:
+            self.peers.stop()
+        self.server.stop()
+        keep_awake(False)
+        if self.tray:
+            self.tray.stop()
+
+    # -------- タスクトレイ
+
+    def run_tray(self):
+        import pystray
+        from PIL import Image, ImageDraw
+
+        img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        d.rounded_rectangle([4, 10, 60, 48], 6, fill=(30, 136, 229, 255))
+        d.polygon([(26, 19), (26, 39), (42, 29)], fill="white")
+        d.rectangle([22, 52, 42, 57], fill=(30, 136, 229, 255))
+
+        def item(text, fn, default=False):
+            return pystray.MenuItem(text, lambda icon, _: fn(), default=default)
+
+        def autostart_checked(_):
+            return bool(self.store.get("autoStart"))
+
+        def toggle_autostart(icon, _):
+            on = not self.store.get("autoStart")
+            set_autostart(on)
+            self.store.update({"autoStart": on})
+
+        menu = pystray.Menu(
+            item("設定を開く", self.open_settings, default=True),
+            item("再生画面を開く（全画面）", self.open_player),
+            item("再生画面を閉じる", self.close_player),
+            item("管理画面を開く", self.open_admin),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Windows の起動時に自動で開始", toggle_autostart, checked=autostart_checked),
+            pystray.Menu.SEPARATOR,
+            item("終了", self.quit),
+        )
+        self.tray = pystray.Icon(APP_NAME, img, f"サイネージ（{self.store.device_name}）", menu)
+        self.tray.run()
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--no-player", action="store_true", help="再生画面を開かない")
+    p.add_argument("--no-tray", action="store_true", help="タスクトレイを使わない（テスト用）")
+    p.add_argument("--no-mdns", action="store_true", help="端末の検出を行わない（テスト用）")
+    args = p.parse_args()
+    if not single_instance():
+        # すでに起動している場合は設定画面を開くだけ
+        for port in range(8080, 8090):
+            try:
+                import urllib.request
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/local/settings", timeout=1)
+                webbrowser.open(f"http://127.0.0.1:{port}/settings")
+                break
+            except Exception:
+                continue
+        return
+    App(args).run()
+
+
+if __name__ == "__main__":
+    main()
