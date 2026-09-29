@@ -22,6 +22,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.RadioGroup
+import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.Switch
 import android.widget.TextView
@@ -86,6 +87,11 @@ class MainActivity : Activity() {
         setupClock()
         setupWeather()
         setupAdmin()
+
+        // テレビのリモコン操作向け：選択中の項目を枠で表示し、先頭から始める
+        val scroll = findViewById<ScrollView>(R.id.settingsScroll)
+        RemoteFocus.install(this, scroll)
+        RemoteFocus.focusFirst(scroll, findViewById(R.id.layoutSingle))
 
         val group = findViewById<RadioGroup>(R.id.orientationGroup)
         group.check(
