@@ -420,6 +420,8 @@ object AdminServer {
         val settings = JSONObject()
             .put("layout", prefs.layout)
             .put("splitPercent", prefs.splitPercent)
+            .put("mainPercent", prefs.mainPercent)
+            .put("sidePercent", prefs.sidePercent)
             .put("zoneTypes", JSONArray((0 until Prefs.MAX_ZONES).map(prefs::zoneType)))
             .put("imageSeconds", prefs.imageSeconds)
             .put("shuffle", prefs.shuffle)
@@ -450,6 +452,8 @@ object AdminServer {
     private fun applySettings(prefs: Prefs, j: JSONObject) {
         if (j.has("layout")) prefs.layout = j.getInt("layout").coerceIn(0, 3)
         if (j.has("splitPercent")) prefs.splitPercent = j.getInt("splitPercent")
+        if (j.has("mainPercent")) prefs.mainPercent = j.getInt("mainPercent")
+        if (j.has("sidePercent")) prefs.sidePercent = j.getInt("sidePercent")
         j.optJSONArray("zoneTypes")?.let { a ->
             for (i in 0 until minOf(a.length(), Prefs.MAX_ZONES)) {
                 val t = a.getInt(i)

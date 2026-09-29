@@ -40,6 +40,12 @@ class MainActivity : Activity() {
         private const val DEFAULT_OFFICE = "130000" // 東京都
         /** 2分割の比率の選択肢（区画1 の %） */
         private val SPLIT_CHOICES = listOf(25, 30, 40, 50, 60, 70, 75)
+        /** メイン＋サイドの比率の選択肢（メインの %・サイド1 の %） */
+        private val MAIN_CHOICES = listOf(50, 60, 65, 70, 75, 80)
+        private val SIDE_CHOICES = listOf(30, 40, 50, 60, 70)
+
+        private fun nearest(choices: List<Int>, value: Int) =
+            choices.indices.minByOrNull { kotlin.math.abs(choices[it] - value) } ?: 0
     }
 
     private lateinit var prefs: Prefs
@@ -297,21 +303,42 @@ class MainActivity : Activity() {
             row.findViewWithTag<TextView>("label")?.text = "区画${i + 1}（${names.getOrElse(i) { "" }}）の表示内容"
         }
 
-        // 2分割のときだけ比率を選ぶ（例: 左 70% : 右 30%）
-        val split = count == 2
-        findViewById<View>(R.id.splitRow).visibility = if (split) View.VISIBLE else View.GONE
-        if (split) {
-            val spinner = findViewById<Spinner>(R.id.splitSpinner)
+        // 分割しているときは比率を選ぶ（例: 左 70% : 右 30%、メイン 70% : サイド 30%）
+        findViewById<View>(R.id.splitRow).visibility = if (count >= 2) View.VISIBLE else View.GONE
+        val spinner = findViewById<Spinner>(R.id.splitSpinner)
+        val label = findViewById<TextView>(R.id.splitLabel)
+        val threeZones = count == 3
+        findViewById<View>(R.id.splitLabel2).visibility = if (threeZones) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.splitSpinner2).visibility = if (threeZones) View.VISIBLE else View.GONE
+        if (count == 2) {
+            label.text = "画面の比率（区画1 : 区画2）"
             spinner.adapter = adapter(SPLIT_CHOICES.map { "${names[0]} $it% : ${names[1]} ${100 - it}%" })
-            val current = SPLIT_CHOICES.minByOrNull { kotlin.math.abs(it - prefs.splitPercent) } ?: 50
-            spinner.setSelection(SPLIT_CHOICES.indexOf(current))
+            spinner.setSelection(nearest(SPLIT_CHOICES, prefs.splitPercent))
+        } else if (threeZones) {
+            label.text = "メインとサイドの比率（区画1 : 区画2・3）"
+            spinner.adapter = adapter(MAIN_CHOICES.map { "メイン $it% : サイド ${100 - it}%" })
+            spinner.setSelection(nearest(MAIN_CHOICES, prefs.mainPercent))
+            val side = findViewById<Spinner>(R.id.splitSpinner2)
+            side.adapter = adapter(SIDE_CHOICES.map { "サイド1 $it% : サイド2 ${100 - it}%" })
+            side.setSelection(nearest(SIDE_CHOICES, prefs.sidePercent))
         }
     }
 
     private fun setupSplit() {
         findViewById<Spinner>(R.id.splitSpinner).onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                SPLIT_CHOICES.getOrNull(position)?.let { prefs.splitPercent = it }
+                if (Prefs.zoneCount(prefs.layout) == 3) {
+                    MAIN_CHOICES.getOrNull(position)?.let { prefs.mainPercent = it }
+                } else {
+                    SPLIT_CHOICES.getOrNull(position)?.let { prefs.splitPercent = it }
+                }
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+        findViewById<Spinner>(R.id.splitSpinner2).onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                SIDE_CHOICES.getOrNull(position)?.let { prefs.sidePercent = it }
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}

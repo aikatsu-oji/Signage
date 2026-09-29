@@ -202,6 +202,10 @@
                 </select></label>
               <label class="field" id="splitField"><span>比率（区画1 : 区画2）</span>
                 <select name="splitPercent"></select></label>
+              <label class="field" id="mainField"><span>メインとサイドの比率（区画1 : 区画2・3）</span>
+                <select name="mainPercent"></select></label>
+              <label class="field" id="sideField"><span>サイドの比率（区画2 : 区画3）</span>
+                <select name="sidePercent"></select></label>
               <label class="field"><span>区画1 の表示内容</span><select name="zone0"></select></label>
               <label class="field" data-zone="1"><span>区画2 の表示内容</span><select name="zone1"></select></label>
               <label class="field" data-zone="2"><span>区画3 の表示内容</span><select name="zone2"></select></label>
@@ -686,6 +690,8 @@
 
   const ZONE_TYPES = [['0', 'フォルダの画像・動画'], ['1', '天気予報']];
   const SPLITS = [25, 30, 40, 50, 60, 70, 75];
+  const MAINS = [50, 60, 65, 70, 75, 80];
+  const SIDES = [30, 40, 50, 60, 70];
 
   function renderSettings(dev) {
     const s = dev.state.settings;
@@ -696,6 +702,8 @@
       sel.value = String(s.zoneTypes[i] ?? 0);
     }
     f.elements.splitPercent.innerHTML = SPLITS.map((p) => `<option value="${p}">${p} : ${100 - p}</option>`).join('');
+    f.elements.mainPercent.innerHTML = MAINS.map((p) => `<option value="${p}">メイン ${p} : サイド ${100 - p}</option>`).join('');
+    f.elements.sidePercent.innerHTML = SIDES.map((p) => `<option value="${p}">サイド1 ${p} : サイド2 ${100 - p}</option>`).join('');
     for (const el of f.elements) {
       if (!el.name || el.name.startsWith('zone')) continue;
       const v = s[el.name];
@@ -703,6 +711,8 @@
       if (el.type === 'checkbox') el.checked = !!v; else el.value = String(v);
     }
     if (!SPLITS.includes(s.splitPercent)) f.elements.splitPercent.value = '50';
+    if (!MAINS.includes(s.mainPercent)) f.elements.mainPercent.value = '70';
+    if (!SIDES.includes(s.sidePercent)) f.elements.sidePercent.value = '50';
     $('#weatherPlace').textContent = s.weatherPlace ? `（地域：${s.weatherPlace}）` : '';
     syncLayoutFields();
   }
@@ -712,6 +722,8 @@
     const layout = Number(f.elements.layout.value);
     const count = layout === 3 ? 3 : layout === 0 ? 1 : 2;
     $('#splitField').hidden = count !== 2;
+    $('#mainField').hidden = count !== 3;
+    $('#sideField').hidden = count !== 3;
     f.querySelectorAll('[data-zone]').forEach((el) => { el.hidden = Number(el.dataset.zone) >= count; });
   }
   $('#settings').elements.layout.addEventListener('change', syncLayoutFields);

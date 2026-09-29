@@ -5,14 +5,15 @@
 | | 内容 |
 |---|---|
 | [android/](android/) | **Android アプリ**（メイン）。端末内・USBメモリのフォルダを再生。画面分割・天気予報・時計・電源ON時の自動再生に対応 |
-| [signage.py](signage.py) / [player.html](player.html) | **PC 版**。PC 上のフォルダをブラウザで再生（Python 標準ライブラリのみ） |
+| [windows/](windows/) | **Windows 版**（Signage.exe）。Edge の全画面で再生し、タスクトレイに常駐。Android 版と同じ機能・同じ管理画面で、まとめて管理できる |
+| [signage.py](signage.py) / [player.html](player.html) | 簡易 PC 版（旧版）。PC 上のフォルダをブラウザで再生（Python 標準ライブラリのみ） |
 
 ## Android 版
 
 詳しくは [android/README.md](android/README.md) を参照してください。
 
 - フォルダ内の画像（jpg / png / gif / webp など）と動画（mp4 / webm / mkv など）を自然順でループ再生。ファイルの追加・削除は自動で反映
-- 画面分割：1画面 / 左右2分割 / 上下2分割 / メイン＋サイド。区画ごとにフォルダまたは天気予報を割り当て
+- 画面分割：1画面 / 左右2分割 / 上下2分割 / メイン＋サイド（比率を選択可）。区画ごとにフォルダまたは天気予報を割り当て
 - 天気予報（気象庁）：日ごと・週間・3時間ごとの予報を一定間隔で表示。市区町村を選んで表示
 - 再生中の時計表示（位置・大きさを選択）
 - 管理画面：同じ Wi-Fi の PC・スマホのブラウザから、再生中のまま画像・動画の追加・削除や設定の変更。複数台を自動で見つけて一覧表示し、ファイル・設定をまとめて送れる
@@ -22,6 +23,7 @@
 ### インストール
 
 [Releases](../../releases) の `signage.apk` を端末にインストールしてください（Android 8.0 以降）。
+Windows 版は同じページの `Signage.exe` をダウンロードして実行してください（詳しくは [windows/README.md](windows/README.md)）。
 
 ### ビルド
 

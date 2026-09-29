@@ -61,11 +61,23 @@
             android:orientation="vertical">
 
             <TextView
+                android:id="@+id/splitLabel"
                 style="@style/SubLabel"
                 android:text="画面の比率（区画1 : 区画2）" />
 
             <Spinner
                 android:id="@+id/splitSpinner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp" />
+
+            <TextView
+                android:id="@+id/splitLabel2"
+                style="@style/SubLabel"
+                android:text="サイドの比率（区画2 : 区画3）" />
+
+            <Spinner
+                android:id="@+id/splitSpinner2"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:minHeight="48dp" />

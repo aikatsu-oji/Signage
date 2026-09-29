@@ -149,8 +149,10 @@ class PlayerActivity : Activity() {
                 }
             }
             Prefs.LAYOUT_MAIN_SIDE -> box(vertical = !landscape).apply {
-                add(v[0], 7f)
-                add(box(vertical = landscape).apply { add(v[1], 1f); add(v[2], 1f) }, 3f)
+                val main = prefs.mainPercent.toFloat()
+                val side = prefs.sidePercent.toFloat()
+                add(v[0], main)
+                add(box(vertical = landscape).apply { add(v[1], side); add(v[2], 100f - side) }, 100f - main)
             }
             else -> v[0]
         }
