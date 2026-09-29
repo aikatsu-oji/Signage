@@ -117,6 +117,24 @@ class Prefs(context: Context) {
         return pin
     }
 
+    /** 6桁の数字なら PIN として設定する（複数台で同じ PIN にそろえるため） */
+    fun setAdminPin(pin: String): Boolean {
+        if (!Regex("\\d{6}").matches(pin)) return false
+        sp.edit().putString("adminPin", pin).apply()
+        return true
+    }
+
+    /** 端末を見分けるための ID（最初に作ったものをずっと使う） */
+    val deviceId: String
+        get() = sp.getString("deviceId", null)
+            ?: java.util.UUID.randomUUID().toString().also { sp.edit().putString("deviceId", it).apply() }
+
+    /** 管理画面の一覧に出す端末名（例: 入口, レジ横） */
+    var deviceName: String
+        get() = sp.getString("deviceName", null)?.takeIf { it.isNotBlank() }
+            ?: "${android.os.Build.MODEL}-${deviceId.take(4)}"
+        set(v) = sp.edit().putString("deviceName", v.trim().take(40)).apply()
+
     // ---- 画面分割
 
     /** 画面の分割方法 (LAYOUT_*) */

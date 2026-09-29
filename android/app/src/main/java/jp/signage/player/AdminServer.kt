@@ -92,6 +92,7 @@ object AdminServer {
                 return@thread
             }
             notify(EVENT_SERVER)
+            Peers.start(app, s.localPort)
             while (!s.isClosed) {
                 val client = try { s.accept() } catch (e: IOException) { break }
                 pool.execute { handle(client) }
@@ -100,6 +101,7 @@ object AdminServer {
     }
 
     private fun stop() {
+        Peers.stop()
         server?.let { runCatching { it.close() } }
         server = null
         port = 0
@@ -158,8 +160,10 @@ object AdminServer {
             s.soTimeout = 60_000
             val input = BufferedInputStream(s.getInputStream())
             val out = BufferedOutputStream(s.getOutputStream())
+            var cors: Map<String, String> = emptyMap()
             val response = try {
                 val req = readRequest(input) ?: return
+                cors = corsHeaders(req)
                 // curl などは大きな送信の前に確認を求めるので、続けてよいと返す
                 if (req.headers["expect"]?.contains("100-continue", ignoreCase = true) == true) {
                     out.write("HTTP/1.1 100 Continue\r\n\r\n".toByteArray())
@@ -173,7 +177,7 @@ object AdminServer {
             }
             runCatching {
                 val reason = when (response.status) {
-                    200 -> "OK"; 400 -> "Bad Request"; 401 -> "Unauthorized"; 403 -> "Forbidden"
+                    200 -> "OK"; 204 -> "No Content"; 400 -> "Bad Request"; 401 -> "Unauthorized"; 403 -> "Forbidden"
                     404 -> "Not Found"; 413 -> "Payload Too Large"; 429 -> "Too Many Requests"; else -> "Error"
                 }
                 val head = StringBuilder()
@@ -182,7 +186,7 @@ object AdminServer {
                     .append("Content-Length: ${response.length}\r\n")
                     .append("Cache-Control: no-store\r\n")
                     .append("Connection: close\r\n")
-                response.extraHeaders.forEach { (k, v) -> head.append("$k: $v\r\n") }
+                (response.extraHeaders + cors).forEach { (k, v) -> head.append("$k: $v\r\n") }
                 head.append("\r\n")
                 out.write(head.toString().toByteArray(Charsets.UTF_8))
                 response.write(out)
@@ -219,8 +223,45 @@ object AdminServer {
 
     // ---------------------------------------------------------------- ルーティング
 
+    /**
+     * 別の端末の管理画面（同じ LAN 内のアドレスの http ページ）からの操作を許可する。
+     * インターネット上のページからは許可しない。
+     */
+    private fun corsHeaders(req: Request): Map<String, String> {
+        val origin = req.headers["origin"] ?: return emptyMap()
+        if (!isLanOrigin(origin)) return emptyMap()
+        val headers = mutableMapOf(
+            "Access-Control-Allow-Origin" to origin,
+            "Vary" to "Origin",
+            "Access-Control-Allow-Headers" to "X-Pin, Content-Type",
+            "Access-Control-Allow-Methods" to "GET, POST, PUT, OPTIONS",
+            "Access-Control-Max-Age" to "600",
+        )
+        // Chrome の Private Network Access の確認
+        if (req.headers["access-control-request-private-network"] == "true") {
+            headers["Access-Control-Allow-Private-Network"] = "true"
+        }
+        return headers
+    }
+
+    private val IPV4 = Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")
+
+    private fun isLanOrigin(origin: String): Boolean {
+        val uri = Uri.parse(origin)
+        if (uri.scheme != "http") return false
+        val host = uri.host ?: return false
+        if (host == "localhost") return true
+        if (!IPV4.matches(host)) return false // 名前解決はしない
+        return runCatching { isLan(InetAddress.getByName(host)) }.getOrDefault(false)
+    }
+
     private fun route(req: Request, from: InetAddress): Response {
         if (!isLan(from)) throw HttpError(403, "同じネットワーク内からのみ利用できます")
+        if (req.method == "OPTIONS") {
+            val origin = req.headers["origin"]
+            if (origin == null || !isLanOrigin(origin)) throw HttpError(403, "許可されていない接続元です")
+            return Response(204, "text/plain", 0) {}
+        }
 
         if (req.method == "GET" && (req.path == "/" || req.path == "/index.html")) {
             val html = app.assets.open("admin.html").use { it.readBytes() }
@@ -252,6 +293,25 @@ object AdminServer {
                 val type = android.webkit.MimeTypeMap.getSingleton()
                     .getMimeTypeFromExtension(entry.name.substringAfterLast('.', "").lowercase()) ?: "application/octet-stream"
                 Response(200, type, entry.size) { out -> stream.use { it.copyTo(out, 256 * 1024) } }
+            }
+            "GET /api/devices" -> {
+                val list = JSONArray()
+                Peers.list().forEach {
+                    list.put(JSONObject().put("id", it.id).put("name", it.name).put("url", it.url).put("version", it.version))
+                }
+                json(200, JSONObject().put("id", prefs.deviceId).put("name", prefs.deviceName).put("peers", list))
+            }
+            "POST /api/pin" -> {
+                if (!prefs.setAdminPin(req.json().optString("pin"))) throw HttpError(400, "PIN は6桁の数字にしてください")
+                json(200, JSONObject().put("ok", true))
+            }
+            "POST /api/name" -> {
+                val name = req.json().optString("name").trim()
+                if (name.isEmpty()) throw HttpError(400, "端末名を入力してください")
+                prefs.deviceName = name
+                Peers.start(app, port) // 新しい名前で登録し直す
+                notify(EVENT_SETTINGS)
+                json(200, JSONObject().put("ok", true).put("name", prefs.deviceName))
             }
             "POST /api/reload" -> {
                 notify(EVENT_CONTENT)
@@ -357,6 +417,8 @@ object AdminServer {
             .put("weatherPlace", prefs.weatherCityName ?: prefs.weatherAreaName ?: "")
         val version = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull()
         return JSONObject()
+            .put("id", prefs.deviceId)
+            .put("name", prefs.deviceName)
             .put("device", android.os.Build.MODEL)
             .put("version", version ?: "")
             .put("zones", zones)

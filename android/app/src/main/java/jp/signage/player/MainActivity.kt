@@ -125,7 +125,27 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         super.onPause()
-        saveSeconds()
+        if (!reloadingFromAdmin) saveSeconds()
+    }
+
+    /**
+     * 管理画面で設定が変わったとき、画面を作り直して新しい値を表示する。
+     * 作り直す前の入力欄・スイッチの状態を引き継ぐと、その復元で受け取った設定が古い値に戻ってしまうため、
+     * 画面の状態は保存しない。
+     */
+    private var reloadingFromAdmin = false
+
+    private fun reloadFromAdmin() {
+        reloadingFromAdmin = true
+        recreate()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        if (reloadingFromAdmin) {
+            outState.putBoolean("reloaded", true) // 自動再生を再度始めないよう、空でない状態として渡す
+            return
+        }
+        super.onSaveInstanceState(outState)
     }
 
     override fun onDestroy() {
@@ -357,7 +377,7 @@ class MainActivity : Activity() {
         when (event) {
             AdminServer.EVENT_SERVER -> updateAdminInfo()
             AdminServer.EVENT_CONTENT -> refreshFolder()
-            AdminServer.EVENT_SETTINGS -> recreate() // 別の端末で設定が変わったので表示を作り直す
+            AdminServer.EVENT_SETTINGS -> reloadFromAdmin() // 別の端末で設定が変わったので表示を作り直す
         }
     }
 
@@ -384,10 +404,8 @@ class MainActivity : Activity() {
                 Toast.makeText(this, "ブラウザがありません", Toast.LENGTH_SHORT).show()
             }
         }
-        findViewById<Button>(R.id.adminPinReset).setOnClickListener {
-            prefs.resetAdminPin()
-            updateAdminInfo()
-        }
+        findViewById<Button>(R.id.adminPinReset).setOnClickListener { editPin() }
+        findViewById<Button>(R.id.adminName).setOnClickListener { editDeviceName() }
         updateAdminInfo()
     }
 
@@ -395,6 +413,7 @@ class MainActivity : Activity() {
         val info = findViewById<TextView>(R.id.adminInfo)
         val running = prefs.adminEnabled && AdminServer.isRunning
         findViewById<View>(R.id.adminPinReset).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.adminName).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
         findViewById<View>(R.id.adminOpenLocal).visibility = if (running) View.VISIBLE else View.GONE
         // 省電力の対象のままだと、再生画面を出していないときに外から接続できない端末がある
         val batteryLimited = prefs.adminEnabled && !isIgnoringBatteryOptimizations()
@@ -408,12 +427,63 @@ class MainActivity : Activity() {
                 buildString {
                     append(if (urls.isEmpty()) "Wi-Fi・LAN に接続されていません" else "ブラウザで開くアドレス：\n" + urls.joinToString("\n"))
                     append("\nPIN：${prefs.adminPin}")
+                    append("\n端末名：${prefs.deviceName}")
+                    append("\n\n同じネットワークのほかのサイネージ端末も、管理画面の「端末一覧」に自動で表示されます。")
                     append("\n\n同じネットワーク内の端末からのみ操作できます。")
                     append("\n開けない場合：アドレス末尾の :${AdminServer.port} まで入力しているか、")
                     append("PC・スマホが同じWi-Fi（ゲストWi-Fiではない）につながっているか確認してください。")
                 }
             }
         }
+    }
+
+    /** PIN を自分で決める（複数台を同じ PIN にそろえると、管理画面で一度に操作しやすい） */
+    private fun editPin() {
+        val input = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            filters = arrayOf(android.text.InputFilter.LengthFilter(6))
+            hint = "6桁の数字"
+        }
+        AlertDialog.Builder(this)
+            .setTitle("PINを変更")
+            .setMessage("複数台を使う場合は、すべての端末を同じ PIN にしておくと管理画面での操作が楽になります。")
+            .setView(input)
+            .setPositiveButton("設定") { _, _ ->
+                if (prefs.setAdminPin(input.text.toString())) {
+                    updateAdminInfo()
+                } else {
+                    Toast.makeText(this, "PIN は6桁の数字にしてください", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNeutralButton("ランダムに作る") { _, _ ->
+                prefs.resetAdminPin()
+                updateAdminInfo()
+            }
+            .setNegativeButton("キャンセル", null)
+            .show()
+    }
+
+    /** 管理画面の端末一覧に出す名前（例: 入口、レジ横） */
+    private fun editDeviceName() {
+        val input = EditText(this).apply {
+            setText(prefs.deviceName)
+            filters = arrayOf(android.text.InputFilter.LengthFilter(40))
+            setSelectAllOnFocus(true)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("端末名を変更")
+            .setMessage("管理画面の端末一覧に表示される名前です（例：入口、レジ横）。")
+            .setView(input)
+            .setPositiveButton("設定") { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isNotEmpty()) {
+                    prefs.deviceName = name
+                    if (AdminServer.isRunning) Peers.start(this, AdminServer.port) // 新しい名前で登録し直す
+                    updateAdminInfo()
+                }
+            }
+            .setNegativeButton("キャンセル", null)
+            .show()
     }
 
     private fun isIgnoringBatteryOptimizations() =
