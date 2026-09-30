@@ -109,6 +109,11 @@
   .verdict { font-size: 12px; font-weight: bold; }
   .verdict.v-ok { color: var(--ok); } .verdict.v-warn { color: #b06000; } .verdict.v-ng { color: var(--danger); }
   .fitnote { font-size: 11px; color: var(--sub); }
+  #importDialog { max-width: 560px; }
+  #importDialog fieldset label { display: flex; margin: 4px 0; }
+  #impTargets { display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow: auto; }
+  #impTargets label { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+  #impLog { max-height: 150px; overflow: auto; font-size: 12px; padding-left: 20px; margin: 8px 0 0; }
   .meta .btns { display: flex; gap: 4px; }
   .rule { font-size: 11px; color: var(--sub); }
   .rule.on { color: #b06000; }
@@ -221,6 +226,8 @@
           <div class="row">
             <button class="small primary" id="reloadBtn" title="フォルダを読み直して先頭から再生">今すぐ反映</button>
             <button class="small" id="renameBtn">端末名を変更</button>
+            <button class="small" id="exportBtn" title="この端末の設定をファイルに保存（別の端末へまとめて反映できます）">設定をエクスポート</button>
+            <button class="small" id="importBtn" title="保存した設定ファイルを読み込んで、選んだ端末にまとめて反映します">設定ファイルから反映</button>
             <button class="small" id="removeBtn" hidden>一覧から外す</button>
           </div>
         </div>
@@ -353,6 +360,31 @@
   <p class="sub">分割・比率は、画面分割カードの現在の内容（未保存の変更を含む）で計算します。ここで選ぶファイルは端末には送られません。</p>
   <div id="fitResults"></div>
   <div class="dlgrow" style="margin-top:12px; justify-content:flex-end"><button type="button" id="fitClose">閉じる</button></div>
+</dialog>
+
+<dialog id="importDialog">
+  <h3>設定ファイルから反映</h3>
+  <p class="sub">「設定をエクスポート」で保存したファイルを読み込み、選んだ端末にまとめて反映します。フォルダ・端末名・PIN・天気の地域・画像や動画のファイル本体は、端末ごとの設定なので含まれません。</p>
+  <div class="dlgrow" style="margin:8px 0">
+    <button type="button" class="primary" id="impPick">設定ファイルを選ぶ</button>
+    <input type="file" id="impFile" accept=".json,application/json" hidden>
+    <span class="sub" id="impInfo">ファイル未選択</span>
+  </div>
+  <fieldset id="impParts" disabled style="margin:8px 0">
+    <legend>反映する内容</legend>
+    <label class="check"><input type="checkbox" id="impSettings" checked> <span id="impSettingsLabel">設定（画面分割・再生・時計・天気予報）</span></label>
+    <label class="check"><input type="checkbox" id="impSchedules" checked> <span id="impSchedulesLabel">予約テロップ（反映先の予約は置き換わります）</span></label>
+    <label class="check"><input type="checkbox" id="impRules" checked> <span id="impRulesLabel">画像・動画ごとの再生条件（反映先に同じ区画・同じファイル名があるもののみ）</span></label>
+  </fieldset>
+  <fieldset style="margin:8px 0">
+    <legend>反映先の端末</legend>
+    <div id="impTargets"></div>
+  </fieldset>
+  <ol class="log" id="impLog"></ol>
+  <div class="dlgrow" style="margin-top:12px; justify-content:flex-end">
+    <button type="button" id="impClose">閉じる</button>
+    <button type="button" class="primary" id="impApply" disabled>反映する</button>
+  </div>
 </dialog>
 
 <div id="toast"></div>
@@ -590,6 +622,7 @@
     const ok = dev.status === 'ok' && dev.state;
     $('#reloadBtn').disabled = !ok;
     $('#renameBtn').disabled = !ok;
+    $('#exportBtn').disabled = !ok;
     $('#settingsSec').hidden = !ok;
     $('#scheduleSec').hidden = !ok;
     renderTickerTarget();
@@ -1257,22 +1290,21 @@
     if (typeof renderTickerTarget === 'function') renderTickerTarget();
   }
 
-  function logLine(text, cls = '') {
+  function logLine(text, cls = '', log = $('#bulkLog')) {
     const li = document.createElement('li');
     li.textContent = text;
     li.className = cls;
-    $('#bulkLog').append(li);
+    log.append(li);
     li.scrollIntoView({ block: 'nearest' });
     return li;
   }
 
   /** 各端末に順番に実行して結果を記録する */
-  async function forEachTarget(label, fn) {
-    const list = targets();
-    $('#bulkLog').replaceChildren();
+  async function forEachTarget(label, fn, list = targets(), log = $('#bulkLog')) {
+    log.replaceChildren();
     let ok = 0;
     for (const dev of list) {
-      const li = logLine(`${dev.name}：${label}…`);
+      const li = logLine(`${dev.name}：${label}…`, '', log);
       try {
         if (dev.status !== 'ok') await check(dev);
         if (dev.status !== 'ok') throw new Error(dev.status === 'pin' ? 'PIN が違います' : '応答なし');
@@ -1289,6 +1321,141 @@
     renderDevices();
     return ok;
   }
+
+  // ------------------------------------------------------------ 設定のエクスポート・一括反映
+
+  /** 設定ファイルに含める設定の項目（端末ごとに違うフォルダ・端末名・PIN・天気の地域は含めない） */
+  const EXPORT_KEYS = ['layout', 'splitPercent', 'mainPercent', 'sidePercent', 'zoneTypes', 'imageSeconds', 'shuffle', 'recursive',
+    'videoSound', 'videoCompat', 'fitMode', 'clockEnabled', 'clockPosition', 'clockSize',
+    'weatherEnabled', 'weatherIntervalMin', 'weatherSeconds', 'weatherTimeSeries'];
+  const EXPORT_KIND = 'signage-settings';
+
+  $('#exportBtn').addEventListener('click', async () => {
+    const dev = selected();
+    await check(dev);                       // 最新の設定を読み直してから書き出す
+    if (dev.status !== 'ok' || !dev.state) { toast('この端末に接続できていません'); renderDevices(); return; }
+    const st = dev.state;
+    const settings = {};
+    for (const k of EXPORT_KEYS) if (st.settings[k] !== undefined) settings[k] = st.settings[k];
+    const now = new Date();
+    const data = {
+      kind: EXPORT_KIND, version: 1, exportedAt: now.toISOString(),
+      source: { name: dev.name, device: st.device || '', appVersion: st.version || '' },
+      settings,
+      schedules: (st.ticker?.schedules || []).map(({ id, ...rest }) => rest),
+      fileRules: st.zones.filter((z) => z.type === 0).flatMap((z) => (z.files || []).filter((f) => f.rule).map((f) => ({ zone: z.index, name: f.name, rule: f.rule }))),
+    };
+    const p2 = (n) => String(n).padStart(2, '0');
+    const fname = `signage-settings_${dev.name.replace(/[\\/:*?"<>|\s]+/g, '_')}_${now.getFullYear()}${p2(now.getMonth() + 1)}${p2(now.getDate())}.json`;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = fname;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    toast(`「${dev.name}」の設定を保存しました（${fname}）`);
+  });
+
+  let importData = null;
+
+  function renderImportTargets() {
+    // 反映先：端末一覧でチェックした端末。ひとつもチェックがなければ、いま選んでいる端末
+    const pre = new Set(checked.size ? [...checked] : [selectedKey]);
+    const box = $('#impTargets');
+    box.replaceChildren();
+    for (const d of [...devices.values()].sort((a, b) => ((b.self ? 1 : 0) - (a.self ? 1 : 0)) || String(a.name).localeCompare(String(b.name), 'ja'))) {
+      const label = document.createElement('label');
+      label.innerHTML = '<input type="checkbox"><span></span>';
+      const cb = $('input', label);
+      cb.value = d.key; cb.checked = pre.has(d.key);
+      cb.addEventListener('change', updateImportButton);
+      $('span', label).textContent = d.name + (d.self ? '（この端末）' : '') + (d.status === 'ok' ? '' : '　※接続できていません');
+      box.append(label);
+    }
+  }
+
+  function updateImportButton() {
+    $('#impApply').disabled = !importData || !$$('#impTargets input:checked').length
+      || !(($('#impSettings').checked && importData.hasSettings) || ($('#impSchedules').checked && importData.hasSchedules) || ($('#impRules').checked && importData.hasRules));
+  }
+  const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+
+  $('#importBtn').addEventListener('click', () => {
+    importData = null;
+    $('#impInfo').textContent = 'ファイル未選択';
+    $('#impParts').disabled = true;
+    $('#impLog').replaceChildren();
+    renderImportTargets();
+    updateImportButton();
+    $('#importDialog').showModal();
+  });
+  $('#impPick').addEventListener('click', () => $('#impFile').click());
+  ['impSettings', 'impSchedules', 'impRules'].forEach((id) => $('#' + id).addEventListener('change', updateImportButton));
+
+  $('#impFile').addEventListener('change', async (e) => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    importData = null;
+    try {
+      const j = JSON.parse(await f.text());
+      if (j.kind !== EXPORT_KIND || !j.settings || typeof j.settings !== 'object') throw new Error('サイネージの設定ファイルではありません');
+      if (j.version > 1) throw new Error('新しい形式の設定ファイルです。管理画面（アプリ）を新しい版にしてください');
+      const settings = {};
+      for (const k of EXPORT_KEYS) if (j.settings[k] !== undefined) settings[k] = j.settings[k];
+      const schedules = Array.isArray(j.schedules) ? j.schedules : [];
+      const fileRules = Array.isArray(j.fileRules) ? j.fileRules.filter((r) => r && Number.isInteger(r.zone) && typeof r.name === 'string' && r.rule) : [];
+      importData = { settings, schedules, fileRules, hasSettings: Object.keys(settings).length > 0, hasSchedules: true, hasRules: fileRules.length > 0 };
+      const when = j.exportedAt ? new Date(j.exportedAt).toLocaleString('ja-JP') : '';
+      $('#impInfo').textContent = `${f.name}（元の端末：${j.source?.name || '不明'}${when ? '・' + when : ''}）`;
+      $('#impSettingsLabel').textContent = `設定（画面分割・再生・時計・天気予報）${importData.hasSettings ? '' : '：ファイルに含まれていません'}`;
+      $('#impSchedulesLabel').textContent = `予約テロップ ${schedules.length} 件（反映先の予約は置き換わります）`;
+      $('#impRulesLabel').textContent = `画像・動画ごとの再生条件 ${fileRules.length} 件（反映先に同じ区画・同じファイル名があるもののみ）`;
+      $('#impSettings').checked = importData.hasSettings;
+      $('#impRules').checked = importData.hasRules;
+      $('#impParts').disabled = false;
+    } catch (err) {
+      $('#impInfo').textContent = 'ファイル未選択';
+      $('#impParts').disabled = true;
+      toast(err instanceof SyntaxError ? '設定ファイルを読み込めません（JSON の形式が正しくありません）' : err.message);
+    }
+    updateImportButton();
+  });
+
+  $('#impApply').addEventListener('click', async () => {
+    const list = $$('#impTargets input:checked').map((c) => devices.get(c.value)).filter(Boolean);
+    const parts = [
+      $('#impSettings').checked && importData.hasSettings && '設定',
+      $('#impSchedules').checked && `予約テロップ ${importData.schedules.length} 件`,
+      $('#impRules').checked && importData.hasRules && '再生条件',
+    ].filter(Boolean);
+    if (!confirm(`${list.map((d) => d.name).join('、')}（${list.length} 台）に、次の内容を反映します。\n・${parts.join('\n・')}\n反映先の現在の内容は上書きされます。よろしいですか？`)) return;
+    $('#impApply').disabled = true;
+    await forEachTarget('設定を反映', async (dev) => {
+      const done = [];
+      if ($('#impSettings').checked && importData.hasSettings) {
+        await post(dev, '/api/settings', importData.settings);
+        done.push('設定');
+      }
+      if ($('#impSchedules').checked) {
+        await post(dev, '/api/ticker/schedules', { schedules: importData.schedules });
+        done.push(`予約 ${importData.schedules.length} 件`);
+      }
+      if ($('#impRules').checked && importData.hasRules) {
+        await check(dev);   // 反映した設定（区画の種類など）を踏まえて、いまあるファイルを調べる
+        let ok = 0, skipped = 0;
+        for (const r of importData.fileRules) {
+          const z = dev.state?.zones?.find((x) => x.index === r.zone);
+          if (!z || z.type !== 0 || !(z.files || []).some((f) => f.name === r.name)) { skipped++; continue; }
+          try { await post(dev, '/api/filerule', { zone: r.zone, name: r.name, rule: r.rule }); ok++; } catch (e) { skipped++; }
+        }
+        done.push(`再生条件 ${ok} 件${skipped ? `（${skipped} 件はファイルが無いため省略）` : ''}`);
+      }
+      return done.join('、') + ' を反映しました';
+    }, list, $('#impLog'));
+    $('#impApply').disabled = false;
+    setTimeout(() => refreshDevice(selected()), 1200);
+  });
+  $('#impClose').addEventListener('click', () => $('#importDialog').close());
 
   $('#bulkReload').addEventListener('click', () => forEachTarget('今すぐ反映', (dev) => post(dev, '/api/reload', {}).then(() => '反映しました')));
 
