@@ -86,6 +86,18 @@
   .lp .div:focus-visible { box-shadow: 0 0 0 3px #fff; }
   .lp .div span { background: #1a73e8; color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 10px; white-space: nowrap; pointer-events: none; }
   .layoutFoot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px 16px; }
+  #fitDialog { max-width: 980px; width: calc(100% - 24px); max-height: calc(100% - 24px); overflow: auto; }
+  .fitzones { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+  .fitzones .zt { border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px; font-size: 12px; }
+  .fitrow { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); }
+  .fitname { width: 100%; font-size: 13px; word-break: break-all; }
+  .fitcell { width: 200px; display: flex; flex-direction: column; gap: 4px; }
+  .fp { position: relative; width: 100%; background: #000; overflow: hidden; border-radius: 4px; outline: 1px solid var(--line); }
+  .fp img, .fp video { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .fp .bg { object-fit: cover; filter: blur(8px) brightness(.5); transform: scale(1.15); }
+  .verdict { font-size: 12px; font-weight: bold; }
+  .verdict.v-ok { color: var(--ok); } .verdict.v-warn { color: #b06000; } .verdict.v-ng { color: var(--danger); }
+  .fitnote { font-size: 11px; color: var(--sub); }
   .meta .btns { display: flex; gap: 4px; }
   .rule { font-size: 11px; color: var(--sub); }
   .rule.on { color: #b06000; }
@@ -216,6 +228,7 @@
           <input type="hidden" name="sidePercent" form="settings">
           <div class="layoutFoot">
             <button class="primary" type="button" id="layoutSave">画面分割を保存</button>
+            <button type="button" id="fitOpen" title="画像・動画が各区画にピッタリ収まるかを、反映する前に確認します">画像のフィットを確認</button>
             <span class="sub">保存すると、再生画面にすぐ反映されます</span>
           </div>
         </details>
@@ -308,6 +321,26 @@
       <button class="primary" id="ruleSave" value="save">保存</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="fitDialog">
+  <h3>画像のフィット確認</h3>
+  <p class="sub" id="fitInfo"></p>
+  <div class="dlgrow" style="margin:8px 0">
+    <button type="button" class="primary" id="fitPick">確認する画像・動画を選ぶ</button>
+    <input type="file" id="fitFiles" multiple accept="image/*,video/*" hidden>
+    <button type="button" id="fitDevice" title="この端末の区画に入っている画像を読み込んで確認（動画は端末に入れる前のファイルで確認できます）">この端末の画像も確認</button>
+    <label class="dlgrow">表示方法 <select id="fitMode">
+      <option value="3">おまかせ（なるべく余白を残さない）</option>
+      <option value="1">全体を表示＋余白をぼかした背景</option>
+      <option value="2">画面いっぱい（はみ出す部分は切り取り）</option>
+      <option value="0">全体を表示（余白は黒）</option>
+    </select></label>
+    <button type="button" id="fitApply" title="いま選んでいる表示方法を、この端末の設定にする">この表示方法を端末に設定</button>
+  </div>
+  <p class="sub">分割・比率は、画面分割カードの現在の内容（未保存の変更を含む）で計算します。ここで選ぶファイルは端末には送られません。</p>
+  <div id="fitResults"></div>
+  <div class="dlgrow" style="margin-top:12px; justify-content:flex-end"><button type="button" id="fitClose">閉じる</button></div>
 </dialog>
 
 <div id="toast"></div>
@@ -914,6 +947,145 @@
     });
     lp.append(d);
   }
+
+  // ------------------------------------------------------------ 画像のフィット確認
+
+  const FIT_FIT = 0, FIT_BLUR = 1, FIT_FILL = 2, FIT_AUTO = 3;
+  const FIT_NAMES = { 0: '全体を表示', 1: '全体を表示＋ぼかし背景', 2: '画面いっぱい', 3: 'おまかせ' };
+  const fitItems = [];   // { name, w, h, video, src, isLocal }
+  let fitUrls = [];
+
+  /** 各区画の大きさ（px）。分割・比率は、フォームの現在の内容（未保存を含む）で計算する。画面の向きも考慮 */
+  function zoneSizes(W, H) {
+    const layout = fval('layout'), sp = fval('splitPercent') / 100, mp = fval('mainPercent') / 100, sd = fval('sidePercent') / 100;
+    if (layout === 1) return [[W * sp, H], [W * (1 - sp), H]];
+    if (layout === 2) return [[W, H * sp], [W, H * (1 - sp)]];
+    if (layout === 3) {
+      return W >= H
+        ? [[W * mp, H], [W * (1 - mp), H * sd], [W * (1 - mp), H * (1 - sd)]]            // 横長：メインが左、サイドが右に縦並び
+        : [[W, H * mp], [W * sd, H * (1 - mp)], [W * (1 - sd), H * (1 - mp)]];          // 縦長：メインが上、サイドが下に横並び
+    }
+    return [[W, H]];
+  }
+
+  /** 実際に使う表示方法。「おまかせ」は、切り取られる割合が 20% 以下なら画面いっぱい、それ以外はぼかし背景（再生画面と同じ判定） */
+  function decideFit(mode, cw, ch, aw, ah) {
+    if (mode !== FIT_AUTO) return mode;
+    const c = cw / ch, a = aw / ah;
+    return 1 - Math.min(c / a, a / c) <= 0.2 ? FIT_FILL : FIT_BLUR;
+  }
+
+  function fitVerdict(mode, it, zw, zh) {
+    const c = it.w / it.h, a = zw / zh;
+    const diff = 1 - Math.min(c / a, a / c);   // 縦横比のずれ（0＝ピッタリ）
+    const fit = decideFit(mode, it.w, it.h, zw, zh);
+    const pct = Math.round(diff * 100);
+    const notes = [];
+    const scale = fit === FIT_FILL ? Math.max(zw / it.w, zh / it.h) : Math.min(zw / it.w, zh / it.h);
+    if (scale > 1.5) notes.push(`画像が小さめです（${it.w}×${it.h}px を ${Math.round(scale * 100)}% に拡大して表示）`);
+    let level, text;
+    if (diff <= 0.02) { level = 'ok'; text = '✓ ピッタリ'; }
+    else if (fit === FIT_FILL) { level = pct <= 5 ? 'ok' : pct <= 20 ? 'warn' : 'ng'; text = `${pct <= 5 ? '✓ ほぼピッタリ' : '△'} 切り取り ${pct}%（はみ出す部分は映りません）`; }
+    else if (fit === FIT_BLUR) { level = pct <= 5 ? 'ok' : 'warn'; text = `${pct <= 5 ? '✓ ほぼピッタリ' : '△'} 全体を表示・余白 ${pct}% はぼかして補います`; }
+    else { level = pct <= 5 ? 'ok' : pct <= 20 ? 'warn' : 'ng'; text = `${pct <= 5 ? '✓ ほぼピッタリ' : '△'} 余白 ${pct}%（黒い余白が出ます）`; }
+    if (mode === FIT_AUTO) notes.unshift(`おまかせ → ${FIT_NAMES[fit]}で表示`);
+    if (scale > 1.5) { if (level === 'ok') level = 'warn'; text += '・画像は小さめ'; }
+    return { level, text, notes, fit };
+  }
+
+  function renderFit() {
+    const dev = selected();
+    const scr = dev.state?.screen || { width: 1920, height: 1080 };
+    const types = layoutZoneTypes;
+    const sizes = zoneSizes(scr.width, scr.height);
+    const zones = sizes.map((sz, i) => ({ i, w: sz[0], h: sz[1], folder: types[i] === '0' })).filter((z) => z.folder);
+    const mode = Number($('#fitMode').value);
+    $('#fitInfo').textContent = `${dev.name}：画面 ${scr.width}×${scr.height}px（${scr.width >= scr.height ? '横長' : '縦長'}）／ ${LAYOUTS[fval('layout')].name}`
+      + (zones.length ? '' : ' ／ フォルダの区画がありません');
+    const box = $('#fitResults');
+    if (!zones.length) { box.textContent = '画像を表示する区画（フォルダ）がありません。'; return; }
+    box.innerHTML = `<div class="fitzones">${zones.map((z) => `<span class="zt">区画${z.i + 1}：${Math.round(z.w)}×${Math.round(z.h)}px（縦横比 ${(z.w / z.h).toFixed(2)}）</span>`).join('')}</div>`;
+    if (!fitItems.length) { box.insertAdjacentHTML('beforeend', '<p class="sub">「確認する画像・動画を選ぶ」から、反映したいファイルを選んでください（複数可）。</p>'); return; }
+    for (const it of fitItems) {
+      const row = document.createElement('div');
+      row.className = 'fitrow';
+      row.innerHTML = `<div class="fitname"></div>`;
+      $('.fitname', row).textContent = `${it.name}（${it.w}×${it.h}px・縦横比 ${(it.w / it.h).toFixed(2)}${it.isLocal ? '' : '・この端末内'}）`;
+      for (const z of zones) {
+        const v = fitVerdict(mode, it, z.w, z.h);
+        const cell = document.createElement('div');
+        cell.className = 'fitcell';
+        const tag = it.video ? 'video' : 'img';
+        const media = (cls) => `<${tag} ${cls} src="${it.src}" ${it.video ? 'muted preload="metadata"' : ''} style="object-fit:${cls === 'class="bg"' ? 'cover' : v.fit === FIT_FILL ? 'cover' : 'contain'}"></${tag}>`;
+        cell.innerHTML = `<div class="fp" style="aspect-ratio:${z.w} / ${z.h}">${v.fit === FIT_BLUR ? media('class="bg"') : ''}${media('')}</div>
+          <div class="verdict v-${v.level}"></div><div class="fitnote"></div>`;
+        $('.verdict', cell).textContent = `区画${z.i + 1}：${v.text}`;
+        $('.fitnote', cell).textContent = v.notes.join(' / ');
+        row.append(cell);
+      }
+      box.append(row);
+    }
+  }
+
+  const imageSize = (src) => new Promise((res) => { const i = new Image(); i.onload = () => res({ w: i.naturalWidth, h: i.naturalHeight }); i.onerror = () => res(null); i.src = src; });
+  const videoSize = (src) => new Promise((res) => {
+    const v = document.createElement('video');
+    v.preload = 'metadata'; v.muted = true;
+    v.onloadedmetadata = () => res({ w: v.videoWidth, h: v.videoHeight });
+    v.onerror = () => res(null);
+    v.src = src;
+  });
+
+  $('#fitOpen').addEventListener('click', () => {
+    const dev = selected();
+    if (dev.status !== 'ok' || !dev.state) { toast('この端末に接続できていません'); return; }
+    $('#fitMode').value = String(dev.state.settings.fitMode ?? 3);
+    renderFit();
+    $('#fitDialog').showModal();
+  });
+  $('#fitPick').addEventListener('click', () => $('#fitFiles').click());
+  $('#fitFiles').addEventListener('change', async (e) => {
+    const skipped = [];
+    for (const f of mediaOnly([...e.target.files])) {
+      const src = URL.createObjectURL(f);
+      fitUrls.push(src);
+      const video = /^video\//.test(f.type) || /\.(mp4|m4v|webm|mkv|3gp|mov|ts)$/i.test(f.name);
+      const size = await (video ? videoSize(src) : imageSize(src));
+      if (size && size.w > 0) fitItems.push({ name: f.name, ...size, video, src, isLocal: true }); else skipped.push(f.name);
+    }
+    e.target.value = '';
+    if (skipped.length) toast(`このブラウザでは読み込めないファイルがありました：${skipped.join('、')}`);
+    renderFit();
+  });
+  $('#fitDevice').addEventListener('click', async () => {
+    const dev = selected();
+    const files = (dev.state.zones || []).flatMap((z) => (z.files || []).filter((f) => !f.video).map((f) => ({ zone: z.index, name: f.name }))).slice(0, 12);
+    if (!files.length) { toast('この端末に確認できる画像がありません'); return; }
+    toast(`この端末の画像を読み込み中…（最大 12 枚）`);
+    for (const f of files) {
+      if (fitItems.some((x) => !x.isLocal && x.name === f.name)) continue;
+      try {
+        const blob = await (await api(dev, fileUrl(f.zone, f.name), {}, 30000)).blob();
+        const src = URL.createObjectURL(blob);
+        fitUrls.push(src);
+        const size = await imageSize(src);
+        if (size) fitItems.push({ name: f.name, ...size, video: false, src, isLocal: false });
+      } catch (e) {}
+    }
+    renderFit();
+  });
+  $('#fitMode').addEventListener('change', renderFit);
+  $('#fitApply').addEventListener('click', async () => {
+    const dev = selected();
+    try {
+      await post(dev, '/api/settings', { fitMode: Number($('#fitMode').value) });
+      toast(`「${dev.name}」の表示方法を「${FIT_NAMES[$('#fitMode').value]}」にしました`);
+      setTimeout(() => refreshDevice(dev), 1200);
+    } catch (err) { toast(err.message); }
+  });
+  const closeFit = () => { $('#fitDialog').close(); };
+  $('#fitClose').addEventListener('click', closeFit);
+  $('#fitDialog').addEventListener('close', () => { fitUrls.forEach((u) => URL.revokeObjectURL(u)); fitUrls = []; fitItems.length = 0; });
 
   $('#layoutSave').addEventListener('click', async () => {
     const dev = selected();

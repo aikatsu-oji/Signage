@@ -33,7 +33,7 @@ mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 
 
 def resource_dir() -> Path:
@@ -189,10 +189,23 @@ class Server:
             "id": s.device_id,
             "name": s.device_name,
             "device": "Windows " + socket.gethostname(),
+            "screen": self.screen_size(),
             "version": VERSION,
             "zones": zones,
             "settings": settings,
         }
+
+    def screen_size(self) -> dict:
+        """再生に使うモニターの解像度（画像がどう収まるかを管理画面で確認するために使う）"""
+        try:
+            mons = self.monitors() if hasattr(self, "monitors") else []
+            idx = self.store.get("monitor") or 0
+            m = mons[idx] if 0 <= idx < len(mons) else (mons[0] if mons else None)
+            if m:
+                return {"width": m["width"], "height": m["height"]}
+        except Exception:
+            pass
+        return {"width": 1920, "height": 1080}
 
     def apply_settings(self, j: dict):
         def clamp(v, lo, hi):

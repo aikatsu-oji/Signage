@@ -108,6 +108,17 @@ object AdminServer {
         notify(EVENT_SERVER)
     }
 
+    /** この端末の画面サイズ（px）。画像がどう収まるかを管理画面で確認するために使う */
+    @Suppress("DEPRECATION")
+    private fun screenSize(): JSONObject {
+        val dm = android.util.DisplayMetrics()
+        runCatching {
+            (app.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager)
+                .defaultDisplay.getRealMetrics(dm)
+        }
+        return JSONObject().put("width", dm.widthPixels).put("height", dm.heightPixels)
+    }
+
     /** この端末の LAN 内の IPv4 アドレス（管理画面の URL 表示用） */
     fun localAddresses(): List<String> = runCatching {
         NetworkInterface.getNetworkInterfaces().toList()
@@ -467,6 +478,7 @@ object AdminServer {
             .put("id", prefs.deviceId)
             .put("name", prefs.deviceName)
             .put("device", android.os.Build.MODEL)
+            .put("screen", screenSize())
             .put("version", version ?: "")
             .put("zones", zones)
             .put("settings", settings)
