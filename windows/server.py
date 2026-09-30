@@ -7,6 +7,7 @@ Windows 版の Web サーバー。
 - /media/...   再生する画像・動画（この PC からのみ）
 """
 
+import base64
 import hmac
 import ipaddress
 import json
@@ -33,7 +34,7 @@ mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 
 
 def resource_dir() -> Path:
@@ -447,6 +448,21 @@ class Server:
                     except FileNotFoundError as e:
                         raise HttpError(404, str(e))
                     self.send_file(item["path"])
+                elif key == "POST /api/voice":
+                    # 管理画面のマイクの声（16kHz・モノラル・16bit PCM、0.2秒ぶんほど）。再生画面（Edge）へすぐ流す
+                    self.body_read = True
+                    n = int(self.headers.get("Content-Length") or 0)
+                    if n > 64 * 1024:
+                        raise HttpError(413, "データが大きすぎます")
+                    pcm = self.rfile.read(n) if n else b""
+                    if len(pcm) < 2 or len(pcm) % 2:
+                        raise HttpError(400, "音声データが正しくありません")
+                    server._broadcast("voice:" + base64.b64encode(pcm).decode("ascii"))
+                    # 再生画面が開いていないと音は出ない。管理画面で知らせるため、受け取り手の数も返す
+                    self.json({"ok": True, "listeners": len(server.event_queues)})
+                elif key == "POST /api/voice/end":
+                    server._broadcast("voice-end")
+                    self.json({"ok": True})
                 elif key == "POST /api/reload":
                     s.notify("content")
                     self.json({"ok": True})

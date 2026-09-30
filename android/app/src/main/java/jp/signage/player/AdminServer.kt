@@ -40,6 +40,8 @@ object AdminServer {
     const val EVENT_CONTENT = "content"   // ファイルが変わった → 読み直す
     const val EVENT_SETTINGS = "settings" // 設定が変わった → 画面を作り直す
     const val EVENT_SERVER = "server"     // サーバーの起動・停止
+    const val EVENT_VOICE_START = "voice-start" // 管理画面からの声の放送が始まった → 動画の音を下げ、「放送中」を表示
+    const val EVENT_VOICE_END = "voice-end"     // 放送が終わった
 
     private lateinit var app: Context
     private var server: ServerSocket? = null
@@ -60,6 +62,16 @@ object AdminServer {
     fun addListener(l: (String) -> Unit) = listeners.add(l)
     fun removeListener(l: (String) -> Unit) = listeners.remove(l)
     private fun notify(event: String) = main.post { listeners.forEach { it(event) } }
+
+    /** 声の放送中か。放送が途切れたら、一定時間後に終わらせる */
+    @Volatile private var voiceActive = false
+    private val voiceIdle = Runnable {
+        VoicePlayer.release()
+        if (voiceActive) {
+            voiceActive = false
+            notify(EVENT_VOICE_END)
+        }
+    }
 
     /** 設定に合わせて起動・停止する（何度呼んでもよい） */
     @Synchronized
@@ -155,6 +167,18 @@ object AdminServer {
         }
 
         fun json() = JSONObject(readText().ifEmpty { "{}" })
+
+        fun readBytes(limit: Int): ByteArray {
+            if (contentLength > limit) throw HttpError(413, "データが大きすぎます")
+            val buf = ByteArray(contentLength.toInt())
+            var off = 0
+            while (off < buf.size) {
+                val n = body.read(buf, off, buf.size - off)
+                if (n < 0) break
+                off += n
+            }
+            return if (off == buf.size) buf else buf.copyOf(off)
+        }
     }
 
     private class Response(
@@ -358,6 +382,25 @@ object AdminServer {
                     Ticker.Schedule.fromJson(a.getJSONObject(it)) ?: throw HttpError(400, "予約の時刻や文字が正しくありません")
                 }
                 Ticker.setSchedules(app, list)
+                json(200, JSONObject().put("ok", true))
+            }
+            "POST /api/voice" -> {
+                // 管理画面のマイクの声（16kHz・モノラル・16bit PCM、0.2秒ぶんほど）。届いた順にすぐ再生する
+                val pcm = req.readBytes(64 * 1024)
+                if (pcm.size < 2 || pcm.size % 2 != 0) throw HttpError(400, "音声データが正しくありません")
+                if (!voiceActive) {
+                    voiceActive = true
+                    notify(EVENT_VOICE_START)
+                }
+                VoicePlayer.play(pcm)
+                // 途切れたとき（ブラウザを閉じた等）に、音量を元に戻して終わる
+                main.removeCallbacks(voiceIdle)
+                main.postDelayed(voiceIdle, 2500)
+                json(200, JSONObject().put("ok", true))
+            }
+            "POST /api/voice/end" -> {
+                main.removeCallbacks(voiceIdle)
+                main.postDelayed(voiceIdle, 800) // 再生中の音を聞き終わってから止める
                 json(200, JSONObject().put("ok", true))
             }
             "POST /api/reload" -> {

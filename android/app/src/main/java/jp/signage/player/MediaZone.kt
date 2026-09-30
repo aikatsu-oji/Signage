@@ -257,6 +257,19 @@ class MediaZone(
         return null
     }
 
+    /** 声の放送中は、動画の音を小さくする */
+    private var ducked = false
+
+    fun duck(on: Boolean) {
+        ducked = on
+        applyVolume()
+    }
+
+    private fun applyVolume() {
+        val base = if (isMain && prefs.videoSound) 1f else 0f
+        player.volume = if (ducked) base * 0.15f else base
+    }
+
     private fun play(item: MediaEntry, my: Int) {
         showMessage(null)
         currentIsVideo = item.isVideo
@@ -265,7 +278,7 @@ class MediaZone(
         watchdog = Runnable { if (my == token) goto(1) }.also { handler.postDelayed(it, 20_000) }
 
         if (item.isVideo) {
-            player.volume = if (isMain && prefs.videoSound) 1f else 0f
+            applyVolume()
             player.setMediaItem(MediaItem.fromUri(item.uri))
             player.prepare()
             player.playWhenReady = !paused

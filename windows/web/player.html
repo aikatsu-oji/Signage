@@ -63,6 +63,8 @@
   #ticker { position: absolute; left: 0; right: 0; z-index: 30; overflow: hidden; display: none; white-space: nowrap; }
   #ticker span { position: absolute; top: 50%; transform: translate(0, -50%); font-weight: bold; will-change: left; }
 
+  #voice { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); z-index: 60; display: none;
+           background: #e53935e6; color: #fff; font-size: 26px; font-weight: bold; padding: 10px 40px; border-radius: 40px; }
   #info { position: absolute; left: 16px; bottom: 16px; z-index: 40; background: #000a; padding: 10px 14px; border-radius: 8px;
     font-size: 14px; display: none; white-space: pre-line; }
   #hint { position: absolute; left: 50%; top: 16px; transform: translateX(-50%); z-index: 40; background: #000c; padding: 10px 16px;
@@ -74,6 +76,7 @@
 <div id="clock"></div>
 <div id="ticker"><span></span></div>
 <div id="info"></div>
+<div id="voice">📢 放送中</div>
 <div id="hint">設定はタスクトレイのアイコンから開けます（全画面を閉じる：Alt + F4）</div>
 
 <script>
@@ -739,11 +742,55 @@
     if (new URLSearchParams(location.search).has('noevents')) return;
     const es = new EventSource('/local/events');
     es.onmessage = (e) => {
+      if (e.data.startsWith('voice:')) return voice.chunk(e.data.slice(6));
+      if (e.data === 'voice-end') return voice.end();
       if (e.data === 'settings') location.reload();
       else if (e.data === 'content') zones.forEach((z) => (z instanceof MediaZone ? z.reload() : null));
       else if (e.data === 'ticker') nextTicker();
     };
   }
+  // ---- 管理画面のマイクの声の放送（16kHz・モノラル・16bit PCM を届いた順にすぐ再生する）
+  const voice = {
+    ctx: null, next: 0, timer: 0, ducked: false,
+    chunk(b64) {
+      const bin = atob(b64);
+      const n = bin.length >> 1;
+      if (!n) return;
+      if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+      const buf = this.ctx.createBuffer(1, n, 16000);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) {
+        let v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8);
+        if (v & 0x8000) v -= 0x10000;
+        data[i] = v / 32768;
+      }
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(this.ctx.destination);
+      // ネットワークの揺れで途切れないよう、少し先（0.15 秒）から順につなげて再生する
+      const now = this.ctx.currentTime;
+      this.next = Math.max(this.next, now + 0.15);
+      src.start(this.next);
+      this.next += buf.duration;
+      this.show(true);
+      clearTimeout(this.timer);
+      this.timer = setTimeout(() => this.end(), 2500);   // 途切れたら終わる
+    },
+    end() {
+      clearTimeout(this.timer);
+      // 届いた分を聞き終わってから「放送中」を消し、音量を戻す
+      const wait = this.ctx ? Math.max(0, (this.next - this.ctx.currentTime) * 1000) : 0;
+      this.timer = setTimeout(() => { this.show(false); this.next = 0; }, wait + 300);
+    },
+    show(on) {
+      $('#voice').style.display = on ? 'block' : 'none';
+      // 放送中は動画の音を小さくする
+      document.querySelectorAll('video').forEach((v) => { v.volume = on ? 0.15 : 1; });
+    },
+  };
+  window.__voice = voice;
+
   start();
 })();
 </script>

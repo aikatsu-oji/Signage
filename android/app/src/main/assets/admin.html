@@ -119,6 +119,8 @@
   .verdict { font-size: 12px; font-weight: bold; }
   .verdict.v-ok { color: var(--ok); } .verdict.v-warn { color: #b06000; } .verdict.v-ng { color: var(--danger); }
   .fitnote { font-size: 11px; color: var(--sub); }
+  #voiceTalk.live { background: #e53935; border-color: #e53935; color: #fff; }
+  #voiceTalk { touch-action: none; user-select: none; -webkit-user-select: none; }
   #importDialog { max-width: 560px; }
   #importDialog fieldset label { display: flex; margin: 4px 0; }
   #impTargets { display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow: auto; }
@@ -210,6 +212,18 @@
           </div>
           <ol class="log" id="bulkLog"></ol>
         </div>
+      </section>
+
+      <section id="voiceSec">
+        <h2>マイクで声を届ける</h2>
+        <p class="sub" id="voiceTarget"></p>
+        <div class="warn" id="voiceWarn" hidden></div>
+        <div class="dlgrow" style="margin:8px 0">
+          <button class="primary" type="button" id="voiceTalk">🎤 押している間、話す</button>
+          <meter id="voiceLevel" min="0" max="1" value="0" style="width:90px"></meter>
+        </div>
+        <label class="check sub"><input type="checkbox" id="voiceLatch"> ボタンを押さなくても話し続ける（もう一度押すと止まる）</label>
+        <p class="sub" id="voiceStatus">話すと、選んだ端末のスピーカーからすぐ流れます（遅れは 1 秒前後）。放送中は端末の動画の音が小さくなります。ハウリングを防ぐため、ヘッドセットの使用をおすすめします。</p>
       </section>
 
       <section id="tickerSec">
@@ -641,6 +655,7 @@
     $('#settingsSec').hidden = !ok;
     $('#scheduleSec').hidden = !ok;
     renderTickerTarget();
+    if (typeof renderVoiceTarget === 'function') renderVoiceTarget();
     blobUrls.splice(0).forEach(URL.revokeObjectURL);
     $('#zones').replaceChildren();
     warn.hidden = ok;
@@ -1355,6 +1370,7 @@
     $('#bulk').hidden = list.length === 0;
     $('#bulkTitle').textContent = `チェックした ${list.length} 台をまとめて操作`;
     if (typeof renderTickerTarget === 'function') renderTickerTarget();
+    if (typeof renderVoiceTarget === 'function') renderVoiceTarget();
   }
 
   function logLine(text, cls = '', log = $('#bulkLog')) {
@@ -1388,6 +1404,142 @@
     renderDevices();
     return ok;
   }
+
+  // ------------------------------------------------------------ マイクで声を届ける
+
+  const VOICE_RATE = 16000;        // 端末へ送る音声：16kHz・モノラル・16bit PCM
+  const VOICE_CHUNK = 3200;        // 0.2 秒ぶんずつ送る
+  const voice = { on: false, starting: false, ctx: null, stream: null, node: null, src: null, targets: [], pending: [], chain: new Map(), failed: new Set(), sent: 0 };
+
+  /** 放送先：端末一覧でチェックした端末。ひとつもチェックが無ければ、いま選んでいる端末 */
+  const voiceTargets = () => (checked.size ? targets() : [selected()]).filter((d) => d && d.state);
+
+  function renderVoiceTarget() {
+    const list = voiceTargets();
+    $('#voiceTarget').textContent = list.length ? `放送先：${list.map((d) => d.name).join('、')}（${list.length} 台）　※複数の端末に送るときは端末一覧でチェック` : '放送先の端末がありません';
+    const warn = $('#voiceWarn');
+    // ブラウザは、https のページか localhost で開いたページでしかマイクを使わせない
+    const ok = window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+    warn.hidden = !!ok;
+    if (!ok) {
+      warn.textContent = 'このページは http://' + location.host + '/ で開かれているため、ブラウザがマイクの使用を許可しません。'
+        + '管理に使う PC で Windows 版 Signage を起動し、同じ PC のブラウザで http://localhost:' + (location.port || '8080') + '/ を開いてください。';
+    }
+    $('#voiceTalk').disabled = !ok || !list.length;
+  }
+
+  /** 端末へ順番どおりに送る（端末ごとに、前の送信が終わってから次を送る） */
+  function voiceSend(dev, path, body) {
+    const prev = voice.chain.get(dev.key) || Promise.resolve();
+    const next = prev.then(() => fetch(dev.url + path, {
+      method: 'POST', body,
+      headers: { 'X-Pin': dev.pin || '', 'Content-Type': 'application/octet-stream' },
+    }).then(async (r) => {
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || ('エラー ' + r.status));
+      return r.json();
+    })).catch((e) => {
+      if (!voice.failed.has(dev.key)) { voice.failed.add(dev.key); toast(`「${dev.name}」への放送に失敗しました：${e.message}`); }
+    });
+    voice.chain.set(dev.key, next);
+    return next;
+  }
+
+  function voiceFlush(force) {
+    while (voice.pending.length >= VOICE_CHUNK || (force && voice.pending.length > 0)) {
+      const samples = voice.pending.splice(0, VOICE_CHUNK);
+      const pcm = new Int16Array(samples.length);
+      for (let i = 0; i < samples.length; i++) pcm[i] = Math.max(-32768, Math.min(32767, Math.round(samples[i] * 32767)));
+      voice.sent++;
+      for (const dev of voice.targets) {
+        voiceSend(dev, '/api/voice', pcm.buffer.slice(0)).then((r) => {
+          if (r && r.listeners === 0 && !voice.warned) { voice.warned = true; toast(`「${dev.name}」は再生画面が開いていないため、声が出ません`); }
+        });
+      }
+    }
+  }
+
+  async function voiceStart() {
+    if (voice.on || voice.starting) return;
+    voice.starting = true;
+    voice.targets = voiceTargets();
+    voice.failed.clear(); voice.warned = false; voice.sent = 0; voice.pending = [];
+    try {
+      voice.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    } catch (e) {
+      voice.starting = false;
+      $('#voiceStatus').textContent = e.name === 'NotAllowedError' ? 'マイクの使用が許可されていません。ブラウザのアドレスバーの鍵（サイト設定）から許可してください。' : `マイクを使えません：${e.message}`;
+      return;
+    }
+    voice.starting = false;
+    if (voice.wantStop) { voice.wantStop = false; voiceStopTracks(); return; }
+    voice.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const inRate = voice.ctx.sampleRate;
+    voice.src = voice.ctx.createMediaStreamSource(voice.stream);
+    voice.node = voice.ctx.createScriptProcessor(4096, 1, 1);
+    let frac = 0;
+    voice.node.onaudioprocess = (e) => {
+      const data = e.inputBuffer.getChannelData(0);
+      // 16kHz に間引く（線形補間）。音量メーターも更新する
+      const step = inRate / VOICE_RATE;
+      let peak = 0;
+      for (let pos = frac; pos < data.length; pos += step) {
+        const i = Math.floor(pos), f = pos - i;
+        const v = data[i] * (1 - f) + (data[Math.min(i + 1, data.length - 1)] * f);
+        voice.pending.push(v);
+        peak = Math.max(peak, Math.abs(v));
+        frac = pos + step - data.length;
+      }
+      $('#voiceLevel').value = peak;
+      voiceFlush(false);
+    };
+    voice.src.connect(voice.node);
+    voice.node.connect(voice.ctx.destination);   // 出力は無音（入力をそのまま返さないので、自分の声は聞こえない）
+    voice.on = true;
+    $('#voiceTalk').classList.add('live');
+    $('#voiceTalk').textContent = '🔴 放送中…（離すと止まる）';
+    $('#voiceStatus').textContent = `放送中：${voice.targets.map((d) => d.name).join('、')}`;
+  }
+
+  function voiceStopTracks() {
+    try { voice.node && (voice.node.onaudioprocess = null, voice.node.disconnect()); } catch (e) {}
+    try { voice.src && voice.src.disconnect(); } catch (e) {}
+    try { voice.stream && voice.stream.getTracks().forEach((t) => t.stop()); } catch (e) {}     // マイクの使用中の表示も消える
+    try { voice.ctx && voice.ctx.close(); } catch (e) {}
+    voice.node = voice.src = voice.stream = voice.ctx = null;
+  }
+
+  function voiceStop() {
+    if (voice.starting) { voice.wantStop = true; return; }
+    if (!voice.on) return;
+    voice.on = false;
+    voiceFlush(true);
+    voiceStopTracks();
+    for (const dev of voice.targets) voiceSend(dev, '/api/voice/end', new ArrayBuffer(0));
+    $('#voiceLevel').value = 0;
+    $('#voiceTalk').classList.remove('live');
+    $('#voiceTalk').textContent = '🎤 押している間、話す';
+    $('#voiceStatus').textContent = voice.failed.size ? '一部の端末に送れませんでした。' : `放送しました（${voice.sent} 回に分けて送信）。`;
+  }
+
+  (() => {
+    const btn = $('#voiceTalk');
+    const latch = () => $('#voiceLatch').checked;
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (latch()) { voice.on || voice.starting ? voiceStop() : voiceStart(); return; }
+      btn.setPointerCapture?.(e.pointerId);
+      voiceStart();
+    });
+    const release = () => { if (!latch()) voiceStop(); };
+    btn.addEventListener('pointerup', release);
+    btn.addEventListener('pointercancel', release);
+    // キーボードでも：スペース／Enter を押している間だけ話す
+    btn.addEventListener('keydown', (e) => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); latch() ? (voice.on ? voiceStop() : voiceStart()) : voiceStart(); } });
+    btn.addEventListener('keyup', (e) => { if ((e.key === ' ' || e.key === 'Enter') && !latch()) voiceStop(); });
+    window.addEventListener('blur', () => { if (!latch()) voiceStop(); });
+    window.addEventListener('beforeunload', () => voiceStop());
+    $('#voiceLatch').addEventListener('change', () => { if (!latch()) voiceStop(); });
+  })();
 
   // ------------------------------------------------------------ 設定のエクスポート・一括反映
 
