@@ -20,6 +20,7 @@ from pathlib import Path
 
 import store as st
 from peers import Peers
+from instance import duplicate_message, find_running
 from server import VERSION, Server, local_addresses
 
 APP_NAME = "SignagePlayer"
@@ -249,7 +250,7 @@ class App:
             pystray.Menu.SEPARATOR,
             item("終了", self.quit),
         )
-        self.tray = pystray.Icon(APP_NAME, img, f"サイネージ（{self.store.device_name}）", menu)
+        self.tray = pystray.Icon(APP_NAME, img, f"サイネージ v{VERSION}（{self.store.device_name}）", menu)
 
         def ready(icon):
             icon.visible = True
@@ -271,15 +272,18 @@ def main():
     p.add_argument("--test-instance", action="store_true", help="二重起動の確認をしない（開発中のテスト用）")
     args = p.parse_args()
     if not args.test_instance and not single_instance():
-        # すでに起動している場合は設定画面を開くだけ
-        for port in range(8080, 8090):
+        running = find_running()
+        msg = duplicate_message(running[1] if running else None, VERSION)
+        if msg:
+            # 別の版が動いたままだと、新しい版を起動したつもりでも古い版の画面が開くため、はっきり知らせる
             try:
-                import urllib.request
-                urllib.request.urlopen(f"http://127.0.0.1:{port}/local/settings", timeout=1)
-                webbrowser.open(f"http://127.0.0.1:{port}/settings")
-                break
+                # MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST
+                ctypes.windll.user32.MessageBoxW(0, msg, "サイネージ", 0x40 | 0x10000 | 0x40000)
             except Exception:
-                continue
+                pass
+        elif running:
+            # 同じ版がすでに動いているときは、設定画面を開くだけ
+            webbrowser.open(f"http://127.0.0.1:{running[0]}/settings")
         return
     App(args).run()
 

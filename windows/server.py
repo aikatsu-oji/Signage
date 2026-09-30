@@ -34,7 +34,7 @@ mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
-VERSION = "1.4.1"
+VERSION = "1.4.2"
 
 
 def resource_dir() -> Path:
@@ -528,6 +528,7 @@ class Server:
                 if key == "GET /local/config":
                     cfg = server.state()["settings"]
                     cfg.update({
+                        "version": VERSION,
                         "zoneCount": st.zone_count(s.get("layout")),
                         "zoneFolders": [bool(s.zone_folder(i)) for i in range(st.MAX_ZONES)],
                         "weatherOffice": s.get("weatherOffice"),
