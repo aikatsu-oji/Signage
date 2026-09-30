@@ -115,9 +115,9 @@
       <section>
         <div class="head">
           <h2>端末一覧</h2>
-          <button class="small" id="addDeviceBtn" title="自動で見つからない端末（別の Wi-Fi・Tailscale 経由など）を IP アドレスで追加">＋ 追加</button>
+          <button class="small" id="addDeviceBtn" title="自動で見つからない端末を IP アドレスで追加">＋ 追加</button>
         </div>
-        <p class="sub">同じネットワークのサイネージ端末が自動で表示されます。別の場所の端末は「＋ 追加」から Tailscale の IP で追加できます。クリックで操作する端末を切り替え、チェックした端末はまとめて操作できます。</p>
+        <p class="sub">同じネットワークのサイネージ端末が自動で表示されます。クリックで操作する端末を切り替え、チェックした端末はまとめて操作できます。</p>
         <label class="check sub"><input type="checkbox" id="checkAll"> すべて選択</label>
         <ul class="devices" id="devices"></ul>
         <div class="bulk" id="bulk" hidden>
@@ -447,35 +447,19 @@
     renderDetail();
   }
 
-  /** 入力を接続先の URL にそろえる（http:// とポート 8080 を補う） */
-  function normalizeUrl(input) {
+  $('#addDeviceBtn').addEventListener('click', async () => {
+    const input = prompt('追加する端末の IP アドレスを入力してください（例：192.168.68.53）\n※ 端末の設定画面の「ブラウザで開くアドレス」に表示されています');
+    if (!input) return;
     let url = input.trim().replace(/\/+$/, '');
-    if (!url) return '';
     if (!/^https?:\/\//.test(url)) url = 'http://' + url;
     if (!/:\d+$/.test(url)) url += ':8080';
-    return url;
-  }
-
-  $('#addDeviceBtn').addEventListener('click', async () => {
-    const input = prompt('追加する端末のアドレスを入力してください（複数はスペースかカンマで区切る）\n'
-      + '例：192.168.68.53　/　100.101.102.103（Tailscale の IP）　/　shop1.tailnet.ts.net\n'
-      + '※ 端末の設定画面の「ブラウザで開くアドレス」に表示されています。別の Wi-Fi の端末は Tailscale の IP を入力してください');
-    if (!input) return;
-    const urls = [...new Set(input.split(/[\s,、]+/).map(normalizeUrl).filter(Boolean))];
     const manual = store.get('signage-manual', []);
-    const added = [];
-    for (const url of urls) {
-      if (!manual.includes(url)) manual.push(url);
-      if ([...devices.values()].some((d) => d.url === url)) continue;
-      addDevice({ key: url, url, name: url.replace(/^http:\/\//, ''), manual: true });
-      added.push(url);
-    }
-    store.set('signage-manual', manual);
+    if (!manual.includes(url)) { manual.push(url); store.set('signage-manual', manual); }
+    const dev = { key: url, url, name: url.replace(/^http:\/\//, ''), manual: true };
+    addDevice(dev);
+    await check(devices.get(dev.key));
     renderDevices();
-    await Promise.all(added.map((url) => check(devices.get(url)).catch(() => {})));
-    renderDevices();
-    const offline = added.filter((url) => [...devices.values()].some((d) => d.url === url && d.status === 'offline')).length;
-    toast(!added.length ? '追加済みの端末です' : offline ? `${added.length} 台追加（${offline} 台は応答がありません）` : `${added.length} 台追加しました`);
+    toast(devices.get(dev.key)?.status === 'offline' ? '追加しましたが、応答がありません' : '追加しました');
   });
 
   $('#removeBtn').addEventListener('click', () => {

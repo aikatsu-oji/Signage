@@ -114,7 +114,7 @@ object AdminServer {
             .filter { it.isUp && !it.isLoopback }
             .flatMap { it.inetAddresses.toList() }
             .filterIsInstance<Inet4Address>()
-            .filter { it.isSiteLocalAddress || isTailscale(it) }
+            .filter { it.isSiteLocalAddress }
             .map { it.hostAddress ?: "" }
             .filter { it.isNotEmpty() }
     }.getOrDefault(emptyList())
@@ -348,14 +348,8 @@ object AdminServer {
         }
     }
 
-    /** Tailscale の端末に振られる 100.64.0.0/10（CGNAT 帯）。VPN 経由の管理を許可する */
-    private fun isTailscale(a: Inet4Address): Boolean {
-        val b = a.address
-        return (b[0].toInt() and 0xFF) == 100 && (b[1].toInt() and 0xC0) == 0x40
-    }
-
     private fun isLan(a: InetAddress): Boolean = when (a) {
-        is Inet4Address -> a.isLoopbackAddress || a.isSiteLocalAddress || a.isLinkLocalAddress || isTailscale(a)
+        is Inet4Address -> a.isLoopbackAddress || a.isSiteLocalAddress || a.isLinkLocalAddress
         is Inet6Address -> a.isLoopbackAddress || a.isLinkLocalAddress || a.isSiteLocalAddress ||
             (a.address[0].toInt() and 0xFE) == 0xFC || // ユニークローカル fc00::/7
             (a.isIPv4CompatibleAddress && isLan(InetAddress.getByAddress(a.address.copyOfRange(12, 16))))
