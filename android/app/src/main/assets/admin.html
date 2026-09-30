@@ -83,10 +83,19 @@
   .lp .box b { font-size: 13px; }
   .lp .box select { max-width: 100%; font-size: 12px; padding: 2px 4px; }
   .lp .div { position: absolute; z-index: 2; background: #1a73e8; display: flex; align-items: center; justify-content: center; outline: none; }
-  .lp .div.v { width: 10px; margin-left: -5px; cursor: ew-resize; }
+  .lp .div.v { width: 10px; margin-left: -5px; cursor: ew-resize; align-items: flex-start; }
+  .lp .div.v span { margin-top: 8px; }
   .lp .div.h { height: 10px; margin-top: -5px; cursor: ns-resize; }
   .lp .div:focus-visible { box-shadow: 0 0 0 3px #fff; }
   .lp .div span { background: #1a73e8; color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 10px; white-space: nowrap; pointer-events: none; }
+  #lpRatios { margin-top: 10px; font-size: 13px; }
+  #lpRatios .scr { color: var(--sub); margin-bottom: 4px; }
+  #lpRatios table { border-collapse: collapse; width: 100%; }
+  #lpRatios td { padding: 3px 8px 3px 0; vertical-align: baseline; }
+  #lpRatios td.n { white-space: nowrap; font-weight: bold; }
+  #lpRatios td.r { white-space: nowrap; }
+  #lpRatios .ratio { font-weight: bold; color: #1a73e8; }
+  .lp .box small { font-size: 11px; opacity: .85; }
   .layoutFoot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px 16px; }
   #fitDialog { max-width: 980px; width: calc(100% - 24px); max-height: calc(100% - 24px); overflow: auto; }
   .fitzones { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
@@ -103,7 +112,10 @@
   .meta .btns { display: flex; gap: 4px; }
   .rule { font-size: 11px; color: var(--sub); }
   .rule.on { color: #b06000; }
-  dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); max-width: 420px; width: calc(100% - 32px); padding: 16px; }
+  .slot { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px 10px; margin-top: 8px; }
+  .slot .slothead { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: bold; margin-bottom: 4px; }
+  .slot .field { margin-top: 6px; }
+  dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); max-width: 480px; width: calc(100% - 32px); max-height: calc(100% - 24px); overflow: auto; padding: 16px; }
   dialog::backdrop { background: rgba(0,0,0,.45); }
   dialog h3 { margin: 0 0 4px; font-size: 16px; }
   .days { display: flex; gap: 4px; flex-wrap: wrap; }
@@ -221,6 +233,7 @@
             <div class="tiles" id="layoutTiles" role="radiogroup" aria-label="分割方法"></div>
             <div class="lpwrap">
               <div class="lp" id="lp"></div>
+              <div id="lpRatios"></div>
               <p class="sub" id="lpHint"></p>
             </div>
           </div>
@@ -311,15 +324,11 @@
   <form id="ruleForm" method="dialog">
     <h3>再生する条件</h3>
     <p class="sub" id="ruleFile"></p>
-    <p class="sub">設定した項目のすべてに合うときだけ再生します。空欄の項目は条件なし（いつでも）です。条件に合わない間、このファイルは飛ばされます。</p>
-    <div class="field"><span>曜日（チェックなし＝毎日）</span>
-      <div class="days" id="ruleDays"></div></div>
-    <div class="field" style="margin-top:10px"><span>時間帯（終了が開始より前なら日をまたぎます）</span>
-      <div class="dlgrow"><input type="time" id="ruleStart"> 〜 <input type="time" id="ruleEnd"></div></div>
-    <div class="field" style="margin-top:10px"><span>期間（両端を含む）</span>
-      <div class="dlgrow"><input type="date" id="ruleFrom"> 〜 <input type="date" id="ruleTo"></div></div>
+    <p class="sub">条件は複数追加できます。<b>どれか1つに合うとき</b>に再生します（例：「土日の終日」と「12/24〜12/25 の 18:00〜22:00」）。1つの条件の中では、設定した項目のすべてに合うときだけ合います。空欄の項目は条件なし、中身のない条件は無視されます。条件がひとつも無ければ、いつでも再生します。</p>
+    <div id="ruleSlots"></div>
+    <div class="dlgrow" style="margin-top:10px"><button type="button" id="ruleAdd" class="small">＋ 条件を追加</button><span class="sub" id="ruleCount"></span></div>
     <div class="dlgrow" style="margin-top:14px; justify-content: flex-end">
-      <button type="button" id="ruleClear" class="danger">条件をなくす</button>
+      <button type="button" id="ruleClear" class="danger">条件をすべてなくす</button>
       <button type="button" id="ruleCancel">キャンセル</button>
       <button class="primary" id="ruleSave" value="save">保存</button>
     </div>
@@ -716,27 +725,58 @@
   // ------------------------------------------------------------ ファイルごとの再生条件
 
   const RULE_DAYS = ['日', '月', '火', '水', '木', '金', '土'];
+  const MAX_SLOTS = 10;
 
-  function describeRule(r) {
+  /** 保存されている条件は {slots: [...]}。以前の形式（条件1つだけ）も読めるように配列にそろえる */
+  const slotsOf = (rule) => (!rule ? [] : Array.isArray(rule.slots) ? rule.slots : [rule]);
+
+  function describeSlot(r) {
     const parts = [];
     if (r.days && r.days.length) parts.push(r.days.map((d) => RULE_DAYS[d]).join(''));
     if (r.start || r.end) parts.push(`${r.start || ''}〜${r.end || ''}`);
     if (r.from || r.to) parts.push(`${(r.from || '').replace(/-/g, '/')}〜${(r.to || '').replace(/-/g, '/')}`);
-    return parts.join('　');
+    return parts.join(' ') || '（常時）';
+  }
+  const describeRule = (rule) => slotsOf(rule).map(describeSlot).join(' ／ ');
+
+  let ruleTarget = null;
+
+  function addSlot(r = {}) {
+    const list = $('#ruleSlots');
+    if (list.children.length >= MAX_SLOTS) { toast(`条件は ${MAX_SLOTS} 個までです`); return; }
+    const el = document.createElement('div');
+    el.className = 'slot';
+    el.innerHTML = `<div class="slothead"><span class="no"></span><button type="button" class="small danger del">この条件を削除</button></div>
+      <div class="field"><span>曜日（チェックなし＝毎日）</span><div class="days">${RULE_DAYS.map((n, i) => `<label><input type="checkbox" value="${i}">${n}</label>`).join('')}</div></div>
+      <div class="field"><span>時間帯（終了が開始より前なら日をまたぎます）</span><div class="dlgrow"><input type="time" class="rs"> 〜 <input type="time" class="re"></div></div>
+      <div class="field"><span>期間（両端を含む）</span><div class="dlgrow"><input type="date" class="rf"> 〜 <input type="date" class="rt"></div></div>`;
+    el.querySelectorAll('.days input').forEach((c) => { c.checked = (r.days || []).includes(+c.value); });
+    $('.rs', el).value = r.start || ''; $('.re', el).value = r.end || '';
+    $('.rf', el).value = r.from || ''; $('.rt', el).value = r.to || '';
+    $('.del', el).addEventListener('click', () => { el.remove(); renumberSlots(); });
+    list.append(el);
+    renumberSlots();
   }
 
-  $('#ruleDays').innerHTML = RULE_DAYS.map((n, i) => `<label><input type="checkbox" value="${i}">${n}</label>`).join('');
-  let ruleTarget = null;
+  function renumberSlots() {
+    const items = [...$('#ruleSlots').children];
+    items.forEach((el, i) => { $('.no', el).textContent = `条件 ${i + 1}`; });
+    $('#ruleCount').textContent = items.length ? `${items.length} 個（どれか1つに合えば再生）` : '条件なし（いつでも再生）';
+  }
+
+  function collectSlots() {
+    return [...$('#ruleSlots').children].map((el) => ({
+      days: [...el.querySelectorAll('.days input:checked')].map((c) => +c.value),
+      start: $('.rs', el).value, end: $('.re', el).value, from: $('.rf', el).value, to: $('.rt', el).value,
+    }));
+  }
 
   function editRule(dev, z, f) {
     ruleTarget = { dev, zone: z.index, name: f.name };
-    const r = f.rule || {};
     $('#ruleFile').textContent = `${dev.name}：${f.name}`;
-    $('#ruleDays').querySelectorAll('input').forEach((c) => { c.checked = (r.days || []).includes(+c.value); });
-    $('#ruleStart').value = r.start || '';
-    $('#ruleEnd').value = r.end || '';
-    $('#ruleFrom').value = r.from || '';
-    $('#ruleTo').value = r.to || '';
+    $('#ruleSlots').replaceChildren();
+    const slots = slotsOf(f.rule);
+    (slots.length ? slots : [{}]).forEach(addSlot);
     $('#ruleDialog').showModal();
   }
 
@@ -752,10 +792,12 @@
 
   $('#ruleForm').addEventListener('submit', (e) => {
     e.preventDefault();
-    const days = [...$('#ruleDays').querySelectorAll('input:checked')].map((c) => +c.value);
-    const rule = { days, start: $('#ruleStart').value, end: $('#ruleEnd').value, from: $('#ruleFrom').value, to: $('#ruleTo').value };
-    saveRule(rule);
+    const slots = collectSlots();
+    // 中身のない条件は無視する。ひとつも無ければ「条件なし」として保存する
+    const used = slots.filter((x) => x.days.length || x.start || x.end || x.from || x.to);
+    saveRule(used.length ? { slots: used } : null);
   });
+  $('#ruleAdd').addEventListener('click', () => addSlot());
   $('#ruleClear').addEventListener('click', () => saveRule(null));
   $('#ruleCancel').addEventListener('click', () => $('#ruleDialog').close());
 
@@ -915,6 +957,41 @@
   /** 区画の表示内容（フォルダ／天気）。プレビュー内のプルダウンと保存内容をつなぐ */
   const layoutZoneTypes = ['0', '0', '0'];
 
+  /** 縦横比を整数比で表す（例 16:9）。誤差 0.2% 以内でいちばん簡単な比を探し、無ければ 1% 以内の比を「約 5:4」の形で返す。小数も返す */
+  function ratioLabel(w, h) {
+    const r = w / h;
+    const fit = (tol) => {
+      for (let q = 1; q <= 32; q++) {
+        const p = Math.max(1, Math.round(q * r));
+        if (Math.abs(p / q - r) / r <= tol) return [p, q];
+      }
+      return null;
+    };
+    const exact = fit(0.002), near = exact || fit(0.01);
+    const text = near ? `${exact ? '' : '約 '}${near[0]}:${near[1]}` : `約 ${r.toFixed(2)}:1`;
+    return { text, value: r.toFixed(2) };
+  }
+
+  /** 区画ごとに必要な画像の大きさ（px）と縦横比を、画面分割カードに表示する */
+  function renderRatios(layout) {
+    const dev = selected();
+    const known = !!dev.state?.screen;
+    const scr = dev.state?.screen || { width: 1920, height: 1080 };
+    const sizes = zoneSizes(scr.width, scr.height);
+    const sr = ratioLabel(scr.width, scr.height);
+    const rows = sizes.map((sz, i) => {
+      const w = Math.round(sz[0]), h = Math.round(sz[1]);
+      const rl = ratioLabel(w, h);
+      const isFolder = layoutZoneTypes[i] === '0';
+      return `<tr><td class="n">区画${i + 1}（${ZONE_LABELS[layout][i]}）</td><td class="r">${w} × ${h} px</td>
+        <td class="r">縦横比 <span class="ratio">${rl.text}</span>（${rl.value}）</td>
+        <td class="sub">${isFolder ? '' : '天気予報（画像は不要）'}</td></tr>`;
+    }).join('');
+    $('#lpRatios').innerHTML = `<div class="scr">端末の画面：${scr.width} × ${scr.height} px（${sr.text}）${known ? '' : '　※画面サイズを取得できない端末のため 1920 × 1080 と仮定しています'}</div>
+      <div class="scr"><b>各区画にピッタリ収まる画像・動画の大きさと縦横比</b>（この比率・サイズで用意すると余白も切り取りもありません）</div><table>${rows}</table>`;
+    return sizes;
+  }
+
   function renderLayoutCard() {
     const layout = fval('layout');
     // 分割方法のタイル
@@ -931,9 +1008,10 @@
       3: [[0, 0, mp, 100], [mp, 0, 100 - mp, sd], [mp, sd, 100 - mp, 100 - sd]],
     }[layout];
     const names = ZONE_LABELS[layout];
+    const sizes = renderRatios(layout);
     const lp = $('#lp');
     lp.innerHTML = rects.map((r, i) => `<div class="box" style="left:${r[0]}%;top:${r[1]}%;width:${r[2]}%;height:${r[3]}%">
-      <b>区画${i + 1}</b><span>${names[i]}</span><select data-zone="${i}" aria-label="区画${i + 1}の表示内容">${ZONE_TYPES.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></div>`).join('');
+      <b>区画${i + 1}</b><span>${names[i]}</span><small>${ratioLabel(sizes[i][0], sizes[i][1]).text}</small><select data-zone="${i}" aria-label="区画${i + 1}の表示内容">${ZONE_TYPES.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></div>`).join('');
     lp.querySelectorAll('select').forEach((sel) => {
       sel.value = layoutZoneTypes[sel.dataset.zone];
       sel.addEventListener('change', () => { layoutZoneTypes[sel.dataset.zone] = sel.value; updateLayoutDirty(); refreshZones(); });

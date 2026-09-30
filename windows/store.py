@@ -218,12 +218,23 @@ class Store:
             rules.pop(f"{zone}|{name}", None)
         self.update({"fileRules": rules})
 
+    MAX_RULE_SLOTS = 10
+
     @staticmethod
     def normalize_rule(raw):
-        """再生条件を検証して保存用に整える。条件が何も無ければ None
-        days: 曜日 0=日〜6=土（空なら毎日） / start,end: "HH:MM"（start > end は日またぎ） / from,to: "YYYY-MM-DD"（両端を含む）"""
+        """再生条件を検証して保存用の {"slots": [...]} に整える。どれか1つの条件に合えば再生する（複数の日時を指定できる）。
+        中身のない条件は無視し、1つも無ければ None（＝いつでも再生）。以前の形式（slots のない、条件1つだけのもの）も受け付ける
+        条件1つ: days 曜日 0=日〜6=土（空なら毎日） / start,end "HH:MM"（start > end は日またぎ） / from,to "YYYY-MM-DD"（両端を含む）"""
         if not isinstance(raw, dict):
             return None
+        items = raw.get("slots") if isinstance(raw.get("slots"), list) else [raw]
+        if len(items) > Store.MAX_RULE_SLOTS:
+            raise ValueError(f"条件は {Store.MAX_RULE_SLOTS} 個までです")
+        slots = [x for x in (Store._normalize_slot(i) for i in items if isinstance(i, dict)) if x]
+        return {"slots": slots} if slots else None
+
+    @staticmethod
+    def _normalize_slot(raw):
         out = {}
         days = sorted({d for d in (raw.get("days") or []) if isinstance(d, int) and 0 <= d <= 6})
         if days and len(days) < 7:

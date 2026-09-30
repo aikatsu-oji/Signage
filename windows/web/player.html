@@ -81,8 +81,15 @@
   const $ = (s, el = document) => el.querySelector(s);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-  /** 画像・動画ごとの再生条件（days: 0=日〜6=土 / start,end: "HH:MM"（日またぎ可） / from,to: "YYYY-MM-DD"）に、いま合うか */
+  /** 画像・動画ごとの再生条件 {slots: [条件, …]} に、いま合うか（どれか1つに合えば再生。以前の形式＝条件1つだけも可） */
   function ruleActive(rule, now = new Date()) {
+    if (!rule) return true;
+    if (Array.isArray(rule.slots)) return rule.slots.length === 0 || rule.slots.some((r) => slotActive(r, now));
+    return slotActive(rule, now);
+  }
+
+  /** 条件1つ（days: 0=日〜6=土 / start,end: "HH:MM"（日またぎ可） / from,to: "YYYY-MM-DD"）に、いま合うか */
+  function slotActive(rule, now) {
     if (!rule) return true;
     const mins = (s) => (/^\d\d:\d\d$/.test(s || '') ? +s.slice(0, 2) * 60 + +s.slice(3) : null);
     const m = now.getHours() * 60 + now.getMinutes();

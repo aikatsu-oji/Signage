@@ -5,18 +5,29 @@ import org.json.JSONObject
 import java.util.Calendar
 
 /**
- * 画像・動画ごとの「再生する条件」。設定した項目のすべてに合うときだけ再生する（未設定の項目は常に合う）。
+ * 画像・動画ごとの「再生する条件」。{"slots": [条件, 条件, …]} の形で、どれか1つに合えば再生する（複数の日時を指定できる）。
+ * 1つの条件は、設定した項目のすべてに合うときだけ合う（未設定の項目は常に合う）。
  *  - days：曜日（0=日〜6=土）。空なら毎日
  *  - start / end："HH:MM"。start > end のときは日をまたぐ（例 22:00〜02:00）
  *  - from / to："YYYY-MM-DD"（両端を含む）
+ * 以前の形式（slots のない、条件1つだけのもの）もそのまま読める。
  */
 object FileRule {
     private val TIME = Regex("^([01]\\d|2[0-3]):[0-5]\\d$")
     private val DATE = Regex("^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$")
 
-    /** 不正な値を取り除いて保存用に整える。条件が何も無ければ null */
+    const val MAX_SLOTS = 10
+
+    /** 不正な値を取り除いて保存用の {"slots": [...]} に整える。中身のない条件は無視し、1つも無ければ null（＝いつでも再生） */
     fun normalize(raw: JSONObject?): JSONObject? {
         if (raw == null) return null
+        val list = raw.optJSONArray("slots")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) } } ?: listOf(raw)
+        if (list.size > MAX_SLOTS) throw IllegalArgumentException("条件は ${MAX_SLOTS} 個までです")
+        val slots = list.mapNotNull(::normalizeSlot)
+        return if (slots.isEmpty()) null else JSONObject().put("slots", JSONArray(slots))
+    }
+
+    private fun normalizeSlot(raw: JSONObject): JSONObject? {
         val out = JSONObject()
         val days = raw.optJSONArray("days")
         if (days != null) {
@@ -44,8 +55,15 @@ object FileRule {
         return if (out.length() == 0) null else out
     }
 
+    /** いま再生してよいか。条件のどれか1つに合えば true */
     fun isActive(rule: JSONObject?, now: Calendar = Calendar.getInstance()): Boolean {
         if (rule == null) return true
+        val slots = rule.optJSONArray("slots") ?: return slotActive(rule, now)
+        if (slots.length() == 0) return true
+        return (0 until slots.length()).any { slots.optJSONObject(it)?.let { s -> slotActive(s, now) } == true }
+    }
+
+    private fun slotActive(rule: JSONObject, now: Calendar): Boolean {
         val minutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
         val start = minutesOf(rule.optString("start"))
         val end = minutesOf(rule.optString("end"))
