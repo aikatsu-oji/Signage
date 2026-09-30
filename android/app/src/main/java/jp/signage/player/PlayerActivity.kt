@@ -109,6 +109,7 @@ class PlayerActivity : Activity() {
                     mainAssigned = true
                     MediaZone(
                         this, prefs, prefs.zoneFolder(i), isMain,
+                        zoneIndex = i,
                         onChanged = { if (isMain) updateInfo() },
                         // 1画面のときは、天気予報の画面に時計が含まれるので重ねて表示しない
                         onPanelShown = { panel ->

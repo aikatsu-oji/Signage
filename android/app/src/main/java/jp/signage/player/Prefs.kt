@@ -3,6 +3,7 @@ package jp.signage.player
 import android.content.Context
 import android.content.pm.ActivityInfo
 import android.net.Uri
+import org.json.JSONObject
 
 /** 設定値の保存（SharedPreferences） */
 class Prefs(context: Context) {
@@ -184,6 +185,25 @@ class Prefs(context: Context) {
     /** 区画 i のフォルダ。区画0 は従来の「再生フォルダ」 */
     fun zoneFolder(i: Int): Uri? =
         if (i == 0) folderUri else sp.getString("zoneFolder$i", null)?.let(Uri::parse)
+
+    /** 画像・動画ごとの再生条件（キーは「区画|ファイル名」）。条件が無いファイルは常に再生 */
+    private fun fileRules(): JSONObject = runCatching { JSONObject(sp.getString("fileRules", "{}") ?: "{}") }.getOrDefault(JSONObject())
+
+    fun fileRule(zone: Int, name: String): JSONObject? = fileRules().optJSONObject("$zone|$name")
+
+    fun setFileRule(zone: Int, name: String, rule: JSONObject?) {
+        val all = fileRules()
+        if (rule == null) all.remove("$zone|$name") else all.put("$zone|$name", rule)
+        sp.edit().putString("fileRules", all.toString()).apply()
+    }
+
+    /** 全ファイルの条件を一度に取り出す（一覧の表示用） */
+    fun fileRulesOf(zone: Int): Map<String, JSONObject> {
+        val all = fileRules()
+        val prefix = "$zone|"
+        return all.keys().asSequence().filter { it.startsWith(prefix) }
+            .mapNotNull { k -> all.optJSONObject(k)?.let { k.removePrefix(prefix) to it } }.toMap()
+    }
 
     fun setZoneFolder(i: Int, uri: Uri?) {
         if (i == 0) folderUri = uri else sp.edit().putString("zoneFolder$i", uri?.toString()).apply()

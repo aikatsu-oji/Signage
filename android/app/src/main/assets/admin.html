@@ -61,6 +61,16 @@
   .meta .fname { word-break: break-all; }
   .meta .row { display: flex; justify-content: space-between; align-items: center; color: var(--sub); }
   .meta button { padding: 2px 8px; font-size: 12px; }
+  .meta .btns { display: flex; gap: 4px; }
+  .rule { font-size: 11px; color: var(--sub); }
+  .rule.on { color: #b06000; }
+  dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); max-width: 420px; width: calc(100% - 32px); padding: 16px; }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  dialog h3 { margin: 0 0 4px; font-size: 16px; }
+  .days { display: flex; gap: 4px; flex-wrap: wrap; }
+  .days label { display: inline-flex; align-items: center; gap: 2px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+  input[type=time], input[type=date] { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); }
+  .dlgrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .form { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px 20px; }
   .field { display: flex; flex-direction: column; gap: 4px; }
   .field > span { font-size: 13px; color: var(--sub); }
@@ -254,6 +264,25 @@
     </main>
   </div>
 </div>
+
+<dialog id="ruleDialog">
+  <form id="ruleForm" method="dialog">
+    <h3>再生する条件</h3>
+    <p class="sub" id="ruleFile"></p>
+    <p class="sub">設定した項目のすべてに合うときだけ再生します。空欄の項目は条件なし（いつでも）です。条件に合わない間、このファイルは飛ばされます。</p>
+    <div class="field"><span>曜日（チェックなし＝毎日）</span>
+      <div class="days" id="ruleDays"></div></div>
+    <div class="field" style="margin-top:10px"><span>時間帯（終了が開始より前なら日をまたぎます）</span>
+      <div class="dlgrow"><input type="time" id="ruleStart"> 〜 <input type="time" id="ruleEnd"></div></div>
+    <div class="field" style="margin-top:10px"><span>期間（両端を含む）</span>
+      <div class="dlgrow"><input type="date" id="ruleFrom"> 〜 <input type="date" id="ruleTo"></div></div>
+    <div class="dlgrow" style="margin-top:14px; justify-content: flex-end">
+      <button type="button" id="ruleClear" class="danger">条件をなくす</button>
+      <button type="button" id="ruleCancel">キャンセル</button>
+      <button class="primary" id="ruleSave" value="save">保存</button>
+    </div>
+  </form>
+</dialog>
 
 <div id="toast"></div>
 
@@ -583,19 +612,72 @@
     const card = document.createElement('div');
     card.className = 'file';
     card.innerHTML = `<div class="thumb"></div>
-      <div class="meta"><div class="fname"></div>
-        <div class="row"><span></span><button class="danger" type="button">削除</button></div></div>`;
+      <div class="meta"><div class="fname"></div><div class="rule"></div>
+        <div class="row"><span></span><div class="btns"><button class="cond" type="button" title="時間帯・曜日・期間で再生を絞る">条件</button><button class="danger" type="button">削除</button></div></div></div>`;
     const thumb = $('.thumb', card);
     thumb.textContent = f.video ? '▶' : '';
     if (!f.video) { thumb.dataset.zone = z.index; thumb.dataset.name = f.name; thumb.dataset.dev = dev.key; }
     thumb.addEventListener('click', () => openFile(dev, z.index, f.name));
     $('.fname', card).textContent = f.name;
     $('.row span', card).textContent = (f.video ? '動画・' : '画像・') + fmtSize(f.size);
-    const del = $('button', card);
+    const del = $('button.danger', card);
     del.disabled = !z.writable;
     del.addEventListener('click', () => remove(dev, z, f));
+    const cond = $('button.cond', card);
+    cond.disabled = !z.writable;
+    cond.classList.toggle('primary', !!f.rule);
+    cond.addEventListener('click', () => editRule(dev, z, f));
+    const ruleEl = $('.rule', card);
+    ruleEl.textContent = f.rule ? '🕒 ' + describeRule(f.rule) : '';
+    ruleEl.classList.toggle('on', !!f.rule);
     return card;
   }
+
+  // ------------------------------------------------------------ ファイルごとの再生条件
+
+  const RULE_DAYS = ['日', '月', '火', '水', '木', '金', '土'];
+
+  function describeRule(r) {
+    const parts = [];
+    if (r.days && r.days.length) parts.push(r.days.map((d) => RULE_DAYS[d]).join(''));
+    if (r.start || r.end) parts.push(`${r.start || ''}〜${r.end || ''}`);
+    if (r.from || r.to) parts.push(`${(r.from || '').replace(/-/g, '/')}〜${(r.to || '').replace(/-/g, '/')}`);
+    return parts.join('　');
+  }
+
+  $('#ruleDays').innerHTML = RULE_DAYS.map((n, i) => `<label><input type="checkbox" value="${i}">${n}</label>`).join('');
+  let ruleTarget = null;
+
+  function editRule(dev, z, f) {
+    ruleTarget = { dev, zone: z.index, name: f.name };
+    const r = f.rule || {};
+    $('#ruleFile').textContent = `${dev.name}：${f.name}`;
+    $('#ruleDays').querySelectorAll('input').forEach((c) => { c.checked = (r.days || []).includes(+c.value); });
+    $('#ruleStart').value = r.start || '';
+    $('#ruleEnd').value = r.end || '';
+    $('#ruleFrom').value = r.from || '';
+    $('#ruleTo').value = r.to || '';
+    $('#ruleDialog').showModal();
+  }
+
+  async function saveRule(rule) {
+    const t = ruleTarget;
+    try {
+      await post(t.dev, '/api/filerule', { zone: t.zone, name: t.name, rule });
+      $('#ruleDialog').close();
+      toast(rule ? '再生条件を保存しました' : '再生条件をなくしました');
+      refreshDevice(t.dev);
+    } catch (e) { toast(e.message); }
+  }
+
+  $('#ruleForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const days = [...$('#ruleDays').querySelectorAll('input:checked')].map((c) => +c.value);
+    const rule = { days, start: $('#ruleStart').value, end: $('#ruleEnd').value, from: $('#ruleFrom').value, to: $('#ruleTo').value };
+    saveRule(rule);
+  });
+  $('#ruleClear').addEventListener('click', () => saveRule(null));
+  $('#ruleCancel').addEventListener('click', () => $('#ruleDialog').close());
 
   const fileUrl = (zone, name) => `/api/file?zone=${zone}&name=${encodeURIComponent(name)}`;
 

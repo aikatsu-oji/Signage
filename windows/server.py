@@ -33,7 +33,7 @@ mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
-VERSION = "1.0.3"
+VERSION = "1.1.0"
 
 
 def resource_dir() -> Path:
@@ -166,7 +166,13 @@ class Server:
                 if folder:
                     z["writable"] = s.is_writable(folder)
                     try:
-                        z["files"] = [{"name": f["name"], "video": f["video"], "size": f["size"]} for f in s.scan(folder)]
+                        z["files"] = []
+                        for f in s.scan(folder):
+                            e = {"name": f["name"], "video": f["video"], "size": f["size"]}
+                            rule = s.file_rule(i, f["name"])
+                            if rule:
+                                e["rule"] = rule
+                            z["files"].append(e)
                     except OSError:
                         z["files"] = []
                         z["error"] = "フォルダを読み込めません"
@@ -409,6 +415,17 @@ class Server:
                         s.find(folder, j.get("name", ""))["path"].unlink()
                     except FileNotFoundError as e:
                         raise HttpError(404, str(e))
+                    s.set_file_rule(j.get("zone"), j.get("name", ""), None)
+                    self.json({"ok": True})
+                elif key == "POST /api/filerule":
+                    j = self.body_json()
+                    self.folder_of(j.get("zone"), writable=True)  # 区画の確認
+                    try:
+                        rule = s.normalize_rule(j.get("rule"))
+                    except ValueError as e:
+                        raise HttpError(400, str(e))
+                    s.set_file_rule(int(j["zone"]), str(j.get("name", "")), rule)
+                    s.notify("content")
                     self.json({"ok": True})
                 elif key in ("GET /api/file", "HEAD /api/file"):
                     folder = self.folder_of(query.get("zone"))
@@ -498,6 +515,7 @@ class Server:
                         "name": it["name"],
                         "video": it["video"],
                         "url": f"/media/{zone}/{quote(it['name'])}?v={int(it['path'].stat().st_mtime)}",
+                        "rule": s.file_rule(zone, it["name"]),
                     } for it in items])
                 if key == "GET /local/weather":
                     return self.json(weather.pages(s))

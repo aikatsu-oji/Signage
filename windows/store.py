@@ -84,6 +84,7 @@ DEFAULTS = {
     "autoStart": False,
     "tickerStanding": None,
     "tickerSchedules": [],
+    "fileRules": {},  # 画像・動画ごとの再生条件（キーは「区画|ファイル名」）
 }
 
 
@@ -205,6 +206,45 @@ class Store:
             return True
         except OSError:
             return False
+
+    def file_rule(self, zone, name):
+        return (self.get("fileRules") or {}).get(f"{zone}|{name}")
+
+    def set_file_rule(self, zone, name, rule):
+        rules = dict(self.get("fileRules") or {})
+        if rule:
+            rules[f"{zone}|{name}"] = rule
+        else:
+            rules.pop(f"{zone}|{name}", None)
+        self.update({"fileRules": rules})
+
+    @staticmethod
+    def normalize_rule(raw):
+        """再生条件を検証して保存用に整える。条件が何も無ければ None
+        days: 曜日 0=日〜6=土（空なら毎日） / start,end: "HH:MM"（start > end は日またぎ） / from,to: "YYYY-MM-DD"（両端を含む）"""
+        if not isinstance(raw, dict):
+            return None
+        out = {}
+        days = sorted({d for d in (raw.get("days") or []) if isinstance(d, int) and 0 <= d <= 6})
+        if days and len(days) < 7:
+            out["days"] = days
+        for k in ("start", "end"):
+            v = str(raw.get(k) or "")
+            if v:
+                if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", v):
+                    raise ValueError("時刻は HH:MM の形式で指定してください")
+                out[k] = v
+        for k in ("from", "to"):
+            v = str(raw.get(k) or "")
+            if v:
+                if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])", v):
+                    raise ValueError("日付は YYYY-MM-DD の形式で指定してください")
+                out[k] = v
+        if out.get("from") and out.get("to") and out["from"] > out["to"]:
+            raise ValueError("期間の終わりは開始より後にしてください")
+        if "start" in out and out.get("start") == out.get("end"):
+            raise ValueError("開始と終了の時刻が同じです")
+        return out or None
 
     @staticmethod
     def sanitize(raw: str):

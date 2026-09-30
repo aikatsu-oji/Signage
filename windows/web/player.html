@@ -81,6 +81,25 @@
   const $ = (s, el = document) => el.querySelector(s);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  /** 画像・動画ごとの再生条件（days: 0=日〜6=土 / start,end: "HH:MM"（日またぎ可） / from,to: "YYYY-MM-DD"）に、いま合うか */
+  function ruleActive(rule, now = new Date()) {
+    if (!rule) return true;
+    const mins = (s) => (/^\d\d:\d\d$/.test(s || '') ? +s.slice(0, 2) * 60 + +s.slice(3) : null);
+    const m = now.getHours() * 60 + now.getMinutes();
+    const start = mins(rule.start), end = mins(rule.end);
+    const overnight = start !== null && end !== null && start > end && m < end;  // 日またぎの 0 時以降は前日の分
+    const day = new Date(now); if (overnight) day.setDate(day.getDate() - 1);
+    if (rule.days && rule.days.length && !rule.days.includes(day.getDay())) return false;
+    const p2 = (n) => String(n).padStart(2, '0');
+    const date = `${day.getFullYear()}-${p2(day.getMonth() + 1)}-${p2(day.getDate())}`;
+    if (rule.from && date < rule.from) return false;
+    if (rule.to && date > rule.to) return false;
+    if (start !== null && end !== null) return start <= end ? (m >= start && m < end) : (m >= start || m < end);
+    if (start !== null) return m >= start;
+    if (end !== null) return m < end;
+    return true;
+  }
+
   const getJson = async (url) => { const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error(r.status); return r.json(); };
   const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
 
@@ -306,9 +325,15 @@
       this.weatherPages = [];
       if (step > 0 && !this.showingWeather && this.weatherDue()) return this.showWeather(my);
       this.showingWeather = false;
-      let next = this.index_ + step;
-      if (next < 0 || next >= this.playlist.length) {
-        const wrapBack = next < 0;
+      // 再生条件（時間帯・曜日・期間）に合わないファイルは飛ばす
+      const pick = (from, dir) => {
+        const now = new Date();
+        for (let i = from; i >= 0 && i < this.playlist.length; i += dir) if (ruleActive(this.playlist[i].rule, now)) return i;
+        return -1;
+      };
+      let next = pick(this.index_ + step, step < 0 ? -1 : 1);
+      if (next < 0) {
+        const wrapBack = this.index_ + step < 0;
         if (!cfg.zoneFolders[this.index]) { this.message('この区画のフォルダが設定されていません\n設定はタスクトレイのアイコンから'); return; }
         let items;
         try { items = await getJson(`/local/playlist?zone=${this.index}`); }
@@ -328,7 +353,15 @@
           setTimeout(() => { if (my === this.token) this.goto(1); }, 5000);
           return;
         }
-        next = wrapBack ? items.length - 1 : 0;
+        next = pick(wrapBack ? items.length - 1 : 0, wrapBack ? -1 : 1);
+        if (next < 0) {
+          // 全ファイルが条件外の時間帯。時間が来るまで待つ
+          this.index_ = -1; this.current = null;
+          this.reveal(null);
+          this.message('いま再生する条件に合うファイルがありません\n（時間帯・曜日・期間の設定を確認してください）');
+          setTimeout(() => { if (my === this.token) this.goto(1); }, 5000);
+          return;
+        }
       }
       this.index_ = next;
       this.play(this.playlist[next], my);

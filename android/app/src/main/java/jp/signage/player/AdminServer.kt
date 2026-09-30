@@ -285,6 +285,20 @@ object AdminServer {
                 val body = req.json()
                 val folder = writableFolder(prefs, body.optString("zone"))
                 FolderStore.delete(app, folder, body.getString("name"), prefs.recursive)
+                prefs.setFileRule(body.optString("zone").toIntOrNull() ?: 0, body.getString("name"), null)
+                json(200, JSONObject().put("ok", true))
+            }
+            "POST /api/filerule" -> {
+                val body = req.json()
+                writableFolder(prefs, body.optString("zone")) // 区画の確認
+                val zone = body.optString("zone").toInt()
+                val rule = try {
+                    FileRule.normalize(body.optJSONObject("rule"))
+                } catch (e: IllegalArgumentException) {
+                    throw HttpError(400, e.message ?: "条件が正しくありません")
+                }
+                prefs.setFileRule(zone, body.getString("name"), rule)
+                notify(EVENT_CONTENT)
                 json(200, JSONObject().put("ok", true))
             }
             "GET /api/file" -> {
@@ -410,11 +424,14 @@ object AdminServer {
                 if (folder != null) {
                     z.put("writable", FolderStore.isWritable(app, folder))
                     val files = JSONArray()
+                    val rules = prefs.fileRulesOf(i)
                     runCatching { MediaScanner.scan(app.contentResolver, folder, prefs.recursive) }
                         .onFailure { z.put("error", "フォルダを読み込めません") }
                         .getOrDefault(emptyList())
                         .forEach {
-                            files.put(JSONObject().put("name", it.name).put("video", it.isVideo).put("size", it.size))
+                            files.put(JSONObject().put("name", it.name).put("video", it.isVideo).put("size", it.size).apply {
+                                rules[it.name]?.let { r -> put("rule", r) }
+                            })
                         }
                     z.put("files", files)
                 }
