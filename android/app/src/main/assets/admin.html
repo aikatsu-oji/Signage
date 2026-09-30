@@ -61,6 +61,31 @@
   .meta .fname { word-break: break-all; }
   .meta .row { display: flex; justify-content: space-between; align-items: center; color: var(--sub); }
   .meta button { padding: 2px 8px; font-size: 12px; }
+  #layoutSec { padding: 0; }
+  #layoutSec summary { display: flex; align-items: baseline; gap: 12px; padding: 12px 16px; cursor: pointer; list-style: none; }
+  #layoutSec summary::-webkit-details-marker { display: none; }
+  #layoutSec summary::before { content: '▾'; color: var(--sub); }
+  #layoutSec details:not([open]) summary::before { content: '▸'; }
+  #layoutSec summary h2 { margin: 0; }
+  .layoutBody { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; padding: 0 16px; }
+  .tiles { display: grid; grid-template-columns: repeat(2, 96px); gap: 10px; }
+  .tile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 6px; font-size: 12px; border: 2px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); cursor: pointer; }
+  .tile[aria-checked=true] { border-color: #1a73e8; background: rgba(26,115,232,.10); font-weight: bold; }
+  .tile .mini { width: 72px; height: 42px; display: grid; gap: 2px; }
+  .tile .mini i { background: var(--line); border-radius: 2px; }
+  .tile[aria-checked=true] .mini i { background: #1a73e8; opacity: .75; }
+  .lpwrap { flex: 1 1 320px; min-width: 260px; max-width: 640px; }
+  .lp { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #0b0d12; border-radius: 8px; overflow: hidden; user-select: none; touch-action: none; }
+  .lp .box { position: absolute; box-sizing: border-box; border: 2px solid #0b0d12; background: #263043; color: #e8eaf0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 4px; text-align: center; font-size: 12px; overflow: hidden; }
+  .lp .box:nth-child(2) { background: #2d3b52; }
+  .lp .box b { font-size: 13px; }
+  .lp .box select { max-width: 100%; font-size: 12px; padding: 2px 4px; }
+  .lp .div { position: absolute; z-index: 2; background: #1a73e8; display: flex; align-items: center; justify-content: center; outline: none; }
+  .lp .div.v { width: 10px; margin-left: -5px; cursor: ew-resize; }
+  .lp .div.h { height: 10px; margin-top: -5px; cursor: ns-resize; }
+  .lp .div:focus-visible { box-shadow: 0 0 0 3px #fff; }
+  .lp .div span { background: #1a73e8; color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 10px; white-space: nowrap; pointer-events: none; }
+  .layoutFoot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px 16px; }
   .meta .btns { display: flex; gap: 4px; }
   .rule { font-size: 11px; color: var(--sub); }
   .rule.on { color: #b06000; }
@@ -175,6 +200,26 @@
         </div>
         <div class="warn" id="devWarn" hidden></div>
       </section>
+      <section id="layoutSec">
+        <details id="layoutDetails" open>
+          <summary><h2>画面分割</h2><span class="sub" id="layoutSummary"></span></summary>
+          <div class="layoutBody">
+            <div class="tiles" id="layoutTiles" role="radiogroup" aria-label="分割方法"></div>
+            <div class="lpwrap">
+              <div class="lp" id="lp"></div>
+              <p class="sub" id="lpHint"></p>
+            </div>
+          </div>
+          <input type="hidden" name="layout" form="settings">
+          <input type="hidden" name="splitPercent" form="settings">
+          <input type="hidden" name="mainPercent" form="settings">
+          <input type="hidden" name="sidePercent" form="settings">
+          <div class="layoutFoot">
+            <button class="primary" type="button" id="layoutSave">画面分割を保存</button>
+            <span class="sub">保存すると、再生画面にすぐ反映されます</span>
+          </div>
+        </details>
+      </section>
       <div id="zones"></div>
       <section id="scheduleSec">
         <div class="head">
@@ -202,25 +247,6 @@
         <h2>設定</h2>
         <p class="sub">保存すると、この端末の再生画面にすぐ反映されます。フォルダと天気予報の地域は、端末の設定画面で変更してください。</p>
         <form id="settings">
-          <fieldset>
-            <legend>画面分割</legend>
-            <div class="form">
-              <label class="field"><span>分割方法</span>
-                <select name="layout">
-                  <option value="0">1画面</option><option value="1">左右2分割</option>
-                  <option value="2">上下2分割</option><option value="3">メイン＋サイド</option>
-                </select></label>
-              <label class="field" id="splitField"><span>比率（区画1 : 区画2）</span>
-                <select name="splitPercent"></select></label>
-              <label class="field" id="mainField"><span>メインとサイドの比率（区画1 : 区画2・3）</span>
-                <select name="mainPercent"></select></label>
-              <label class="field" id="sideField"><span>サイドの比率（区画2 : 区画3）</span>
-                <select name="sidePercent"></select></label>
-              <label class="field"><span>区画1 の表示内容</span><select name="zone0"></select></label>
-              <label class="field" data-zone="1"><span>区画2 の表示内容</span><select name="zone1"></select></label>
-              <label class="field" data-zone="2"><span>区画3 の表示内容</span><select name="zone2"></select></label>
-            </div>
-          </fieldset>
           <fieldset>
             <legend>再生</legend>
             <div class="form">
@@ -780,50 +806,139 @@
   // ------------------------------------------------------------ 設定
 
   const ZONE_TYPES = [['0', 'フォルダの画像・動画'], ['1', '天気予報']];
-  const SPLITS = [25, 30, 40, 50, 60, 70, 75];
-  const MAINS = [50, 60, 65, 70, 75, 80];
-  const SIDES = [30, 40, 50, 60, 70];
+  // 分割の比率（％）の範囲と刻み。ドラッグ・矢印キーで 5% ずつ動かす
+  const LIMITS = { splitPercent: [20, 80], mainPercent: [50, 85], sidePercent: [20, 80] };
+  const DEFAULT_PCT = { splitPercent: 50, mainPercent: 70, sidePercent: 50 };
+  const LAYOUTS = [
+    { id: 0, name: '1画面', grid: ['1fr', '1fr'], cells: [[1, 1, 2, 2]] },
+    { id: 1, name: '左右2分割', grid: ['1fr 1fr', '1fr'], cells: [[1, 1, 2, 2], [2, 1, 3, 2]] },
+    { id: 2, name: '上下2分割', grid: ['1fr', '1fr 1fr'], cells: [[1, 1, 2, 2], [1, 2, 2, 3]] },
+    { id: 3, name: 'メイン＋サイド', grid: ['2fr 1fr', '1fr 1fr'], cells: [[1, 1, 2, 3], [2, 1, 3, 2], [2, 2, 3, 3]] },
+  ];
+  const ZONE_LABELS = { 0: ['全画面'], 1: ['左', '右'], 2: ['上', '下'], 3: ['メイン', 'サイド1（右上）', 'サイド2（右下）'] };
+  const layoutForm = () => $('#settings');
+  const fval = (name) => Number(layoutForm().elements[name].value);
 
   function renderSettings(dev) {
     const s = dev.state.settings;
-    const f = $('#settings');
-    for (const i of [0, 1, 2]) {
-      const sel = f.elements['zone' + i];
-      sel.innerHTML = ZONE_TYPES.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
-      sel.value = String(s.zoneTypes[i] ?? 0);
-    }
-    f.elements.splitPercent.innerHTML = SPLITS.map((p) => `<option value="${p}">${p} : ${100 - p}</option>`).join('');
-    f.elements.mainPercent.innerHTML = MAINS.map((p) => `<option value="${p}">メイン ${p} : サイド ${100 - p}</option>`).join('');
-    f.elements.sidePercent.innerHTML = SIDES.map((p) => `<option value="${p}">サイド1 ${p} : サイド2 ${100 - p}</option>`).join('');
+    const f = layoutForm();
+    for (const i of [0, 1, 2]) layoutZoneTypes[i] = String(s.zoneTypes[i] ?? 0);
     for (const el of f.elements) {
-      if (!el.name || el.name.startsWith('zone')) continue;
+      if (!el.name) continue;
       const v = s[el.name];
       if (v === undefined) continue;
       if (el.type === 'checkbox') el.checked = !!v; else el.value = String(v);
     }
-    if (!SPLITS.includes(s.splitPercent)) f.elements.splitPercent.value = '50';
-    if (!MAINS.includes(s.mainPercent)) f.elements.mainPercent.value = '70';
-    if (!SIDES.includes(s.sidePercent)) f.elements.sidePercent.value = '50';
+    for (const [k, [lo, hi]] of Object.entries(LIMITS)) {
+      const v = fval(k);
+      if (!(v >= lo && v <= hi)) f.elements[k].value = String(Math.min(hi, Math.max(lo, Math.round((v || DEFAULT_PCT[k]) / 5) * 5)));
+    }
+    if (!LAYOUTS.some((l) => l.id === fval('layout'))) f.elements.layout.value = '0';
     $('#weatherPlace').textContent = s.weatherPlace ? `（地域：${s.weatherPlace}）` : '';
-    syncLayoutFields();
+    renderLayoutCard();
   }
 
-  function syncLayoutFields() {
-    const f = $('#settings');
-    const layout = Number(f.elements.layout.value);
-    const count = layout === 3 ? 3 : layout === 0 ? 1 : 2;
-    $('#splitField').hidden = count !== 2;
-    $('#mainField').hidden = count !== 3;
-    $('#sideField').hidden = count !== 3;
-    f.querySelectorAll('[data-zone]').forEach((el) => { el.hidden = Number(el.dataset.zone) >= count; });
+  /** 区画の表示内容（フォルダ／天気）。プレビュー内のプルダウンと保存内容をつなぐ */
+  const layoutZoneTypes = ['0', '0', '0'];
+
+  function renderLayoutCard() {
+    const layout = fval('layout');
+    // 分割方法のタイル
+    $('#layoutTiles').innerHTML = LAYOUTS.map((l) => `<button type="button" class="tile" role="radio" aria-checked="${l.id === layout}" data-id="${l.id}">
+      <span class="mini" style="grid-template-columns:${l.grid[0]};grid-template-rows:${l.grid[1]}">${l.cells.map((c) => `<i style="grid-area:${c[1]}/${c[0]}/${c[3]}/${c[2]}"></i>`).join('')}</span>${l.name}</button>`).join('');
+    $('#layoutTiles').querySelectorAll('.tile').forEach((b) => b.addEventListener('click', () => { layoutForm().elements.layout.value = b.dataset.id; renderLayoutCard(); }));
+
+    // プレビュー（横長画面のイメージ）。境界線をドラッグして比率を変える
+    const sp = fval('splitPercent'), mp = fval('mainPercent'), sd = fval('sidePercent');
+    const rects = {
+      0: [[0, 0, 100, 100]],
+      1: [[0, 0, sp, 100], [sp, 0, 100 - sp, 100]],
+      2: [[0, 0, 100, sp], [0, sp, 100, 100 - sp]],
+      3: [[0, 0, mp, 100], [mp, 0, 100 - mp, sd], [mp, sd, 100 - mp, 100 - sd]],
+    }[layout];
+    const names = ZONE_LABELS[layout];
+    const lp = $('#lp');
+    lp.innerHTML = rects.map((r, i) => `<div class="box" style="left:${r[0]}%;top:${r[1]}%;width:${r[2]}%;height:${r[3]}%">
+      <b>区画${i + 1}</b><span>${names[i]}</span><select data-zone="${i}" aria-label="区画${i + 1}の表示内容">${ZONE_TYPES.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></div>`).join('');
+    lp.querySelectorAll('select').forEach((sel) => {
+      sel.value = layoutZoneTypes[sel.dataset.zone];
+      sel.addEventListener('change', () => { layoutZoneTypes[sel.dataset.zone] = sel.value; });
+    });
+    if (layout === 1) addDivider(lp, 'v', 'splitPercent', sp, 0, 100, `${sp} : ${100 - sp}`);
+    if (layout === 2) addDivider(lp, 'h', 'splitPercent', sp, 0, 100, `${sp} : ${100 - sp}`);
+    if (layout === 3) {
+      addDivider(lp, 'v', 'mainPercent', mp, 0, 100, `${mp} : ${100 - mp}`);
+      addDivider(lp, 'h', 'sidePercent', sd, mp, 100 - mp, `${sd} : ${100 - sd}`);
+    }
+    $('#lpHint').textContent = layout === 0 ? '画面全体に区画1を表示します。'
+      : '青い境界線をドラッグ（またはクリックして ←→↑↓ キー）で比率を変えられます。縦長の画面では、メイン＋サイドの並びが縦横入れ替わります。';
+    $('#layoutSummary').textContent = LAYOUTS[layout].name + (layout === 1 || layout === 2 ? `（${sp} : ${100 - sp}）` : layout === 3 ? `（メイン ${mp}%）` : '');
   }
-  $('#settings').elements.layout.addEventListener('change', syncLayoutFields);
+
+  /** 境界線。axis: 'v'=縦線（左右に動かす）/ 'h'=横線（上下に動かす）。offset・len は横線の左端と長さ（％） */
+  function addDivider(lp, axis, field, value, offset, len, label) {
+    const d = document.createElement('div');
+    d.className = 'div ' + axis;
+    d.dataset.field = field;
+    d.tabIndex = 0;
+    d.setAttribute('role', 'slider');
+    d.setAttribute('aria-label', '区画の比率');
+    d.setAttribute('aria-valuenow', value);
+    d.setAttribute('aria-valuetext', label);
+    if (axis === 'v') { d.style.left = value + '%'; d.style.top = '0'; d.style.height = '100%'; }
+    else { d.style.top = value + '%'; d.style.left = offset + '%'; d.style.width = len + '%'; }
+    d.innerHTML = `<span>${label}</span>`;
+    const [lo, hi] = LIMITS[field];
+    /** 比率を 5% 刻みで設定して描き直す。境界線の要素は入れ替わるので、フォーカスも付け直す */
+    const set = (pct, keepFocus) => {
+      const v = Math.min(hi, Math.max(lo, Math.round(pct / 5) * 5));
+      if (v === fval(field)) return;
+      layoutForm().elements[field].value = String(v);
+      renderLayoutCard();
+      if (keepFocus) $('#lp').querySelector(`.div[data-field="${field}"]`)?.focus();
+    };
+    d.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      const rect = lp.getBoundingClientRect();
+      const move = (ev) => set((axis === 'v' ? (ev.clientX - rect.left) / rect.width : (ev.clientY - rect.top) / rect.height) * 100);
+      const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up);
+    });
+    d.addEventListener('keydown', (e) => {
+      const step = { ArrowLeft: -5, ArrowUp: -5, ArrowRight: 5, ArrowDown: 5 }[e.key];
+      if (!step) return;
+      e.preventDefault();
+      set(fval(field) + step, true);
+    });
+    lp.append(d);
+  }
+
+  $('#layoutSave').addEventListener('click', async () => {
+    const dev = selected();
+    const body = {
+      layout: fval('layout'), splitPercent: fval('splitPercent'), mainPercent: fval('mainPercent'), sidePercent: fval('sidePercent'),
+      zoneTypes: [0, 1, 2].map((i) => Number(layoutZoneTypes[i])),
+    };
+    try {
+      await post(dev, '/api/settings', body);
+      toast(`「${dev.name}」の画面分割を保存し、再生画面に反映しました`);
+      setTimeout(() => refreshDevice(dev), 1200);
+    } catch (err) { toast(err.message); }
+  });
+
+  try {
+    const d = $('#layoutDetails');
+    d.open = localStorage.getItem('signage-layout-open') !== '0';
+    d.addEventListener('toggle', () => { try { localStorage.setItem('signage-layout-open', d.open ? '1' : '0'); } catch (e) {} });
+  } catch (e) {}
 
   function formSettings() {
     const f = $('#settings');
-    const body = { zoneTypes: [0, 1, 2].map((i) => Number(f.elements['zone' + i].value)) };
+    const body = { zoneTypes: [0, 1, 2].map((i) => Number(layoutZoneTypes[i])) };
     for (const el of f.elements) {
-      if (!el.name || el.name.startsWith('zone')) continue;
+      if (!el.name) continue;
       body[el.name] = el.type === 'checkbox' ? el.checked : Number(el.value);
     }
     return body;
