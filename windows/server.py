@@ -34,7 +34,7 @@ mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
-VERSION = "1.4.2"
+VERSION = "1.5.0"
 
 
 def resource_dir() -> Path:
@@ -690,10 +690,14 @@ class Server:
             if hasattr(self, "set_autostart"):
                 self.set_autostart(u["autoStart"])
         name_changed = "deviceName" in u and u["deviceName"] != s.get("deviceName")
+        monitor_changed = "monitor" in u and u["monitor"] != (s.get("monitor") or 0)
         s.update(u)
         if name_changed and self.peers:
             self.peers.restart()
         s.notify("settings")
+        if monitor_changed and hasattr(self, "on_monitor_changed"):
+            # 表示するモニターを変えたら、開いている再生画面を新しいモニターで開き直す
+            threading.Thread(target=self.on_monitor_changed, daemon=True).start()
         return {"ok": True, "adminPin": s.get("adminPin")}
 
     def pick_folder(self, zone):

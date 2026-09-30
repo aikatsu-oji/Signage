@@ -21,6 +21,7 @@ from pathlib import Path
 import store as st
 from peers import Peers
 from instance import duplicate_message, find_running
+from placement import choose_monitor, monitor_label, needs_move
 from server import VERSION, Server, local_addresses
 
 APP_NAME = "SignagePlayer"
@@ -28,6 +29,19 @@ EDGE_PROFILE = st.APP_DIR / "edge"
 
 
 # ---------------------------------------------------------------- Windows の機能
+
+def log(text: str):
+    """動作の記録（%APPDATA%\Signage\signage.log）。モニターの切り替えなど、画面に出ない動作の確認に使う"""
+    try:
+        path = st.APP_DIR / "signage.log"
+        st.APP_DIR.mkdir(parents=True, exist_ok=True)
+        if path.exists() and path.stat().st_size > 200_000:
+            path.write_text("", encoding="utf-8")
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} {text}\n")
+    except Exception:
+        pass
+
 
 def single_instance() -> bool:
     """二重起動していなければ True"""
@@ -126,6 +140,7 @@ class App:
         self.server = Server(self.store)
         self.server.monitors = monitors
         self.server.open_player = self.open_player
+        self.server.on_monitor_changed = self.reopen_player_on_monitor
         self.server.set_autostart = set_autostart
         self.peers = None
         self.tray = None
@@ -172,8 +187,10 @@ class App:
         edge = find_edge()
         url = f"http://127.0.0.1:{self.server.port}/player"
         mons = monitors()
-        idx = self.store.get("monitor") or 0
-        m = mons[idx] if 0 <= idx < len(mons) else (mons[0] if mons else None)
+        m = choose_monitor(mons, self.store.get("monitor") or 0)
+        log(f"再生画面を開きます：{monitor_label(m) if m else 'モニター情報なし'}"
+            + (f" 位置({m['x']},{m['y']}) {m['width']}×{m['height']}" if m else "")
+            + f"（検出したモニター {len(mons)} 台）")
         if not edge:
             webbrowser.open(url)
             return
@@ -186,9 +203,62 @@ class App:
         ]
         if m:
             args += [f"--window-position={m['x']},{m['y']}", f"--window-size={m['width']},{m['height']}"]
-        subprocess.Popen(args, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        proc = subprocess.Popen(args, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         self.player_open = True
         keep_awake(True)
+        if m:
+            # 画面の拡大率（DPI）が違うモニターを混ぜていると、Edge の位置指定がずれることがあるため、
+            # 開いたあとにウィンドウの位置を確かめて、選んだモニターに合わせる
+            threading.Thread(target=self.place_player, args=(proc.pid, m), daemon=True).start()
+
+    def place_player(self, pid, m, timeout=15):
+        """再生画面のウィンドウが選んだモニターに出ているか確かめ、ずれていれば動かす（Windows 専用）"""
+        try:
+            user32 = ctypes.windll.user32
+            enum_proc = ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
+            deadline = time.time() + timeout
+            while time.time() < deadline:
+                found = []
+
+                def cb(hwnd, _):
+                    if user32.IsWindowVisible(hwnd):
+                        owner = wt.DWORD()
+                        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+                        if owner.value == pid:
+                            cls = ctypes.create_unicode_buffer(64)
+                            user32.GetClassNameW(hwnd, cls, 64)
+                            if cls.value.startswith("Chrome_WidgetWin"):
+                                found.append(hwnd)
+                    return True
+
+                user32.EnumWindows(enum_proc(cb), 0)
+                if found:
+                    time.sleep(1.5)  # 全画面表示になるのを待つ
+                    for hwnd in found:
+                        r = wt.RECT()
+                        user32.GetWindowRect(hwnd, ctypes.byref(r))
+                        actual = (r.left, r.top, r.right, r.bottom)
+                        moved = needs_move(actual, m)
+                        log(f"再生画面の位置 {actual} / {monitor_label(m)} の範囲 → {'移動します' if moved else 'そのまま'}")
+                        if moved:
+                            # SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW
+                            user32.SetWindowPos(hwnd, 0, m["x"], m["y"], m["width"], m["height"], 0x0004 | 0x0010 | 0x0040)
+                    return
+                time.sleep(0.5)
+            log("再生画面のウィンドウが見つかりませんでした（位置の確認を省略）")
+        except Exception as e:  # noqa
+            log(f"再生画面の位置の確認に失敗しました: {e}")
+
+    def reopen_player_on_monitor(self):
+        """表示するモニターを変えたとき、再生画面が開いていれば、新しいモニターで開き直す"""
+        if self.player_open:
+            self.open_player()
+
+    def set_monitor(self, index):
+        """トレイのメニューから、表示するモニターを切り替える"""
+        self.store.update({"monitor": int(index)})
+        self.store.notify("settings")
+        self.reopen_player_on_monitor()
 
     def close_player(self):
         """このアプリ用のプロファイルで開いた Edge だけを閉じる（普段使いの Edge には触れない）"""
@@ -240,10 +310,22 @@ class App:
             set_autostart(on)
             self.store.update({"autoStart": on})
 
+        def monitor_items():
+            mons = monitors()
+            cur = choose_monitor(mons, self.store.get("monitor") or 0)
+            for m in mons:
+                yield pystray.MenuItem(
+                    monitor_label(m),
+                    (lambda i: lambda icon, _: self.set_monitor(i))(m["index"]),
+                    checked=(lambda idx: lambda _: bool(cur) and cur["index"] == idx)(m["index"]),
+                    radio=True,
+                )
+
         menu = pystray.Menu(
             item("設定を開く", self.open_settings, default=True),
             item("再生画面を開く（全画面）", self.open_player),
             item("再生画面を閉じる", self.close_player),
+            pystray.MenuItem("表示するモニター", pystray.Menu(monitor_items)),
             item("管理画面を開く", self.open_admin),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Windows の起動時に自動で開始", toggle_autostart, checked=autostart_checked),

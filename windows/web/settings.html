@@ -183,7 +183,7 @@
     }
     try {
       await post('/local/settings', body);
-      $('#saved').textContent = '保存しました（再生画面にも反映されます）';
+      $('#saved').textContent = '保存しました（再生画面にも反映されます。表示するモニターを変えたときは、再生画面を開き直します）';
       toast('保存しました');
       load();
     } catch (e) { toast(e.message); }
