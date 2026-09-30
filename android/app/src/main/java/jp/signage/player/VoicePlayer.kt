@@ -16,10 +16,15 @@ object VoicePlayer {
 
     private var track: AudioTrack? = null
 
+    /** 届いた音を再生キューへ書き込む。書き込めなかったときは、理由つきで例外にする（管理画面にエラーとして表示される） */
     @Synchronized
     fun play(pcm: ByteArray) {
         val t = track ?: create().also { track = it }
-        t.write(pcm, 0, pcm.size)
+        val n = t.write(pcm, 0, pcm.size)
+        if (n < 0) {
+            release()
+            throw IllegalStateException("音声を再生できません（AudioTrack エラー $n）")
+        }
     }
 
     @Synchronized
@@ -51,6 +56,10 @@ object VoicePlayer {
             .setBufferSizeInBytes(size)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
+        if (t.state != AudioTrack.STATE_INITIALIZED) {
+            t.release()
+            throw IllegalStateException("音声の出力を初期化できません")
+        }
         t.write(ByteArray(SAMPLE_RATE * 2 * PREROLL_MS / 1000), 0, SAMPLE_RATE * 2 * PREROLL_MS / 1000)
         t.play()
         return t

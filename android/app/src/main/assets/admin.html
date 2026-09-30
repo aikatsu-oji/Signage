@@ -119,6 +119,8 @@
   .verdict { font-size: 12px; font-weight: bold; }
   .verdict.v-ok { color: var(--ok); } .verdict.v-warn { color: #b06000; } .verdict.v-ng { color: var(--danger); }
   .fitnote { font-size: 11px; color: var(--sub); }
+  .voiceResult { list-style: none; margin: 4px 0 8px; padding: 0; font-size: 12px; display: flex; flex-direction: column; gap: 2px; }
+  .voiceResult li.ok { color: var(--ok); } .voiceResult li.ng { color: var(--danger); font-weight: bold; } .voiceResult li.warn { color: #b06000; font-weight: bold; }
   #voiceTalk.live { background: #e53935; border-color: #e53935; color: #fff; }
   #voiceTalk { touch-action: none; user-select: none; -webkit-user-select: none; }
   #importDialog { max-width: 560px; }
@@ -221,7 +223,9 @@
         <div class="dlgrow" style="margin:8px 0">
           <button class="primary" type="button" id="voiceTalk">🎤 押している間、話す</button>
           <meter id="voiceLevel" min="0" max="1" value="0" style="width:90px"></meter>
+          <button type="button" id="voiceTest" title="声を出さずに、放送先の端末までテスト音が届くか確かめます">テスト音を送る</button>
         </div>
+        <ul id="voiceResult" class="voiceResult"></ul>
         <label class="check sub"><input type="checkbox" id="voiceLatch"> ボタンを押さなくても話し続ける（もう一度押すと止まる）</label>
         <p class="sub" id="voiceStatus">話すと、選んだ端末のスピーカーからすぐ流れます（遅れは 1 秒前後）。放送中は端末の動画の音が小さくなります。ハウリングを防ぐため、ヘッドセットの使用をおすすめします。</p>
       </section>
@@ -1426,23 +1430,79 @@
         + '管理に使う PC で Windows 版 Signage を起動し、同じ PC のブラウザで http://localhost:' + (location.port || '8080') + '/ を開いてください。';
     }
     $('#voiceTalk').disabled = !ok || !list.length;
+    $('#voiceTest').disabled = !list.length;   // テスト音は、マイクが使えない（IP アドレスで開いた）ページからも送れる
+  }
+
+  /** 端末ごとの送信結果（成功・失敗の回数、最後のエラー、端末の音量など）。画面に残して、届かない原因が分かるようにする */
+  const voiceInfo = new Map();
+  function voiceInfoFor(dev) {
+    if (!voiceInfo.has(dev.key)) voiceInfo.set(dev.key, { name: dev.name, ok: 0, fail: 0, err: '', volume: null, volumeMax: null, listeners: null });
+    return voiceInfo.get(dev.key);
+  }
+  function renderVoiceResult() {
+    const ul = $('#voiceResult');
+    ul.replaceChildren();
+    for (const i of voiceInfo.values()) {
+      const li = document.createElement('li');
+      const parts = [`送信 ${i.ok} 回成功`];
+      if (i.fail) parts.push(`${i.fail} 回失敗（${i.err}）`);
+      if (i.volume === 0) parts.push('端末のメディア音量が 0 です。端末の音量を上げてください');
+      else if (i.volume !== null) parts.push(`端末の音量 ${i.volume}/${i.volumeMax}`);
+      if (i.listeners === 0) parts.push('再生画面が開いていないため、声が出ません');
+      li.textContent = `${i.name}：${parts.join('／')}`;
+      li.className = i.fail ? 'ng' : (i.volume === 0 || i.listeners === 0) ? 'warn' : (i.ok ? 'ok' : '');
+      ul.append(li);
+    }
   }
 
   /** 端末へ順番どおりに送る（端末ごとに、前の送信が終わってから次を送る） */
   function voiceSend(dev, path, body) {
     const prev = voice.chain.get(dev.key) || Promise.resolve();
+    const info = voiceInfoFor(dev);
     const next = prev.then(() => fetch(dev.url + path, {
       method: 'POST', body,
       headers: { 'X-Pin': dev.pin || '', 'Content-Type': 'application/octet-stream' },
     }).then(async (r) => {
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || ('エラー ' + r.status));
-      return r.json();
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ('エラー ' + r.status));
+      info.ok++;
+      if (j.volume !== undefined) { info.volume = j.volume; info.volumeMax = j.volumeMax; }
+      if (j.listeners !== undefined) info.listeners = j.listeners;
+      renderVoiceResult();
+      return j;
     })).catch((e) => {
-      if (!voice.failed.has(dev.key)) { voice.failed.add(dev.key); toast(`「${dev.name}」への放送に失敗しました：${e.message}`); }
+      info.fail++;
+      info.err = e.message === 'Failed to fetch' ? '端末に接続できません（アプリの版・ネットワーク・管理画面の設定を確認）' : e.message;
+      renderVoiceResult();
+      if (!voice.failed.has(dev.key)) { voice.failed.add(dev.key); toast(`「${dev.name}」への放送に失敗しました：${info.err}`); }
     });
     voice.chain.set(dev.key, next);
     return next;
   }
+
+  /** 声を出さずに、放送先の端末までテスト音（0.8 秒のピー音）が届くか確かめる */
+  async function voiceTest() {
+    const list = voiceTargets();
+    if (!list.length) return;
+    voiceInfo.clear(); voice.failed.clear();
+    list.forEach(voiceInfoFor);
+    renderVoiceResult();
+    $('#voiceStatus').textContent = `テスト音を送っています：${list.map((d) => d.name).join('、')}`;
+    const total = Math.round(VOICE_RATE * 0.8);
+    const all = new Int16Array(total);
+    for (let i = 0; i < total; i++) {
+      const fade = Math.min(1, i / 800, (total - i) / 800);       // 最初と最後を少しずつ大きく・小さくして、プツッという音を防ぐ
+      all[i] = Math.round(Math.sin(2 * Math.PI * 440 * i / VOICE_RATE) * 0.4 * 32767 * fade);
+    }
+    for (let off = 0; off < total; off += VOICE_CHUNK) {
+      const chunk = all.slice(off, off + VOICE_CHUNK);
+      await Promise.all(list.map((dev) => voiceSend(dev, '/api/voice', chunk.buffer.slice(0))));
+      await new Promise((r) => setTimeout(r, 180));
+    }
+    await Promise.all(list.map((dev) => voiceSend(dev, '/api/voice/end', new ArrayBuffer(0))));
+    $('#voiceStatus').textContent = 'テスト音を送りました。端末から「ピー」と聞こえれば、声も届きます。聞こえないときは、上の結果を確認してください。';
+  }
+  $('#voiceTest').addEventListener('click', voiceTest);
 
   function voiceFlush(force) {
     while (voice.pending.length >= VOICE_CHUNK || (force && voice.pending.length > 0)) {
@@ -1463,6 +1523,7 @@
     voice.starting = true;
     voice.targets = voiceTargets();
     voice.failed.clear(); voice.warned = false; voice.sent = 0; voice.pending = [];
+    voiceInfo.clear(); voice.targets.forEach(voiceInfoFor); renderVoiceResult();
     try {
       voice.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     } catch (e) {

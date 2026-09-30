@@ -396,7 +396,11 @@ object AdminServer {
                 // 途切れたとき（ブラウザを閉じた等）に、音量を元に戻して終わる
                 main.removeCallbacks(voiceIdle)
                 main.postDelayed(voiceIdle, 2500)
-                json(200, JSONObject().put("ok", true))
+                // 管理画面の診断表示用：受け取ったバイト数と、端末のメディア音量（0 だと音が出ない）
+                val am = app.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+                json(200, JSONObject().put("ok", true).put("bytes", pcm.size)
+                    .put("volume", am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC))
+                    .put("volumeMax", am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)))
             }
             "POST /api/voice/end" -> {
                 main.removeCallbacks(voiceIdle)
