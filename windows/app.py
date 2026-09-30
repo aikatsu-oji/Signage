@@ -139,7 +139,9 @@ class App:
         threading.Thread(target=self.schedule_loop, daemon=True).start()
         if self.store.get("autoStart"):
             set_autostart(True)  # 実行ファイルの場所が変わっていても登録し直す
-        if not self.args.no_player:
+        # 「Windows の起動時に自動で開始」が ON のときだけ、起動と同時に全画面で再生を始める
+        # （OFF のときはタスクトレイに常駐するだけ。再生はトレイのメニューから開く）
+        if self.store.get("autoStart") and not self.args.no_player:
             self.open_player()
         if self.first_run:
             self.open_settings()
@@ -248,7 +250,17 @@ class App:
             item("終了", self.quit),
         )
         self.tray = pystray.Icon(APP_NAME, img, f"サイネージ（{self.store.device_name}）", menu)
-        self.tray.run()
+
+        def ready(icon):
+            icon.visible = True
+            # 全画面を開かずに起動したときは、常駐したことが分かるように通知する
+            if not self.store.get("autoStart") and not self.first_run:
+                try:
+                    icon.notify("タスクトレイのアイコンから、再生画面や設定を開けます。", "サイネージを起動しました")
+                except Exception:
+                    pass
+
+        self.tray.run(setup=ready)
 
 
 def main():
