@@ -1,6 +1,7 @@
 package jp.signage.player
 
 import android.content.Context
+import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -461,6 +462,11 @@ object AdminServer {
             .put("videoSound", prefs.videoSound)
             .put("videoCompat", prefs.videoCompat)
             .put("fitMode", prefs.fitMode)
+            .put("orientation", when (prefs.orientation) {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE -> 1
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT -> 2
+                else -> 0
+            })
             .put("clockEnabled", prefs.clockEnabled)
             .put("clockPosition", prefs.clockPosition)
             .put("clockSize", prefs.clockSize)
@@ -486,6 +492,14 @@ object AdminServer {
 
     private fun applySettings(prefs: Prefs, j: JSONObject) {
         if (j.has("layout")) prefs.layout = j.getInt("layout").coerceIn(0, 3)
+        // 画面の向き（0=端末の向きに従う / 1=横向きに固定 / 2=縦向きに固定）
+        if (j.has("orientation")) {
+            prefs.orientation = when (j.getInt("orientation")) {
+                1 -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                2 -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
+        }
         if (j.has("splitPercent")) prefs.splitPercent = j.getInt("splitPercent")
         if (j.has("mainPercent")) prefs.mainPercent = j.getInt("mainPercent")
         if (j.has("sidePercent")) prefs.sidePercent = j.getInt("sidePercent")

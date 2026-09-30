@@ -33,7 +33,7 @@ mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
-VERSION = "1.2.2"
+VERSION = "1.3.0"
 
 
 def resource_dir() -> Path:
@@ -179,7 +179,7 @@ class Server:
             zones.append(z)
         settings = {k: s.get(k) for k in (
             "layout", "splitPercent", "mainPercent", "sidePercent", "imageSeconds", "shuffle", "recursive", "videoSound",
-            "fitMode",
+            "fitMode", "orientation",
             "clockEnabled", "clockPosition", "clockSize", "weatherEnabled", "weatherIntervalMin",
             "weatherSeconds", "weatherTimeSeries")}
         settings["zoneTypes"] = [s.zone_type(i) for i in range(st.MAX_ZONES)]
@@ -221,7 +221,7 @@ class Server:
                 if t in (st.ZONE_FOLDER, st.ZONE_WEATHER):
                     types[i] = t
             u["zoneTypes"] = types
-        for k, lo, hi in (("imageSeconds", 1, 3600), ("clockPosition", 0, 3), ("clockSize", 0, 2), ("fitMode", 0, 3),
+        for k, lo, hi in (("imageSeconds", 1, 3600), ("clockPosition", 0, 3), ("clockSize", 0, 2), ("fitMode", 0, 3), ("orientation", 0, 2),
                           ("weatherIntervalMin", 1, 1440), ("weatherSeconds", 3, 600)):
             if k in j: u[k] = clamp(j[k], lo, hi)
         for k in ("shuffle", "recursive", "videoSound", "clockEnabled", "weatherEnabled", "weatherTimeSeries"):

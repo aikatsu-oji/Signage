@@ -63,6 +63,7 @@ DEFAULTS = {
     "shuffle": False,
     "recursive": True,
     "videoSound": True,
+    "orientation": 0,  # 画面の向き 0: 自動 / 1: 横 / 2: 縦（Windows の向きは Windows 側の設定。管理画面のプレビュー・必要な画像サイズの確認用）
     "fitMode": 3,  # 0: 全体を表示 / 1: 全体＋ぼかし背景 / 2: 画面いっぱい / 3: おまかせ
     "clockEnabled": False,
     "clockPosition": 0,

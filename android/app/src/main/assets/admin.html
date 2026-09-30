@@ -78,6 +78,7 @@
   .tile[aria-checked=true] .mini i { background: #1a73e8; opacity: .75; }
   .lpwrap { flex: 1 1 320px; min-width: 260px; max-width: 640px; }
   .lp { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #0b0d12; border-radius: 8px; overflow: hidden; user-select: none; touch-action: none; }
+  .lp.portrait { aspect-ratio: 9 / 16; width: 240px; max-width: 100%; }
   .lp .box { position: absolute; box-sizing: border-box; border: 2px solid #0b0d12; background: #263043; color: #e8eaf0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 4px; text-align: center; font-size: 12px; overflow: hidden; }
   .lp .box:nth-child(2) { background: #2d3b52; }
   .lp .box b { font-size: 13px; }
@@ -85,9 +86,18 @@
   .lp .div { position: absolute; z-index: 2; background: #1a73e8; display: flex; align-items: center; justify-content: center; outline: none; }
   .lp .div.v { width: 10px; margin-left: -5px; cursor: ew-resize; align-items: flex-start; }
   .lp .div.v span { margin-top: 8px; }
+  .lp.portrait .div.v { align-items: flex-end; }
+  .lp.portrait .div.v span { margin-top: 0; margin-bottom: 8px; }
   .lp .div.h { height: 10px; margin-top: -5px; cursor: ns-resize; }
   .lp .div:focus-visible { box-shadow: 0 0 0 3px #fff; }
   .lp .div span { background: #1a73e8; color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 10px; white-space: nowrap; pointer-events: none; }
+  .orientRow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 0 16px 10px; }
+  .orientRow .ol { font-size: 13px; font-weight: bold; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 5px 12px; font-size: 13px; background: var(--card); color: var(--text); cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-checked=true] { background: #1a73e8; color: #fff; font-weight: bold; }
+  #orientNote { flex: 1 1 260px; }
   #lpRatios { margin-top: 10px; font-size: 13px; }
   #lpRatios .scr { color: var(--sub); margin-bottom: 4px; }
   #lpRatios table { border-collapse: collapse; width: 100%; }
@@ -236,6 +246,11 @@
       <section id="layoutSec">
         <details id="layoutDetails" open>
           <summary><h2>画面分割</h2><span class="sub" id="layoutSummary"></span></summary>
+          <div class="orientRow">
+            <span class="ol">画面の向き</span>
+            <div class="seg" id="orientSeg" role="radiogroup" aria-label="画面の向き"></div>
+            <span class="sub" id="orientNote"></span>
+          </div>
           <div class="layoutBody">
             <div class="tiles" id="layoutTiles" role="radiogroup" aria-label="分割方法"></div>
             <div class="lpwrap">
@@ -669,7 +684,7 @@
     for (let i = 0; i < count; i++) {
       const saved = dev.state.zones.find((x) => x.index === i);
       const pendingType = Number(layoutZoneTypes[i] ?? 0);
-      const label = `区画${i + 1}（${ZONE_LABELS[pendingLayout][i] ?? ''}）`;
+      const label = `区画${i + 1}（${zoneLabels(pendingLayout, screenDims(dev).portrait)[i] ?? ''}）`;
       if (!saved || saved.type !== pendingType) {
         const stub = document.createElement('section');
         stub.innerHTML = '<h2></h2><p class="sub"></p>';
@@ -945,6 +960,23 @@
     { id: 3, name: 'メイン＋サイド', grid: ['2fr 1fr', '1fr 1fr'], cells: [[1, 1, 2, 3], [2, 1, 3, 2], [2, 2, 3, 3]] },
   ];
   const ZONE_LABELS = { 0: ['全画面'], 1: ['左', '右'], 2: ['上', '下'], 3: ['メイン', 'サイド1（右上）', 'サイド2（右下）'] };
+  // 縦向きのメイン＋サイドは、メインが上、サイドが下に横並び（再生画面と同じ）
+  const ZONE_LABELS_PORTRAIT_MAIN_SIDE = ['メイン（上）', 'サイド1（左下）', 'サイド2（右下）'];
+  const zoneLabels = (layout, portrait) => (layout === 3 && portrait ? ZONE_LABELS_PORTRAIT_MAIN_SIDE : ZONE_LABELS[layout]);
+
+  /** 画面の向き（0=自動 / 1=横 / 2=縦）。保存前の変更中の値。Windows では確認用の表示（向きは Windows 側で決まる） */
+  let layoutOrientation = 0;
+
+  /** 計算に使う画面の大きさ。向きを「横／縦」に選んでいれば、端末が報告した大きさをその向きに合わせて入れ替える */
+  function screenDims(dev) {
+    const sc = dev.state?.screen;
+    const known = !!sc;
+    const W0 = sc?.width || 1920, H0 = sc?.height || 1080;
+    const big = Math.max(W0, H0), small = Math.min(W0, H0);
+    const portrait = layoutOrientation === 2 ? true : layoutOrientation === 1 ? false : H0 > W0;
+    return { w: portrait ? small : big, h: portrait ? big : small, portrait, known, actualPortrait: H0 > W0, actualW: W0, actualH: H0 };
+  }
+  const isWindowsDev = (dev) => /^Windows/.test(dev.state?.device || '');
   const layoutForm = () => $('#settings');
   const fval = (name) => Number(layoutForm().elements[name].value);
 
@@ -952,6 +984,7 @@
     const s = dev.state.settings;
     const f = layoutForm();
     for (const i of [0, 1, 2]) layoutZoneTypes[i] = String(s.zoneTypes[i] ?? 0);
+    layoutOrientation = Number(s.orientation ?? 0);
     for (const el of f.elements) {
       if (!el.name) continue;
       const v = s[el.name];
@@ -974,7 +1007,8 @@
     if (!st) return;
     const dirty = fval('layout') !== st.layout || fval('splitPercent') !== st.splitPercent
       || fval('mainPercent') !== st.mainPercent || fval('sidePercent') !== st.sidePercent
-      || [0, 1, 2].some((i) => Number(layoutZoneTypes[i]) !== (st.zoneTypes[i] ?? 0));
+      || [0, 1, 2].some((i) => Number(layoutZoneTypes[i]) !== (st.zoneTypes[i] ?? 0))
+      || layoutOrientation !== Number(st.orientation ?? 0);
     $('#layoutDirty').hidden = !dirty;
   }
 
@@ -1008,21 +1042,43 @@
   /** 区画ごとに必要な画像の大きさ（px）と縦横比を、画面分割カードに表示する */
   function renderRatios(layout) {
     const dev = selected();
-    const known = !!dev.state?.screen;
-    const scr = dev.state?.screen || { width: 1920, height: 1080 };
-    const sizes = zoneSizes(scr.width, scr.height);
-    const sr = ratioLabel(scr.width, scr.height);
+    const sd = screenDims(dev);
+    const sizes = zoneSizes(sd.w, sd.h);
+    const names = zoneLabels(layout, sd.portrait);
+    const sr = ratioLabel(sd.w, sd.h);
     const rows = sizes.map((sz, i) => {
       const w = Math.round(sz[0]), h = Math.round(sz[1]);
       const rl = ratioLabel(w, h);
       const isFolder = layoutZoneTypes[i] === '0';
-      return `<tr><td class="n">区画${i + 1}（${ZONE_LABELS[layout][i]}）</td><td class="r">${w} × ${h} px</td>
+      return `<tr><td class="n">区画${i + 1}（${names[i]}）</td><td class="r">${w} × ${h} px</td>
         <td class="r">縦横比 <span class="ratio">${rl.text}</span>（${rl.value}）</td>
         <td class="sub">${isFolder ? '' : '天気予報（画像は不要）'}</td></tr>`;
     }).join('');
-    $('#lpRatios').innerHTML = `<div class="scr">端末の画面：${scr.width} × ${scr.height} px（${sr.text}）${known ? '' : '　※画面サイズを取得できない端末のため 1920 × 1080 と仮定しています'}</div>
+    $('#lpRatios').innerHTML = `<div class="scr">画面（${sd.portrait ? '縦向き' : '横向き'}）：${sd.w} × ${sd.h} px（${sr.text}）${sd.known ? '' : '　※画面サイズを取得できない端末のため 1920 × 1080 と仮定しています'}</div>
       <div class="scr"><b>各区画にピッタリ収まる画像・動画の大きさと縦横比</b>（この比率・サイズで用意すると余白も切り取りもありません）</div><table>${rows}</table>`;
     return sizes;
+  }
+
+  /** 画面の向きの選択と、説明文 */
+  function renderOrientation() {
+    const dev = selected();
+    const sd = screenDims(dev);
+    const OPTS = [[0, '自動'], [1, '横向き'], [2, '縦向き']];
+    $('#orientSeg').innerHTML = OPTS.map(([v, t]) => `<button type="button" role="radio" aria-checked="${layoutOrientation === v}" data-v="${v}">${t}</button>`).join('');
+    $('#orientSeg').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+      layoutOrientation = Number(b.dataset.v);
+      renderLayoutCard();
+      refreshZones();
+    }));
+    const now = `端末の画面は今 ${sd.actualPortrait ? '縦向き' : '横向き'}（${sd.actualW} × ${sd.actualH} px）`;
+    let note;
+    if (isWindowsDev(dev)) {
+      note = layoutOrientation === 0 ? `${now}。Windows の画面の向きは、Windows のディスプレイ設定で変えます。`
+        : `Windows の画面の向きは、Windows のディスプレイ設定で${layoutOrientation === 2 ? '縦' : '横'}にしてください。ここでの選択は、プレビューと必要な画像サイズの確認用です（${now}）。`;
+    } else {
+      note = layoutOrientation === 0 ? `${now}。端末の向きに従います。` : `保存すると、再生画面を${layoutOrientation === 2 ? '縦' : '横'}向きに固定します（${now}）。`;
+    }
+    $('#orientNote').textContent = note;
   }
 
   function renderLayoutCard() {
@@ -1032,17 +1088,22 @@
       <span class="mini" style="grid-template-columns:${l.grid[0]};grid-template-rows:${l.grid[1]}">${l.cells.map((c) => `<i style="grid-area:${c[1]}/${c[0]}/${c[3]}/${c[2]}"></i>`).join('')}</span>${l.name}</button>`).join('');
     $('#layoutTiles').querySelectorAll('.tile').forEach((b) => b.addEventListener('click', () => { layoutForm().elements.layout.value = b.dataset.id; renderLayoutCard(); refreshZones(); }));
 
-    // プレビュー（横長画面のイメージ）。境界線をドラッグして比率を変える
+    // プレビュー（選んだ画面の向きのイメージ）。境界線をドラッグして比率を変える
     const sp = fval('splitPercent'), mp = fval('mainPercent'), sd = fval('sidePercent');
+    const portrait = screenDims(selected()).portrait;
+    renderOrientation();
     const rects = {
       0: [[0, 0, 100, 100]],
       1: [[0, 0, sp, 100], [sp, 0, 100 - sp, 100]],
       2: [[0, 0, 100, sp], [0, sp, 100, 100 - sp]],
-      3: [[0, 0, mp, 100], [mp, 0, 100 - mp, sd], [mp, sd, 100 - mp, 100 - sd]],
+      3: portrait
+        ? [[0, 0, 100, mp], [0, mp, sd, 100 - mp], [sd, mp, 100 - sd, 100 - mp]]           // 縦向き：メインが上、サイドが下に横並び
+        : [[0, 0, mp, 100], [mp, 0, 100 - mp, sd], [mp, sd, 100 - mp, 100 - sd]],          // 横向き：メインが左、サイドが右に縦並び
     }[layout];
-    const names = ZONE_LABELS[layout];
+    const names = zoneLabels(layout, portrait);
     const sizes = renderRatios(layout);
     const lp = $('#lp');
+    lp.classList.toggle('portrait', portrait);
     lp.innerHTML = rects.map((r, i) => `<div class="box" style="left:${r[0]}%;top:${r[1]}%;width:${r[2]}%;height:${r[3]}%">
       <b>区画${i + 1}</b><span>${names[i]}</span><small>${ratioLabel(sizes[i][0], sizes[i][1]).text}</small><select data-zone="${i}" aria-label="区画${i + 1}の表示内容">${ZONE_TYPES.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></div>`).join('');
     lp.querySelectorAll('select').forEach((sel) => {
@@ -1051,17 +1112,21 @@
     });
     if (layout === 1) addDivider(lp, 'v', 'splitPercent', sp, 0, 100, `${sp} : ${100 - sp}`);
     if (layout === 2) addDivider(lp, 'h', 'splitPercent', sp, 0, 100, `${sp} : ${100 - sp}`);
-    if (layout === 3) {
+    if (layout === 3 && !portrait) {
       addDivider(lp, 'v', 'mainPercent', mp, 0, 100, `${mp} : ${100 - mp}`);
       addDivider(lp, 'h', 'sidePercent', sd, mp, 100 - mp, `${sd} : ${100 - sd}`);
     }
+    if (layout === 3 && portrait) {
+      addDivider(lp, 'h', 'mainPercent', mp, 0, 100, `${mp} : ${100 - mp}`);
+      addDivider(lp, 'v', 'sidePercent', sd, mp, 100 - mp, `${sd} : ${100 - sd}`);
+    }
     $('#lpHint').textContent = layout === 0 ? '画面全体に区画1を表示します。'
-      : '青い境界線をドラッグ（またはクリックして ←→↑↓ キー）で比率を変えられます。縦長の画面では、メイン＋サイドの並びが縦横入れ替わります。';
+      : `青い境界線をドラッグ（またはクリックして ←→↑↓ キー）で比率を変えられます。${layout === 3 ? (portrait ? '縦向きでは、メインが上、サイドが下に横並びになります。' : '横向きでは、メインが左、サイドが右に縦並びになります。') : ''}`;
     updateLayoutDirty();
     $('#layoutSummary').textContent = LAYOUTS[layout].name + (layout === 1 || layout === 2 ? `（${sp} : ${100 - sp}）` : layout === 3 ? `（メイン ${mp}%）` : '');
   }
 
-  /** 境界線。axis: 'v'=縦線（左右に動かす）/ 'h'=横線（上下に動かす）。offset・len は横線の左端と長さ（％） */
+  /** 境界線。axis: 'v'=縦線（左右に動かす）/ 'h'=横線（上下に動かす）。offset・len は線の始まりの位置と長さ（％） */
   function addDivider(lp, axis, field, value, offset, len, label) {
     const d = document.createElement('div');
     d.className = 'div ' + axis;
@@ -1071,7 +1136,7 @@
     d.setAttribute('aria-label', '区画の比率');
     d.setAttribute('aria-valuenow', value);
     d.setAttribute('aria-valuetext', label);
-    if (axis === 'v') { d.style.left = value + '%'; d.style.top = '0'; d.style.height = '100%'; }
+    if (axis === 'v') { d.style.left = value + '%'; d.style.top = offset + '%'; d.style.height = len + '%'; }
     else { d.style.top = value + '%'; d.style.left = offset + '%'; d.style.width = len + '%'; }
     d.innerHTML = `<span>${label}</span>`;
     const [lo, hi] = LIMITS[field];
@@ -1148,7 +1213,8 @@
 
   function renderFit() {
     const dev = selected();
-    const scr = dev.state?.screen || { width: 1920, height: 1080 };
+    const sd0 = screenDims(dev);
+    const scr = { width: sd0.w, height: sd0.h };
     const types = layoutZoneTypes;
     const sizes = zoneSizes(scr.width, scr.height);
     const zones = sizes.map((sz, i) => ({ i, w: sz[0], h: sz[1], folder: types[i] === '0' })).filter((z) => z.folder);
@@ -1245,6 +1311,7 @@
     const body = {
       layout: fval('layout'), splitPercent: fval('splitPercent'), mainPercent: fval('mainPercent'), sidePercent: fval('sidePercent'),
       zoneTypes: [0, 1, 2].map((i) => Number(layoutZoneTypes[i])),
+      orientation: layoutOrientation,
     };
     try {
       await post(dev, '/api/settings', body);
