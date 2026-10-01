@@ -321,6 +321,18 @@ object AdminServer {
 
         return when ("${req.method} ${req.path}") {
             "GET /api/state" -> json(200, state(prefs).put("access", accessInfo(prefs, from)))
+            "GET /api/weather/offices" -> {
+                val arr = org.json.JSONArray()
+                Weather.offices(app).forEach { o ->
+                    arr.put(JSONObject().put("code", o.code).put("name", o.name)
+                        .put("areas", org.json.JSONArray().also { a -> o.areas.forEach { (c, n) -> a.put(org.json.JSONArray().put(c).put(n)) } })
+                        .put("cities", org.json.JSONArray().also { a -> o.cities.forEach { c ->
+                            a.put(JSONObject().put("code", c.code).put("name", c.name).put("areaCode", c.areaCode).put("areaName", c.areaName))
+                        } }))
+                }
+                val bytes = arr.toString().toByteArray(Charsets.UTF_8)
+                Response(200, "application/json; charset=utf-8", bytes.size.toLong()) { it.write(bytes) }
+            }
             "POST /api/access" -> json(200, applyAccess(prefs, req.json(), from))
             "PUT /api/upload" -> {
                 val folder = writableFolder(prefs, req.query["zone"])
@@ -564,6 +576,11 @@ object AdminServer {
             .put("weatherSeconds", prefs.weatherSeconds)
             .put("weatherTimeSeries", prefs.weatherTimeSeries)
             .put("weatherPlace", prefs.weatherCityName ?: prefs.weatherAreaName ?: "")
+            .put("weatherOffice", prefs.weatherOffice ?: JSONObject.NULL)
+            .put("weatherArea", prefs.weatherArea ?: JSONObject.NULL)
+            .put("weatherAreaName", prefs.weatherAreaName ?: JSONObject.NULL)
+            .put("weatherCity", prefs.weatherCity ?: JSONObject.NULL)
+            .put("weatherCityName", prefs.weatherCityName ?: JSONObject.NULL)
         val version = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull()
         val ticker = JSONObject()
             .put("standing", Ticker.standing(app)?.toJson() ?: JSONObject.NULL)
@@ -611,6 +628,19 @@ object AdminServer {
         if (j.has("weatherIntervalMin")) prefs.weatherIntervalMin = j.getInt("weatherIntervalMin")
         if (j.has("weatherSeconds")) prefs.weatherSeconds = j.getInt("weatherSeconds")
         if (j.has("weatherTimeSeries")) prefs.weatherTimeSeries = j.getBoolean("weatherTimeSeries")
+        // 天気予報の地域（気象庁のコード。数字のみ）
+        fun code(key: String): String? {
+            if (j.isNull(key)) return null
+            val v = j.get(key).toString()
+            if (!Regex("\\d{1,10}").matches(v)) throw HttpError(400, "天気予報の地域が正しくありません")
+            return v
+        }
+        fun name(key: String): String? = if (j.isNull(key)) null else j.getString(key).take(40).ifEmpty { null }
+        if (j.has("weatherOffice")) prefs.weatherOffice = code("weatherOffice")
+        if (j.has("weatherArea")) prefs.weatherArea = code("weatherArea")
+        if (j.has("weatherCity")) prefs.weatherCity = code("weatherCity")
+        if (j.has("weatherAreaName")) prefs.weatherAreaName = name("weatherAreaName")
+        if (j.has("weatherCityName")) prefs.weatherCityName = name("weatherCityName")
     }
 
     private fun json(status: Int, body: JSONObject): Response {

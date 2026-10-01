@@ -36,7 +36,7 @@ mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
-VERSION = "1.6.2"
+VERSION = "1.6.3"
 
 
 def resource_dir() -> Path:
@@ -184,7 +184,8 @@ class Server:
             "layout", "splitPercent", "mainPercent", "sidePercent", "imageSeconds", "shuffle", "recursive", "videoSound",
             "fitMode", "orientation",
             "clockEnabled", "clockPosition", "clockSize", "weatherEnabled", "weatherIntervalMin",
-            "weatherSeconds", "weatherTimeSeries")}
+            "weatherSeconds", "weatherTimeSeries",
+            "weatherOffice", "weatherArea", "weatherAreaName", "weatherCity", "weatherCityName")}
         settings["zoneTypes"] = [s.zone_type(i) for i in range(st.MAX_ZONES)]
         settings["weatherPlace"] = s.get("weatherCityName") or s.get("weatherAreaName") or ""
         return {
@@ -257,6 +258,16 @@ class Server:
             if k in j: u[k] = clamp(j[k], lo, hi)
         for k in ("shuffle", "recursive", "videoSound", "clockEnabled", "weatherEnabled", "weatherTimeSeries"):
             if k in j: u[k] = bool(j[k])
+        # 天気予報の地域（気象庁のコード。数字のみ）
+        for k in ("weatherOffice", "weatherArea", "weatherCity"):
+            if k in j:
+                v = j[k]
+                if v is not None and not re.fullmatch(r"\d{1,10}", str(v)):
+                    raise HttpError(400, "天気予報の地域が正しくありません")
+                u[k] = str(v) if v is not None else None
+        for k in ("weatherAreaName", "weatherCityName"):
+            if k in j:
+                u[k] = str(j[k])[:40] if j[k] else None
         self.store.update(u)
 
     # ------------------------------------------------------------ ハンドラー
@@ -449,6 +460,8 @@ class Server:
                     d = server.state()
                     d["access"] = server.access_info(self.client_address[0])
                     self.json(d)
+                elif key == "GET /api/weather/offices":
+                    self.json(weather.offices())
                 elif key == "POST /api/access":
                     self.json(server.apply_access(self.body_json(), self.client_address[0]))
                 elif key == "PUT /api/upload":

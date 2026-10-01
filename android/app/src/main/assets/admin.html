@@ -367,7 +367,7 @@
 
       <section id="settingsSec">
         <h2>設定</h2>
-        <p class="sub">保存すると、この端末の再生画面にすぐ反映されます。フォルダと天気予報の地域は、端末の設定画面で変更してください。</p>
+        <p class="sub">保存すると、この端末の再生画面にすぐ反映されます。フォルダは、端末の設定画面で変更してください。</p>
         <form id="settings">
           <fieldset>
             <legend>再生</legend>
@@ -404,7 +404,10 @@
               <label class="field"><span>表示間隔（分）</span><input type="number" name="weatherIntervalMin" min="1" max="1440"></label>
               <label class="field"><span>1画面の表示秒数</span><input type="number" name="weatherSeconds" min="3" max="600"></label>
               <label class="check"><input type="checkbox" name="weatherTimeSeries"> 3時間ごとの予報も表示</label>
+              <label class="field"><span>地方（都道府県）</span><select id="wxOffice"><option>読み込み中…</option></select></label>
+              <label class="field"><span>市区町村・地域</span><select id="wxCity"></select></label>
             </div>
+            <p class="sub" id="wxNote">予報は「東京地方」などの地域単位で、画面の見出しには市区町村名を表示します。地域の一覧は、端末がインターネットに接続できるときに取得されます。</p>
           </fieldset>
           <button class="primary">この端末に保存</button>
         </form>
@@ -1187,6 +1190,7 @@
     }
     if (!LAYOUTS.some((l) => l.id === fval('layout'))) f.elements.layout.value = '0';
     $('#weatherPlace').textContent = s.weatherPlace ? `（地域：${s.weatherPlace}）` : '';
+    renderWeatherRegion(dev);
     renderLayoutCard();
   }
 
@@ -1516,6 +1520,58 @@
     d.addEventListener('toggle', () => { try { localStorage.setItem('signage-layout-open', d.open ? '1' : '0'); } catch (e) {} });
   } catch (e) {}
 
+  // ---- 天気予報の地域（気象庁の地方・市区町村）
+
+  let wxOffices = null;
+  let wxCities = [];
+
+  async function loadWxOffices(dev) {
+    if (wxOffices) return wxOffices;
+    // 一覧は全端末で同じ。選択中の端末から取れなければ、ほかの接続できる端末から取る
+    const order = [dev, ...[...devices.values()].filter((d) => d !== dev && d.status === 'ok')];
+    for (const d of order) {
+      try {
+        const list = await api(d, '/api/weather/offices', {}, 20000);
+        if (Array.isArray(list) && list.length) { wxOffices = list; return list; }
+      } catch (e) { /* 次の端末で試す */ }
+    }
+    return null;
+  }
+
+  function fillWxCities(keepCity, keepArea) {
+    const o = (wxOffices || []).find((x) => x.code === $('#wxOffice').value);
+    wxCities = !o ? [] : o.cities.length
+      ? o.cities.map((c) => ({ code: c.code, name: c.name, areaCode: c.areaCode, areaName: c.areaName, label: `${c.name}　— ${c.areaName}` }))
+      : o.areas.map(([code, name]) => ({ code: null, name: null, areaCode: code, areaName: name, label: name }));
+    $('#wxCity').innerHTML = wxCities.map((c, i) => `<option value="${i}">${c.label}</option>`).join('');
+    let i = wxCities.findIndex((c) => c.code && c.code === keepCity);
+    if (i < 0) i = wxCities.findIndex((c) => c.areaCode === keepArea);
+    $('#wxCity').selectedIndex = Math.max(0, i);
+  }
+
+  async function renderWeatherRegion(dev) {
+    const st = dev.state?.settings || {};
+    const list = await loadWxOffices(dev);
+    if (selected() !== dev) return; // 読み込み中に別の端末へ切り替わった
+    if (!list) {
+      $('#wxOffice').innerHTML = '<option>（地域の一覧を取得できません）</option>';
+      $('#wxCity').innerHTML = '';
+      return;
+    }
+    $('#wxOffice').innerHTML = list.map((o) => `<option value="${o.code}">${o.name}</option>`).join('');
+    $('#wxOffice').value = st.weatherOffice || '130000';
+    if ($('#wxOffice').selectedIndex < 0) $('#wxOffice').selectedIndex = 0;
+    fillWxCities(st.weatherCity, st.weatherArea);
+  }
+  $('#wxOffice').addEventListener('change', () => fillWxCities(null, null));
+
+  /** 設定欄の地域（一覧を取得できているときだけ送る） */
+  function wxBody() {
+    const c = wxCities[Number($('#wxCity').value)];
+    if (!wxOffices || !c || !$('#wxOffice').value) return {};
+    return { weatherOffice: $('#wxOffice').value, weatherArea: c.areaCode, weatherAreaName: c.areaName, weatherCity: c.code, weatherCityName: c.name };
+  }
+
   function formSettings() {
     const f = $('#settings');
     const body = { zoneTypes: [0, 1, 2].map((i) => Number(layoutZoneTypes[i])) };
@@ -1523,7 +1579,7 @@
       if (!el.name) continue;
       body[el.name] = el.type === 'checkbox' ? el.checked : Number(el.value);
     }
-    return body;
+    return { ...body, ...wxBody() };
   }
 
   $('#settings').addEventListener('submit', async (e) => {
