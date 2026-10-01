@@ -102,7 +102,7 @@ abstract class PanelView(context: Context) : LinearLayout(context) {
     }
 
     protected fun addFooter() {
-        addView(text("出典：気象庁ホームページ", 0.8f, color = DIM).apply { gravity = Gravity.END })
+        addView(text("出典：気象庁ホームページ（https://www.jma.go.jp/bosai/forecast/）のデータを加工して表示", 0.8f, color = DIM).apply { gravity = Gravity.END })
     }
 
     /** 天気アイコン（主な天気を大きく、時々・後などの天気を小さく右に添える） */

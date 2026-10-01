@@ -293,6 +293,9 @@ object AdminServer {
 
     private fun route(req: Request, from: InetAddress): Response {
         if (!isLan(from)) throw HttpError(403, "同じネットワーク内からのみ利用できます")
+        // 偽のドメイン名を使った攻撃（DNS リバインディング）と、外部のサイトからの操作（CSRF）を拒否する
+        if (!RequestGuard.hostOk(req.headers["host"])) throw HttpError(403, "このアドレスでは利用できません")
+        req.headers["origin"]?.let { if (!isLanOrigin(it)) throw HttpError(403, "許可されていない接続元です") }
         if (req.method == "OPTIONS") {
             val origin = req.headers["origin"]
             if (origin == null || !isLanOrigin(origin)) throw HttpError(403, "許可されていない接続元です")
@@ -301,7 +304,11 @@ object AdminServer {
 
         if (req.method == "GET" && (req.path == "/" || req.path == "/index.html")) {
             val html = app.assets.open("admin.html").use { it.readBytes() }
-            return Response(200, "text/html; charset=utf-8", html.size.toLong()) { it.write(html) }
+            return Response(
+                200, "text/html; charset=utf-8", html.size.toLong(),
+                // 他のページに埋め込まれて操作されるのを防ぐ
+                mapOf("X-Frame-Options" to "DENY", "X-Content-Type-Options" to "nosniff", "Referrer-Policy" to "no-referrer"),
+            ) { it.write(html) }
         }
         if (!req.path.startsWith("/api/")) throw HttpError(404, "見つかりません")
         checkPin(req.headers["x-pin"])

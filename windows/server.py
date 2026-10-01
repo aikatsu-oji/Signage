@@ -24,6 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+import guard
 import store as st
 import weather
 
@@ -34,7 +35,7 @@ mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
-VERSION = "1.5.1"
+VERSION = "1.5.2"
 
 
 def resource_dir() -> Path:
@@ -268,6 +269,9 @@ class Server:
                 self.send_header("Content-Type", ctype)
                 self.send_header("Content-Length", str(len(body)))
                 self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("X-Frame-Options", "DENY")          # 他のページに埋め込まれて操作されるのを防ぐ
+                self.send_header("Referrer-Policy", "no-referrer")
                 for k, v in {**self.cors(), **(extra or {})}.items():
                     self.send_header(k, v)
                 self.end_headers()
@@ -327,6 +331,11 @@ class Server:
                         raise HttpError(403, "同じネットワーク内からのみ利用できます")
                     url = urlparse(self.path)
                     path = unquote(url.path)
+                    # 外部のサイトからの操作（CSRF）や、偽のドメイン名を使った攻撃（DNS リバインディング）を拒否する
+                    why = guard.check(method, path, self.headers.get("Host"), self.headers.get("Origin"),
+                                      self.headers.get("Sec-Fetch-Site"), is_lan_origin)
+                    if why:
+                        raise HttpError(403, why)
                     query = {k: v[0] for k, v in parse_qs(url.query).items()}
                     if method == "OPTIONS":
                         origin = self.headers.get("Origin")

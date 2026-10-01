@@ -194,7 +194,7 @@
       });
       panel.append(week);
     }
-    panel.append(el('div', 'foot', '出典：気象庁ホームページ'));
+    panel.append(el('div', 'foot', '出典：気象庁ホームページ（https://www.jma.go.jp/bosai/forecast/）のデータを加工して表示'));
   }
 
   function renderSeries(panel, d, city, area) {
@@ -223,7 +223,7 @@
       panel.append(el('div', 'dim', '気温の変化'));
       panel.append(graph(slots.map((s) => (s.temp == null ? null : Number(s.temp)))));
     }
-    panel.append(el('div', 'foot', '出典：気象庁ホームページ'));
+    panel.append(el('div', 'foot', '出典：気象庁ホームページ（https://www.jma.go.jp/bosai/forecast/）のデータを加工して表示'));
   }
 
   function graph(temps) {
