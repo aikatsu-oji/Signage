@@ -66,6 +66,10 @@
     <div class="row"><label>端末名</label><input type="text" id="deviceName" maxlength="40"></div>
     <div class="row"><label>PIN（6桁）</label><input type="password" id="adminPin" maxlength="6" inputmode="numeric" style="width:120px">
       <button id="showPin" type="button">表示</button><button id="resetPin" type="button">ランダムに作る</button></div>
+    <div class="row"><label>操作できる端末</label>
+      <span id="accessState" class="sub"></span>
+      <button id="accessReset" type="button" hidden>制限を解除する</button></div>
+    <p class="sub">管理画面で、操作できる端末を MAC アドレスで制限できます。誰も操作できなくなったときは、この PC のここ（またはタスクトレイ）から解除できます。</p>
     <div class="row"><label>ブラウザで開くアドレス</label><div class="urls" id="urls"></div></div>
     <p class="sub">Android 版のサイネージと同じ PIN にしておくと、管理画面の端末一覧からまとめて操作できます。
       初めて使うときに Windows のファイアウォールの確認が出たら「プライベート ネットワーク」を許可してください。</p>
@@ -100,6 +104,8 @@
     $('#monitor').value = String(s.monitor || 0);
     $('#autoStart').checked = !!s.autoStart;
     $('#adminEnabled').checked = !!s.adminEnabled;
+    $('#accessState').textContent = s.macLock ? `MAC アドレスで制限中（${(s.allowedMacs || []).length} 台を許可）` : '制限なし';
+    $('#accessReset').hidden = !s.macLock;
     $('#deviceName').value = s.deviceName;
     $('#adminPin').value = s.adminPin;
     $('#urls').innerHTML = (s.addresses.length ? s.addresses : ['（LAN に接続されていません）'])
@@ -155,6 +161,10 @@
   $('#showPin').addEventListener('click', () => {
     const p = $('#adminPin');
     p.type = p.type === 'password' ? 'text' : 'password';
+  });
+  $('#accessReset').addEventListener('click', async () => {
+    if (!confirm('操作できる端末の制限を解除し、登録した端末の一覧を消します。よろしいですか？')) return;
+    try { await post('/local/access-reset'); toast('制限を解除しました'); load(); } catch (e) { toast(e.message); }
   });
   $('#resetPin').addEventListener('click', async () => {
     const r = await post('/local/settings', { resetPin: true });

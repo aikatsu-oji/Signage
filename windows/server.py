@@ -24,6 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+import devices
 import guard
 import store as st
 import weather
@@ -35,7 +36,7 @@ mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
-VERSION = "1.5.5"
+VERSION = "1.6.0"
 
 
 def resource_dir() -> Path:
@@ -209,6 +210,34 @@ class Server:
             pass
         return {"width": 1920, "height": 1080}
 
+    def access_info(self, addr):
+        s = self.store
+        return {
+            "enabled": bool(s.get("macLock")), "allowVpn": bool(s.get("allowVpn")),
+            "devices": list(s.get("allowedMacs") or []), "canResolve": True,
+            "you": {"ip": addr, "mac": devices.lookup_mac(addr), "vpn": devices.is_vpn(addr),
+                    "local": devices.is_loopback(addr)},
+        }
+
+    def apply_access(self, j, addr):
+        """操作できる端末の制限を変える。操作中の端末自身が締め出される変更は断る"""
+        s = self.store
+        try:
+            devs = devices.clean_devices(j["devices"]) if "devices" in j else list(s.get("allowedMacs") or [])
+        except ValueError as e:
+            raise HttpError(400, str(e))
+        lock = bool(j["enabled"]) if "enabled" in j else bool(s.get("macLock"))
+        vpn = bool(j["allowVpn"]) if "allowVpn" in j else bool(s.get("allowVpn"))
+        why = devices.check_update(lock, devs, vpn, addr, devices.lookup_mac(addr))
+        if why:
+            raise HttpError(400, why)
+        s.update({"macLock": lock, "allowVpn": vpn, "allowedMacs": devs})
+        return self.access_info(addr)
+
+    def reset_access(self):
+        """制限を解除して、登録した端末の一覧も消す（誰も操作できなくなったとき用。この PC 自身からのみ）"""
+        self.store.update({"macLock": False, "allowedMacs": []})
+
     def apply_settings(self, j: dict):
         def clamp(v, lo, hi):
             return max(lo, min(hi, int(v)))
@@ -355,6 +384,7 @@ class Server:
                         self.page("admin.html")
                         return
                     if path.startswith("/api/"):
+                        self.check_access(client)
                         self.check_pin(self.headers.get("X-Pin"))
                         self.route_api(method, path, query)
                         return
@@ -368,6 +398,17 @@ class Server:
                         self.json({"error": str(e) or e.__class__.__name__}, 500)
                     except Exception:
                         pass
+
+            def check_access(self, client):
+                """操作できる端末の制限（MAC アドレス）。制限が OFF の初期状態では何もしない"""
+                s = server.store
+                if not s.get("macLock"):
+                    return
+                devs = s.get("allowedMacs") or []
+                mac = None if devices.is_loopback(client) else devices.lookup_mac(client)
+                why = devices.gate(True, devs, bool(s.get("allowVpn")), client, mac)
+                if why:
+                    raise HttpError(403, why)
 
             def check_pin(self, pin):
                 now = time.time()
@@ -405,7 +446,11 @@ class Server:
                 s = server.store
                 key = f"{method} {path}"
                 if key == "GET /api/state":
-                    self.json(server.state())
+                    d = server.state()
+                    d["access"] = server.access_info(self.client_address[0])
+                    self.json(d)
+                elif key == "POST /api/access":
+                    self.json(server.apply_access(self.body_json(), self.client_address[0]))
                 elif key == "PUT /api/upload":
                     folder = self.folder_of(query.get("zone"), writable=True)
                     name = s.sanitize(query.get("name", ""))
@@ -564,7 +609,7 @@ class Server:
                     return self.events()
                 if key == "GET /local/settings":
                     d = {k: s.get(k) for k in ("zoneFolders", "weatherOffice", "weatherArea", "weatherCity",
-                                              "adminEnabled", "adminPin", "monitor", "autoStart", "layout")}
+                                              "adminEnabled", "adminPin", "monitor", "autoStart", "layout", "macLock", "allowedMacs")}
                     d.update({
                         "deviceName": s.device_name,
                         "port": server.port,
@@ -578,6 +623,9 @@ class Server:
                     return self.json(d)
                 if key == "GET /local/offices":
                     return self.json(weather.offices())
+                if key == "POST /local/access-reset":
+                    server.reset_access()
+                    return self.json({"ok": True})
                 if key == "POST /local/settings":
                     return self.json(server.local_settings(self.body_json()))
                 if key == "POST /local/pick-folder":

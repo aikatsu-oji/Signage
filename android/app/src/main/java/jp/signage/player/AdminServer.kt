@@ -311,11 +311,17 @@ object AdminServer {
             ) { it.write(html) }
         }
         if (!req.path.startsWith("/api/")) throw HttpError(404, "見つかりません")
+        val prefs = Prefs(app)
+        // 操作できる端末の制限（MAC アドレス）。この端末が MAC アドレスを調べられないときは、締め出さないよう制限しない
+        if (prefs.macLock && MacAccess.canResolve()) {
+            val why = MacAccess.gate(true, prefs.allowedMacs, prefs.allowVpn, from, MacAccess.lookup(from))
+            if (why.isNotEmpty()) throw HttpError(403, why)
+        }
         checkPin(req.headers["x-pin"])
 
-        val prefs = Prefs(app)
         return when ("${req.method} ${req.path}") {
-            "GET /api/state" -> json(200, state(prefs))
+            "GET /api/state" -> json(200, state(prefs).put("access", accessInfo(prefs, from)))
+            "POST /api/access" -> json(200, applyAccess(prefs, req.json(), from))
             "PUT /api/upload" -> {
                 val folder = writableFolder(prefs, req.query["zone"])
                 val name = FolderStore.sanitize(req.query["name"] ?: "")
@@ -426,6 +432,35 @@ object AdminServer {
             }
             else -> throw HttpError(404, "見つかりません")
         }
+    }
+
+    private fun accessInfo(prefs: Prefs, from: InetAddress): JSONObject {
+        val you = JSONObject().put("ip", from.hostAddress?.substringBefore('%'))
+            .put("vpn", MacAccess.isVpn(from)).put("local", MacAccess.isLoopback(from))
+        you.put("mac", MacAccess.lookup(from) ?: JSONObject.NULL)
+        return JSONObject()
+            .put("enabled", prefs.macLock).put("allowVpn", prefs.allowVpn)
+            .put("devices", MacAccess.toJson(prefs.allowedMacs))
+            .put("canResolve", MacAccess.canResolve()).put("you", you)
+    }
+
+    private fun applyAccess(prefs: Prefs, j: JSONObject, from: InetAddress): JSONObject {
+        if (!MacAccess.canResolve()) {
+            throw HttpError(400, "この端末は、接続してきた端末の MAC アドレスを確認できないため、制限は使えません")
+        }
+        val devs = try {
+            if (j.has("devices")) MacAccess.clean(j.getJSONArray("devices")) else prefs.allowedMacs
+        } catch (e: IllegalArgumentException) {
+            throw HttpError(400, e.message ?: "端末の一覧が正しくありません")
+        }
+        val lock = if (j.has("enabled")) j.getBoolean("enabled") else prefs.macLock
+        val vpn = if (j.has("allowVpn")) j.getBoolean("allowVpn") else prefs.allowVpn
+        val why = MacAccess.checkUpdate(lock, devs, vpn, from, MacAccess.lookup(from))
+        if (why.isNotEmpty()) throw HttpError(400, why)
+        prefs.macLock = lock
+        prefs.allowVpn = vpn
+        prefs.allowedMacs = devs
+        return accessInfo(prefs, from)
     }
 
     private fun isLan(a: InetAddress): Boolean = when (a) {

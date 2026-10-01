@@ -304,6 +304,19 @@ class App:
             self.player_open = False
             keep_awake(False)
 
+    def reset_access(self):
+        """タスクトレイから、操作できる端末の制限を解除する"""
+        if not self.store.get("macLock") and not self.store.get("allowedMacs"):
+            return
+        try:
+            ok = ctypes.windll.user32.MessageBoxW(
+                0, "操作できる端末の制限を解除し、登録した端末の一覧を消します。よろしいですか？", "サイネージ", 0x1 | 0x20 | 0x40000) == 1
+        except Exception:
+            ok = True
+        if ok:
+            self.server.reset_access()
+            log("操作できる端末の制限を解除しました（タスクトレイから）")
+
     def open_settings(self):
         webbrowser.open(f"http://127.0.0.1:{self.server.port}/settings")
 
@@ -359,6 +372,7 @@ class App:
             item("再生画面を閉じる", self.close_player),
             pystray.MenuItem("表示するモニター", pystray.Menu(monitor_items)),
             item("管理画面を開く", self.open_admin),
+            item("操作できる端末の制限を解除", self.reset_access),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Windows の起動時に自動で開始", toggle_autostart, checked=autostart_checked),
             pystray.Menu.SEPARATOR,

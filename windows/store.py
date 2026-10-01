@@ -85,6 +85,9 @@ DEFAULTS = {
     "autoStart": False,
     "tickerStanding": None,
     "tickerSchedules": [],
+    "macLock": False,  # 操作できる端末を MAC アドレスで制限するか（初期状態は制限なし）
+    "allowVpn": True,  # 制限中でも VPN（Tailscale）経由は許可するか（VPN では MAC アドレスを確認できない）
+    "allowedMacs": [],  # 操作を許可する端末 [{mac, name}]
     "fileRules": {},  # 画像・動画ごとの再生条件（キーは「区画|ファイル名」）
 }
 
