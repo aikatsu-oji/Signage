@@ -177,7 +177,9 @@
   .moncard .mh b { font-size: 15px; }
   .badge { border-radius: 999px; padding: 1px 10px; font-size: 12px; font-weight: bold; color: #fff; white-space: nowrap; }
   .badge.ok { background: var(--ok); } .badge.warn { background: #b06000; } .badge.bad { background: var(--danger); } .badge.na { background: var(--sub); }
-  .moncard.excl { opacity: .7; border-style: dashed; }
+  .moncard.excl { border-style: dashed; background: transparent; }
+  .exclTag { display: inline-block; margin-left: 6px; padding: 0 8px; border-radius: 999px; background: var(--sub); color: #fff; font-size: 11px; font-weight: normal; vertical-align: middle; white-space: nowrap; }
+  .device .dname { overflow-wrap: anywhere; }
   .moncard .issues { color: var(--danger); font-weight: bold; }
   .moncard .issues.w { color: #b06000; }
   .moncard .zl { word-break: break-all; }
@@ -430,7 +432,8 @@
             <div class="row"><span class="sub" id="monUpdated"></span><button class="small" id="monRefresh">今すぐ更新</button></div>
           </div>
           <p class="sub">各端末の再生画面が動いているか、いま何を再生しているか、空き容量などを、5 秒ごとに確認します（このタブを開いている間）。</p>
-          <p id="monSummary" style="font-weight:bold"></p>
+          <p id="monSummary" style="font-weight:bold; margin-bottom:2px"></p>
+          <p class="sub" id="monExclNote" style="margin-top:0"></p>
           <div class="mongrid" id="monGrid"></div>
           <div id="monExcludedBox" hidden>
             <h3 style="font-size:14px; margin:16px 0 4px">監視対象外の端末</h3>
@@ -861,6 +864,10 @@
       lines.push(`テロップ：${d.ticker.standing ? '止めるまで流すテロップあり' : d.ticker.queued ? `待機 ${d.ticker.queued} 件` : 'なし'}`);
       if (d.disk) lines.push(`空き容量：${fmtSize(d.disk.free)}（全体 ${fmtSize(d.disk.total)}）`);
       lines.push(`稼働：${fmtUptime(d.uptimeSec)}　v${d.version}`);
+    } else if (excluded) {
+      const st = { ok: '接続中', pin: 'PIN が違います', denied: '操作できません', offline: '応答なし', checking: '確認中…' }[dev.status] || '';
+      if (st) lines.push(`接続：${st}${dev.version ? `　v${dev.version}` : ''}`);
+      lines.push('監視していません');
     } else if (!excluded && dev.mon?.lastOk) {
       lines.push(`最後に確認できた時刻：${hhmmss(dev.mon.lastOk)}`);
     }
@@ -895,8 +902,8 @@
     const total = list.length;
     $('#monSummary').textContent = total
       ? `${total} 台中 ${counts.ok} 台が正常` + (counts.warn ? `、注意 ${counts.warn} 台` : '') + (counts.bad ? `、異常 ${counts.bad} 台` : '')
-        + (skipped.length ? `（監視対象外 ${skipped.length} 台）` : '')
-      : (skipped.length ? `監視する端末がありません（監視対象外 ${skipped.length} 台）` : '端末がありません');
+      : (skipped.length ? '監視する端末がありません' : '端末がありません');
+    $('#monExclNote').textContent = skipped.length ? `監視対象外：${skipped.length} 台（${skipped.map((d) => d.name).join('、')}）` : '';
     $('#monSummary').style.color = counts.bad ? 'var(--danger)' : counts.warn ? '#b06000' : 'var(--ok)';
     $('#monUpdated').textContent = `最終更新 ${hhmmss(Date.now())}`;
     const alert = counts.bad + counts.warn;
@@ -987,7 +994,13 @@
       cb.checked = checked.has(d.key);
       cb.addEventListener('click', (e) => e.stopPropagation());
       cb.addEventListener('change', () => { cb.checked ? checked.add(d.key) : checked.delete(d.key); saveChecked(); renderBulk(); });
-      $('.dname', li).textContent = d.name + (d.self ? '（この端末）' : '') + (isExcluded(d) ? '　［監視対象外］' : '');
+      const nameEl = $('.dname', li);
+      nameEl.textContent = d.name + (d.self ? '（この端末）' : '');
+      if (isExcluded(d)) {
+        const tag = document.createElement('span');
+        tag.className = 'exclTag'; tag.textContent = '監視対象外';
+        nameEl.append(tag);
+      }
       const dot = $('.dot', li);
       dot.classList.add(d.status);
       $('.st', li).textContent = {
