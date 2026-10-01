@@ -136,6 +136,23 @@ class MainActivity : Activity() {
         refreshFolder()
         if (offices.isEmpty()) loadOffices()
         updateAdminInfo() // 電池の最適化の設定から戻ってきたとき
+        offerPendingUpdate()
+    }
+
+    /** 管理画面から送られた更新の確認画面を、自動で開けなかったとき、アプリを開いたこの画面から進められるようにする */
+    private fun offerPendingUpdate() {
+        val confirm = AppUpdater.pendingConfirm ?: return
+        AlertDialog.Builder(this)
+            .setTitle("アプリの更新があります")
+            .setMessage("管理画面から、新しい版のアプリが送られています。更新を進めますか？")
+            .setPositiveButton("更新する") { _, _ ->
+                AppUpdater.pendingConfirm = null
+                try { startActivity(confirm) } catch (e: Exception) {
+                    Toast.makeText(this, "確認画面を開けませんでした。管理画面からもう一度送ってください", Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNegativeButton("あとで", null)
+            .show()
     }
 
     override fun onPause() {
@@ -464,7 +481,33 @@ class MainActivity : Activity() {
                 Toast.makeText(this, "ブラウザがありません", Toast.LENGTH_SHORT).show()
             }
         }
+        bindSwitch(R.id.updateSwitch, prefs.allowRemoteUpdate) {
+            prefs.allowRemoteUpdate = it
+            updateAdminInfo()
+        }
+        findViewById<Button>(R.id.updateUnknown).setOnClickListener {
+            try {
+                startActivity(
+                    Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
+                )
+            } catch (e: ActivityNotFoundException) {
+                Toast.makeText(this, "設定画面を開けません。端末の設定から、このアプリに「不明なアプリのインストール」を許可してください", Toast.LENGTH_LONG).show()
+            }
+        }
         findViewById<Button>(R.id.adminPinReset).setOnClickListener { editPin() }
+        findViewById<Button>(R.id.adminAccessReset).setOnClickListener {
+            // 誰も操作できなくなったとき用。この端末の画面からだけ解除できる
+            AlertDialog.Builder(this)
+                .setTitle("操作できる端末の制限を解除")
+                .setMessage("MAC アドレスによる制限を解除し、登録した端末の一覧を消します。PIN は変わりません。")
+                .setPositiveButton("解除する") { _, _ ->
+                    prefs.resetAccess()
+                    updateAdminInfo()
+                    Toast.makeText(this, "制限を解除しました", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("キャンセル", null)
+                .show()
+        }
         findViewById<Button>(R.id.adminName).setOnClickListener { editDeviceName() }
         updateAdminInfo()
     }
@@ -474,6 +517,11 @@ class MainActivity : Activity() {
         val running = prefs.adminEnabled && AdminServer.isRunning
         findViewById<View>(R.id.adminPinReset).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
         findViewById<View>(R.id.adminName).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.updateSwitch).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.updateNote).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.updateUnknown).visibility =
+            if (prefs.adminEnabled && prefs.allowRemoteUpdate && !AppUpdater.canInstall(this)) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.adminAccessReset).visibility = if (prefs.macLock || prefs.allowedMacs.isNotEmpty()) View.VISIBLE else View.GONE
         findViewById<View>(R.id.adminOpenLocal).visibility = if (running) View.VISIBLE else View.GONE
         // 省電力の対象のままだと、再生画面を出していないときに外から接続できない端末がある
         val batteryLimited = prefs.adminEnabled && !isIgnoringBatteryOptimizations()
@@ -488,6 +536,7 @@ class MainActivity : Activity() {
                     append(if (urls.isEmpty()) "Wi-Fi・LAN に接続されていません" else "ブラウザで開くアドレス：\n" + urls.joinToString("\n"))
                     append("\nPIN：${prefs.adminPin}")
                     append("\n端末名：${prefs.deviceName}")
+                    if (prefs.macLock) append("\n操作できる端末：MAC アドレスで制限中（${prefs.allowedMacs.size} 台）")
                     append("\n\n同じネットワークのほかのサイネージ端末も、管理画面の「端末一覧」に自動で表示されます。")
                     append("\n\n同じネットワーク内の端末からのみ操作できます。")
                     append("\n開けない場合：アドレス末尾の :${AdminServer.port} まで入力しているか、")
@@ -725,7 +774,7 @@ class MainActivity : Activity() {
 
     /** 選択中フォルダの表示と、中身の件数・一覧の更新 */
     private fun refreshFolder() {
-        val uri = prefs.folderUri
+        val uri = prefs.zoneFolder(0)
         val gen = ++scanGeneration
         if (uri == null) {
             folderText.text = "未選択"

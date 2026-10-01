@@ -7,6 +7,7 @@ Windows 版の Web サーバー。
 - /media/...   再生する画像・動画（この PC からのみ）
 """
 
+import base64
 import hmac
 import ipaddress
 import json
@@ -15,6 +16,7 @@ import os
 import queue
 import random
 import re
+import shutil
 import socket
 import threading
 import time
@@ -23,6 +25,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+import devices
+import guard
 import store as st
 import weather
 
@@ -33,7 +37,7 @@ mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
-VERSION = "1.0.1"
+VERSION = "1.8.4"
 
 
 def resource_dir() -> Path:
@@ -126,6 +130,9 @@ class Server:
         self.locked_until = 0
         self.peers = None  # Peers（端末の検出）
         self.event_queues = []
+        self.started = time.time()
+        self.player_status = None  # 再生画面が定期的に知らせる、いま再生中の内容
+        self.player_beat = 0.0
         store.listeners.append(self._broadcast)
 
     # ------------------------------------------------------------ 起動
@@ -166,16 +173,23 @@ class Server:
                 if folder:
                     z["writable"] = s.is_writable(folder)
                     try:
-                        z["files"] = [{"name": f["name"], "video": f["video"], "size": f["size"]} for f in s.scan(folder)]
+                        z["files"] = []
+                        for f in s.scan(folder):
+                            e = {"name": f["name"], "video": f["video"], "size": f["size"]}
+                            rule = s.file_rule(i, f["name"])
+                            if rule:
+                                e["rule"] = rule
+                            z["files"].append(e)
                     except OSError:
                         z["files"] = []
                         z["error"] = "フォルダを読み込めません"
             zones.append(z)
         settings = {k: s.get(k) for k in (
             "layout", "splitPercent", "mainPercent", "sidePercent", "imageSeconds", "shuffle", "recursive", "videoSound",
-            "fitMode",
+            "fitMode", "orientation",
             "clockEnabled", "clockPosition", "clockSize", "weatherEnabled", "weatherIntervalMin",
-            "weatherSeconds", "weatherTimeSeries")}
+            "weatherSeconds", "weatherTimeSeries",
+            "weatherOffice", "weatherArea", "weatherAreaName", "weatherCity", "weatherCityName")}
         settings["zoneTypes"] = [s.zone_type(i) for i in range(st.MAX_ZONES)]
         settings["weatherPlace"] = s.get("weatherCityName") or s.get("weatherAreaName") or ""
         return {
@@ -183,10 +197,75 @@ class Server:
             "id": s.device_id,
             "name": s.device_name,
             "device": "Windows " + socket.gethostname(),
+            "screen": self.screen_size(),
             "version": VERSION,
             "zones": zones,
             "settings": settings,
         }
+
+    def screen_size(self) -> dict:
+        """再生に使うモニターの解像度（画像がどう収まるかを管理画面で確認するために使う）"""
+        try:
+            mons = self.monitors() if hasattr(self, "monitors") else []
+            idx = self.store.get("monitor") or 0
+            m = mons[idx] if 0 <= idx < len(mons) else (mons[0] if mons else None)
+            if m:
+                return {"width": m["width"], "height": m["height"]}
+        except Exception:
+            pass
+        return {"width": 1920, "height": 1080}
+
+    PLAYER_ALIVE_SECONDS = 15
+
+    def status(self):
+        """配信状況（管理画面のモニタリング用）。再生画面が動いているか、何を再生中か、空き容量など"""
+        s = self.store
+        now = time.time()
+        running = self.player_status is not None and now - self.player_beat < self.PLAYER_ALIVE_SECONDS
+        disk = None
+        try:
+            folder = s.zone_folder(0)
+            u = shutil.disk_usage(str(folder) if folder else str(st.APP_DIR))
+            disk = {"free": u.free, "total": u.total}
+        except Exception:
+            pass
+        return {
+            "id": s.device_id, "name": s.device_name, "version": VERSION, "time": int(now * 1000),
+            "uptimeSec": int(now - self.started),
+            "player": {"running": running, "age": round(now - self.player_beat, 1) if self.player_status else None,
+                       "zones": (self.player_status or {}).get("zones", []) if running else []},
+            "ticker": {"standing": bool(s.get("tickerStanding")), "queued": len(s.ticker_queue)},
+            "disk": disk,
+            "platform": "windows",
+        }
+
+    def access_info(self, addr):
+        s = self.store
+        return {
+            "enabled": bool(s.get("macLock")), "allowVpn": bool(s.get("allowVpn")),
+            "devices": list(s.get("allowedMacs") or []), "canResolve": True,
+            "you": {"ip": addr, "mac": devices.lookup_mac(addr), "vpn": devices.is_vpn(addr),
+                    "local": devices.is_loopback(addr)},
+        }
+
+    def apply_access(self, j, addr):
+        """操作できる端末の制限を変える。操作中の端末自身が締め出される変更は断る"""
+        s = self.store
+        try:
+            devs = devices.clean_devices(j["devices"]) if "devices" in j else list(s.get("allowedMacs") or [])
+        except ValueError as e:
+            raise HttpError(400, str(e))
+        lock = bool(j["enabled"]) if "enabled" in j else bool(s.get("macLock"))
+        vpn = bool(j["allowVpn"]) if "allowVpn" in j else bool(s.get("allowVpn"))
+        why = devices.check_update(lock, devs, vpn, addr, devices.lookup_mac(addr))
+        if why:
+            raise HttpError(400, why)
+        s.update({"macLock": lock, "allowVpn": vpn, "allowedMacs": devs})
+        return self.access_info(addr)
+
+    def reset_access(self):
+        """制限を解除して、登録した端末の一覧も消す（誰も操作できなくなったとき用。この PC 自身からのみ）"""
+        self.store.update({"macLock": False, "allowedMacs": []})
 
     def apply_settings(self, j: dict):
         def clamp(v, lo, hi):
@@ -202,11 +281,21 @@ class Server:
                 if t in (st.ZONE_FOLDER, st.ZONE_WEATHER):
                     types[i] = t
             u["zoneTypes"] = types
-        for k, lo, hi in (("imageSeconds", 1, 3600), ("clockPosition", 0, 3), ("clockSize", 0, 2), ("fitMode", 0, 3),
+        for k, lo, hi in (("imageSeconds", 1, 3600), ("clockPosition", 0, 3), ("clockSize", 0, 2), ("fitMode", 0, 3), ("orientation", 0, 2),
                           ("weatherIntervalMin", 1, 1440), ("weatherSeconds", 3, 600)):
             if k in j: u[k] = clamp(j[k], lo, hi)
         for k in ("shuffle", "recursive", "videoSound", "clockEnabled", "weatherEnabled", "weatherTimeSeries"):
             if k in j: u[k] = bool(j[k])
+        # 天気予報の地域（気象庁のコード。数字のみ）
+        for k in ("weatherOffice", "weatherArea", "weatherCity"):
+            if k in j:
+                v = j[k]
+                if v is not None and not re.fullmatch(r"\d{1,10}", str(v)):
+                    raise HttpError(400, "天気予報の地域が正しくありません")
+                u[k] = str(v) if v is not None else None
+        for k in ("weatherAreaName", "weatherCityName"):
+            if k in j:
+                u[k] = str(j[k])[:40] if j[k] else None
         self.store.update(u)
 
     # ------------------------------------------------------------ ハンドラー
@@ -248,6 +337,9 @@ class Server:
                 self.send_header("Content-Type", ctype)
                 self.send_header("Content-Length", str(len(body)))
                 self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("X-Frame-Options", "DENY")          # 他のページに埋め込まれて操作されるのを防ぐ
+                self.send_header("Referrer-Policy", "no-referrer")
                 for k, v in {**self.cors(), **(extra or {})}.items():
                     self.send_header(k, v)
                 self.end_headers()
@@ -264,6 +356,7 @@ class Server:
                           "application/json; charset=utf-8", extra)
 
             def body_json(self):
+                self.body_read = True
                 n = int(self.headers.get("Content-Length") or 0)
                 if n > 64 * 1024:
                     raise HttpError(413, "データが大きすぎます")
@@ -280,12 +373,37 @@ class Server:
             # -------- 振り分け
 
             def _dispatch(self, method):
+                self.body_read = False
+                try:
+                    self._handle(method)
+                finally:
+                    self.discard_body()
+
+            def discard_body(self):
+                """読まなかった送信データを捨てる（残ると、同じ接続の次のリクエストが壊れて 501 になる）"""
+                if self.body_read or self.close_connection:
+                    return
+                try:
+                    n = int(self.headers.get("Content-Length") or 0)
+                    if n > 1 << 20:
+                        self.close_connection = True
+                    elif n > 0:
+                        self.rfile.read(n)
+                except (ValueError, OSError):
+                    self.close_connection = True
+
+            def _handle(self, method):
                 client = self.client_address[0]
                 try:
                     if not is_lan(client):
                         raise HttpError(403, "同じネットワーク内からのみ利用できます")
                     url = urlparse(self.path)
                     path = unquote(url.path)
+                    # 外部のサイトからの操作（CSRF）や、偽のドメイン名を使った攻撃（DNS リバインディング）を拒否する
+                    why = guard.check(method, path, self.headers.get("Host"), self.headers.get("Origin"),
+                                      self.headers.get("Sec-Fetch-Site"), is_lan_origin)
+                    if why:
+                        raise HttpError(403, why)
                     query = {k: v[0] for k, v in parse_qs(url.query).items()}
                     if method == "OPTIONS":
                         origin = self.headers.get("Origin")
@@ -305,6 +423,7 @@ class Server:
                         self.page("admin.html")
                         return
                     if path.startswith("/api/"):
+                        self.check_access(client)
                         self.check_pin(self.headers.get("X-Pin"))
                         self.route_api(method, path, query)
                         return
@@ -318,6 +437,17 @@ class Server:
                         self.json({"error": str(e) or e.__class__.__name__}, 500)
                     except Exception:
                         pass
+
+            def check_access(self, client):
+                """操作できる端末の制限（MAC アドレス）。制限が OFF の初期状態では何もしない"""
+                s = server.store
+                if not s.get("macLock"):
+                    return
+                devs = s.get("allowedMacs") or []
+                mac = None if devices.is_loopback(client) else devices.lookup_mac(client)
+                why = devices.gate(True, devs, bool(s.get("allowVpn")), client, mac)
+                if why:
+                    raise HttpError(403, why)
 
             def check_pin(self, pin):
                 now = time.time()
@@ -355,12 +485,21 @@ class Server:
                 s = server.store
                 key = f"{method} {path}"
                 if key == "GET /api/state":
-                    self.json(server.state())
+                    d = server.state()
+                    d["access"] = server.access_info(self.client_address[0])
+                    self.json(d)
+                elif key == "GET /api/status":
+                    self.json(server.status())
+                elif key == "GET /api/weather/offices":
+                    self.json(weather.offices())
+                elif key == "POST /api/access":
+                    self.json(server.apply_access(self.body_json(), self.client_address[0]))
                 elif key == "PUT /api/upload":
                     folder = self.folder_of(query.get("zone"), writable=True)
                     name = s.sanitize(query.get("name", ""))
                     if not name:
                         raise HttpError(400, "画像・動画のファイルのみアップロードできます")
+                    self.body_read = True
                     length = int(self.headers.get("Content-Length") or 0)
                     if length <= 0:
                         raise HttpError(400, "ファイルが空です")
@@ -387,6 +526,17 @@ class Server:
                         s.find(folder, j.get("name", ""))["path"].unlink()
                     except FileNotFoundError as e:
                         raise HttpError(404, str(e))
+                    s.set_file_rule(j.get("zone"), j.get("name", ""), None)
+                    self.json({"ok": True})
+                elif key == "POST /api/filerule":
+                    j = self.body_json()
+                    self.folder_of(j.get("zone"), writable=True)  # 区画の確認
+                    try:
+                        rule = s.normalize_rule(j.get("rule"))
+                    except ValueError as e:
+                        raise HttpError(400, str(e))
+                    s.set_file_rule(int(j["zone"]), str(j.get("name", "")), rule)
+                    s.notify("content")
                     self.json({"ok": True})
                 elif key in ("GET /api/file", "HEAD /api/file"):
                     folder = self.folder_of(query.get("zone"))
@@ -395,6 +545,21 @@ class Server:
                     except FileNotFoundError as e:
                         raise HttpError(404, str(e))
                     self.send_file(item["path"])
+                elif key == "POST /api/voice":
+                    # 管理画面のマイクの声（16kHz・モノラル・16bit PCM、0.2秒ぶんほど）。再生画面（Edge）へすぐ流す
+                    self.body_read = True
+                    n = int(self.headers.get("Content-Length") or 0)
+                    if n > 64 * 1024:
+                        raise HttpError(413, "データが大きすぎます")
+                    pcm = self.rfile.read(n) if n else b""
+                    if len(pcm) < 2 or len(pcm) % 2:
+                        raise HttpError(400, "音声データが正しくありません")
+                    server._broadcast("voice:" + base64.b64encode(pcm).decode("ascii"))
+                    # 再生画面が開いていないと音は出ない。管理画面で知らせるため、受け取り手の数も返す
+                    self.json({"ok": True, "listeners": len(server.event_queues)})
+                elif key == "POST /api/voice/end":
+                    server._broadcast("voice-end")
+                    self.json({"ok": True})
                 elif key == "POST /api/reload":
                     s.notify("content")
                     self.json({"ok": True})
@@ -460,6 +625,7 @@ class Server:
                 if key == "GET /local/config":
                     cfg = server.state()["settings"]
                     cfg.update({
+                        "version": VERSION,
                         "zoneCount": st.zone_count(s.get("layout")),
                         "zoneFolders": [bool(s.zone_folder(i)) for i in range(st.MAX_ZONES)],
                         "weatherOffice": s.get("weatherOffice"),
@@ -476,6 +642,7 @@ class Server:
                         "name": it["name"],
                         "video": it["video"],
                         "url": f"/media/{zone}/{quote(it['name'])}?v={int(it['path'].stat().st_mtime)}",
+                        "rule": s.file_rule(zone, it["name"]),
                     } for it in items])
                 if key == "GET /local/weather":
                     return self.json(weather.pages(s))
@@ -485,7 +652,7 @@ class Server:
                     return self.events()
                 if key == "GET /local/settings":
                     d = {k: s.get(k) for k in ("zoneFolders", "weatherOffice", "weatherArea", "weatherCity",
-                                              "adminEnabled", "adminPin", "monitor", "autoStart", "layout")}
+                                              "adminEnabled", "adminPin", "monitor", "autoStart", "layout", "macLock", "allowedMacs")}
                     d.update({
                         "deviceName": s.device_name,
                         "port": server.port,
@@ -499,6 +666,22 @@ class Server:
                     return self.json(d)
                 if key == "GET /local/offices":
                     return self.json(weather.offices())
+                if key == "POST /local/player-status":
+                    j = self.body_json()
+                    zones = j.get("zones") if isinstance(j, dict) else None
+                    clean = []
+                    for z in (zones if isinstance(zones, list) else [])[:3]:
+                        if isinstance(z, dict):
+                            clean.append({"zone": int(z.get("zone", 0)), "kind": str(z.get("kind", ""))[:10],
+                                          "name": str(z.get("name") or "")[:120], "video": bool(z.get("video")),
+                                          "pos": int(z.get("pos") or 0), "total": int(z.get("total") or 0),
+                                          "paused": bool(z.get("paused")), "message": str(z.get("message") or "")[:200]})
+                    server.player_status = {"zones": clean}
+                    server.player_beat = time.time()
+                    return self.json({"ok": True})
+                if key == "POST /local/access-reset":
+                    server.reset_access()
+                    return self.json({"ok": True})
                 if key == "POST /local/settings":
                     return self.json(server.local_settings(self.body_json()))
                 if key == "POST /local/pick-folder":
@@ -620,10 +803,14 @@ class Server:
             if hasattr(self, "set_autostart"):
                 self.set_autostart(u["autoStart"])
         name_changed = "deviceName" in u and u["deviceName"] != s.get("deviceName")
+        monitor_changed = "monitor" in u and u["monitor"] != (s.get("monitor") or 0)
         s.update(u)
         if name_changed and self.peers:
             self.peers.restart()
         s.notify("settings")
+        if monitor_changed and hasattr(self, "on_monitor_changed"):
+            # 表示するモニターを変えたら、開いている再生画面を新しいモニターで開き直す
+            threading.Thread(target=self.on_monitor_changed, daemon=True).start()
         return {"ok": True, "adminPin": s.get("adminPin")}
 
     def pick_folder(self, zone):

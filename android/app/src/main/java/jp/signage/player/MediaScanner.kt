@@ -114,6 +114,7 @@ object MediaScanner {
     }.getOrDefault(treeUri.toString())
 
     fun describePath(path: String): String = when {
+        path.contains("/Android/data/") -> "アプリ専用フォルダ（" + path.substringAfter("/Android/data/") + "）"
         path.startsWith("/storage/emulated/0") -> "内部ストレージ" + path.removePrefix("/storage/emulated/0")
         path.startsWith("/storage/") -> "外部ストレージ " + path.removePrefix("/storage/")
         else -> path

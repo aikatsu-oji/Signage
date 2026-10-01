@@ -63,6 +63,8 @@
   #ticker { position: absolute; left: 0; right: 0; z-index: 30; overflow: hidden; display: none; white-space: nowrap; }
   #ticker span { position: absolute; top: 50%; transform: translate(0, -50%); font-weight: bold; will-change: left; }
 
+  #voice { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); z-index: 60; display: none;
+           background: #e53935e6; color: #fff; font-size: 26px; font-weight: bold; padding: 10px 40px; border-radius: 40px; }
   #info { position: absolute; left: 16px; bottom: 16px; z-index: 40; background: #000a; padding: 10px 14px; border-radius: 8px;
     font-size: 14px; display: none; white-space: pre-line; }
   #hint { position: absolute; left: 50%; top: 16px; transform: translateX(-50%); z-index: 40; background: #000c; padding: 10px 16px;
@@ -74,6 +76,7 @@
 <div id="clock"></div>
 <div id="ticker"><span></span></div>
 <div id="info"></div>
+<div id="voice">📢 放送中</div>
 <div id="hint">設定はタスクトレイのアイコンから開けます（全画面を閉じる：Alt + F4）</div>
 
 <script>
@@ -81,6 +84,32 @@
   const $ = (s, el = document) => el.querySelector(s);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  /** 画像・動画ごとの再生条件 {slots: [条件, …]} に、いま合うか（どれか1つに合えば再生。以前の形式＝条件1つだけも可） */
+  function ruleActive(rule, now = new Date()) {
+    if (!rule) return true;
+    if (Array.isArray(rule.slots)) return rule.slots.length === 0 || rule.slots.some((r) => slotActive(r, now));
+    return slotActive(rule, now);
+  }
+
+  /** 条件1つ（days: 0=日〜6=土 / start,end: "HH:MM"（日またぎ可） / from,to: "YYYY-MM-DD"）に、いま合うか */
+  function slotActive(rule, now) {
+    if (!rule) return true;
+    const mins = (s) => (/^\d\d:\d\d$/.test(s || '') ? +s.slice(0, 2) * 60 + +s.slice(3) : null);
+    const m = now.getHours() * 60 + now.getMinutes();
+    const start = mins(rule.start), end = mins(rule.end);
+    const overnight = start !== null && end !== null && start > end && m < end;  // 日またぎの 0 時以降は前日の分
+    const day = new Date(now); if (overnight) day.setDate(day.getDate() - 1);
+    if (rule.days && rule.days.length && !rule.days.includes(day.getDay())) return false;
+    const p2 = (n) => String(n).padStart(2, '0');
+    const date = `${day.getFullYear()}-${p2(day.getMonth() + 1)}-${p2(day.getDate())}`;
+    if (rule.from && date < rule.from) return false;
+    if (rule.to && date > rule.to) return false;
+    if (start !== null && end !== null) return start <= end ? (m >= start && m < end) : (m >= start || m < end);
+    if (start !== null) return m >= start;
+    if (end !== null) return m < end;
+    return true;
+  }
+
   const getJson = async (url) => { const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error(r.status); return r.json(); };
   const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
 
@@ -165,7 +194,7 @@
       });
       panel.append(week);
     }
-    panel.append(el('div', 'foot', '出典：気象庁ホームページ'));
+    panel.append(el('div', 'foot', '出典：気象庁ホームページ（https://www.jma.go.jp/bosai/forecast/）のデータを加工して表示'));
   }
 
   function renderSeries(panel, d, city, area) {
@@ -194,7 +223,7 @@
       panel.append(el('div', 'dim', '気温の変化'));
       panel.append(graph(slots.map((s) => (s.temp == null ? null : Number(s.temp)))));
     }
-    panel.append(el('div', 'foot', '出典：気象庁ホームページ'));
+    panel.append(el('div', 'foot', '出典：気象庁ホームページ（https://www.jma.go.jp/bosai/forecast/）のデータを加工して表示'));
   }
 
   function graph(temps) {
@@ -306,9 +335,15 @@
       this.weatherPages = [];
       if (step > 0 && !this.showingWeather && this.weatherDue()) return this.showWeather(my);
       this.showingWeather = false;
-      let next = this.index_ + step;
-      if (next < 0 || next >= this.playlist.length) {
-        const wrapBack = next < 0;
+      // 再生条件（時間帯・曜日・期間）に合わないファイルは飛ばす
+      const pick = (from, dir) => {
+        const now = new Date();
+        for (let i = from; i >= 0 && i < this.playlist.length; i += dir) if (ruleActive(this.playlist[i].rule, now)) return i;
+        return -1;
+      };
+      let next = pick(this.index_ + step, step < 0 ? -1 : 1);
+      if (next < 0) {
+        const wrapBack = this.index_ + step < 0;
         if (!cfg.zoneFolders[this.index]) { this.message('この区画のフォルダが設定されていません\n設定はタスクトレイのアイコンから'); return; }
         let items;
         try { items = await getJson(`/local/playlist?zone=${this.index}`); }
@@ -328,7 +363,15 @@
           setTimeout(() => { if (my === this.token) this.goto(1); }, 5000);
           return;
         }
-        next = wrapBack ? items.length - 1 : 0;
+        next = pick(wrapBack ? items.length - 1 : 0, wrapBack ? -1 : 1);
+        if (next < 0) {
+          // 全ファイルが条件外の時間帯。時間が来るまで待つ
+          this.index_ = -1; this.current = null;
+          this.reveal(null);
+          this.message('いま再生する条件に合うファイルがありません\n（時間帯・曜日・期間の設定を確認してください）');
+          setTimeout(() => { if (my === this.token) this.goto(1); }, 5000);
+          return;
+        }
       }
       this.index_ = next;
       this.play(this.playlist[next], my);
@@ -678,6 +721,24 @@
   });
   document.body.classList.add('idle');
 
+  // ------------------------------------------------------------ 配信状況の報告（管理画面のモニタリング用）
+
+  function reportStatus() {
+    const list = zones.map((z, i) => {
+      if (z instanceof MediaZone) {
+        return {
+          zone: i, kind: 'media', name: z.showingWeather ? '天気予報' : (z.current?.name || ''), video: !!z.current?.video,
+          pos: z.current ? z.index_ + 1 : 0, total: z.playlist.length, paused: !!z.paused,
+          message: z.msg && !z.msg.hidden ? z.msg.textContent : '',
+        };
+      }
+      return { zone: i, kind: 'weather', name: '天気予報', video: false, pos: 0, total: 0, paused: false, message: '' };
+    });
+    fetch('/local/player-status', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ zones: list }),
+    }).catch(() => {});
+  }
+
   // ------------------------------------------------------------ 起動
 
   async function start() {
@@ -691,6 +752,8 @@
       else { zones.push(new MediaZone(i, main)); main = false; }
     }
     mainZone = zones.find((z) => z instanceof MediaZone) || null;
+    reportStatus();
+    setInterval(reportStatus, 5000);
     arrange();
     zones.forEach((z) => z.start());
     clockLoop();
@@ -699,11 +762,55 @@
     if (new URLSearchParams(location.search).has('noevents')) return;
     const es = new EventSource('/local/events');
     es.onmessage = (e) => {
+      if (e.data.startsWith('voice:')) return voice.chunk(e.data.slice(6));
+      if (e.data === 'voice-end') return voice.end();
       if (e.data === 'settings') location.reload();
       else if (e.data === 'content') zones.forEach((z) => (z instanceof MediaZone ? z.reload() : null));
       else if (e.data === 'ticker') nextTicker();
     };
   }
+  // ---- 管理画面のマイクの声の放送（16kHz・モノラル・16bit PCM を届いた順にすぐ再生する）
+  const voice = {
+    ctx: null, next: 0, timer: 0, ducked: false,
+    chunk(b64) {
+      const bin = atob(b64);
+      const n = bin.length >> 1;
+      if (!n) return;
+      if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+      const buf = this.ctx.createBuffer(1, n, 16000);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) {
+        let v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8);
+        if (v & 0x8000) v -= 0x10000;
+        data[i] = v / 32768;
+      }
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(this.ctx.destination);
+      // ネットワークの揺れで途切れないよう、少し先（0.15 秒）から順につなげて再生する
+      const now = this.ctx.currentTime;
+      this.next = Math.max(this.next, now + 0.15);
+      src.start(this.next);
+      this.next += buf.duration;
+      this.show(true);
+      clearTimeout(this.timer);
+      this.timer = setTimeout(() => this.end(), 2500);   // 途切れたら終わる
+    },
+    end() {
+      clearTimeout(this.timer);
+      // 届いた分を聞き終わってから「放送中」を消し、音量を戻す
+      const wait = this.ctx ? Math.max(0, (this.next - this.ctx.currentTime) * 1000) : 0;
+      this.timer = setTimeout(() => { this.show(false); this.next = 0; }, wait + 300);
+    },
+    show(on) {
+      $('#voice').style.display = on ? 'block' : 'none';
+      // 放送中は動画の音を小さくする
+      document.querySelectorAll('video').forEach((v) => { v.volume = on ? 0.15 : 1; });
+    },
+  };
+  window.__voice = voice;
+
   start();
 })();
 </script>

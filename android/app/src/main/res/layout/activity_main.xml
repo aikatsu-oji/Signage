@@ -412,6 +412,36 @@
             android:text="端末名を変更" />
 
         <Button
+            android:id="@+id/adminAccessReset"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="操作できる端末の制限を解除"
+            android:visibility="gone" />
+
+        <Switch
+            android:id="@+id/updateSwitch"
+            style="@style/Option"
+            android:text="管理画面からのアプリ更新を許可"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/updateNote"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="12sp"
+            android:visibility="gone"
+            android:text="ON にすると、管理画面から送った新しい版の APK でこのアプリを更新できます（同じ署名の、いまより新しい版だけ）。端末の画面に確認が出る場合があります。" />
+
+        <Button
+            android:id="@+id/updateUnknown"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="「不明なアプリのインストール」の許可を開く"
+            android:visibility="gone" />
+
+        <Button
             android:id="@+id/adminPinReset"
             style="?android:attr/borderlessButtonStyle"
             android:layout_width="wrap_content"

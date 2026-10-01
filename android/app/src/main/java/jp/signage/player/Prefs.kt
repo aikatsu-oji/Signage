@@ -3,9 +3,12 @@ package jp.signage.player
 import android.content.Context
 import android.content.pm.ActivityInfo
 import android.net.Uri
+import org.json.JSONObject
+import java.io.File
 
 /** 設定値の保存（SharedPreferences） */
 class Prefs(context: Context) {
+    private val appContext: Context = context.applicationContext ?: context
     private val sp = context.getSharedPreferences("signage", Context.MODE_PRIVATE)
 
     var folderUri: Uri?
@@ -122,6 +125,28 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("adminEnabled", false)
         set(v) = sp.edit().putBoolean("adminEnabled", v).apply()
 
+    /** 管理画面から送られた APK でのアプリ更新を許可するか（初期状態は許可しない） */
+    var allowRemoteUpdate: Boolean
+        get() = sp.getBoolean("allowRemoteUpdate", false)
+        set(v) = sp.edit().putBoolean("allowRemoteUpdate", v).apply()
+
+    /** 操作できる端末を MAC アドレスで制限するか（初期状態は制限なし） */
+    var macLock: Boolean
+        get() = sp.getBoolean("macLock", false)
+        set(v) = sp.edit().putBoolean("macLock", v).apply()
+
+    /** 制限中でも VPN（Tailscale）経由は許可するか */
+    var allowVpn: Boolean
+        get() = sp.getBoolean("allowVpn", true)
+        set(v) = sp.edit().putBoolean("allowVpn", v).apply()
+
+    var allowedMacs: List<MacAccess.Device>
+        get() = MacAccess.fromJson(sp.getString("allowedMacs", null))
+        set(v) = sp.edit().putString("allowedMacs", MacAccess.toJson(v).toString()).apply()
+
+    /** 制限を解除して、登録した端末の一覧も消す（誰も操作できなくなったとき用） */
+    fun resetAccess() = sp.edit().putBoolean("macLock", false).remove("allowedMacs").apply()
+
     /** 管理画面の合言葉（6桁）。未設定なら作る */
     val adminPin: String
         get() = sp.getString("adminPin", null) ?: resetAdminPin()
@@ -183,7 +208,36 @@ class Prefs(context: Context) {
 
     /** 区画 i のフォルダ。区画0 は従来の「再生フォルダ」 */
     fun zoneFolder(i: Int): Uri? =
-        if (i == 0) folderUri else sp.getString("zoneFolder$i", null)?.let(Uri::parse)
+        (if (i == 0) folderUri else sp.getString("zoneFolder$i", null)?.let(Uri::parse)) ?: appFolder(i)
+
+    /**
+     * まだフォルダを選んでいない区画の初期値は、アプリ専用のフォルダ（Android/data/…/files/zoneN）。
+     * 権限なしで読み書きでき、管理画面からすぐ画像・動画を追加できる（アプリを削除すると中身も消える）
+     */
+    fun appFolder(i: Int): Uri? = runCatching {
+        val dir = appContext.getExternalFilesDir("zone${i + 1}") ?: File(appContext.filesDir, "zone${i + 1}")
+        dir.mkdirs()
+        Uri.fromFile(dir)
+    }.getOrNull()
+
+    /** 画像・動画ごとの再生条件（キーは「区画|ファイル名」）。条件が無いファイルは常に再生 */
+    private fun fileRules(): JSONObject = runCatching { JSONObject(sp.getString("fileRules", "{}") ?: "{}") }.getOrDefault(JSONObject())
+
+    fun fileRule(zone: Int, name: String): JSONObject? = fileRules().optJSONObject("$zone|$name")
+
+    fun setFileRule(zone: Int, name: String, rule: JSONObject?) {
+        val all = fileRules()
+        if (rule == null) all.remove("$zone|$name") else all.put("$zone|$name", rule)
+        sp.edit().putString("fileRules", all.toString()).apply()
+    }
+
+    /** 全ファイルの条件を一度に取り出す（一覧の表示用） */
+    fun fileRulesOf(zone: Int): Map<String, JSONObject> {
+        val all = fileRules()
+        val prefix = "$zone|"
+        return all.keys().asSequence().filter { it.startsWith(prefix) }
+            .mapNotNull { k -> all.optJSONObject(k)?.let { k.removePrefix(prefix) to it } }.toMap()
+    }
 
     fun setZoneFolder(i: Int, uri: Uri?) {
         if (i == 0) folderUri = uri else sp.edit().putString("zoneFolder$i", uri?.toString()).apply()

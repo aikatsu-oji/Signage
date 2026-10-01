@@ -1,6 +1,7 @@
 package jp.signage.player
 
 import android.content.Context
+import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -39,6 +40,8 @@ object AdminServer {
     const val EVENT_CONTENT = "content"   // ファイルが変わった → 読み直す
     const val EVENT_SETTINGS = "settings" // 設定が変わった → 画面を作り直す
     const val EVENT_SERVER = "server"     // サーバーの起動・停止
+    const val EVENT_VOICE_START = "voice-start" // 管理画面からの声の放送が始まった → 動画の音を下げ、「放送中」を表示
+    const val EVENT_VOICE_END = "voice-end"     // 放送が終わった
 
     private lateinit var app: Context
     private var server: ServerSocket? = null
@@ -59,6 +62,16 @@ object AdminServer {
     fun addListener(l: (String) -> Unit) = listeners.add(l)
     fun removeListener(l: (String) -> Unit) = listeners.remove(l)
     private fun notify(event: String) = main.post { listeners.forEach { it(event) } }
+
+    /** 声の放送中か。放送が途切れたら、一定時間後に終わらせる */
+    @Volatile private var voiceActive = false
+    private val voiceIdle = Runnable {
+        VoicePlayer.release()
+        if (voiceActive) {
+            voiceActive = false
+            notify(EVENT_VOICE_END)
+        }
+    }
 
     /** 設定に合わせて起動・停止する（何度呼んでもよい） */
     @Synchronized
@@ -108,6 +121,17 @@ object AdminServer {
         notify(EVENT_SERVER)
     }
 
+    /** この端末の画面サイズ（px）。画像がどう収まるかを管理画面で確認するために使う */
+    @Suppress("DEPRECATION")
+    private fun screenSize(): JSONObject {
+        val dm = android.util.DisplayMetrics()
+        runCatching {
+            (app.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager)
+                .defaultDisplay.getRealMetrics(dm)
+        }
+        return JSONObject().put("width", dm.widthPixels).put("height", dm.heightPixels)
+    }
+
     /** この端末の LAN 内の IPv4 アドレス（管理画面の URL 表示用） */
     fun localAddresses(): List<String> = runCatching {
         NetworkInterface.getNetworkInterfaces().toList()
@@ -143,6 +167,18 @@ object AdminServer {
         }
 
         fun json() = JSONObject(readText().ifEmpty { "{}" })
+
+        fun readBytes(limit: Int): ByteArray {
+            if (contentLength > limit) throw HttpError(413, "データが大きすぎます")
+            val buf = ByteArray(contentLength.toInt())
+            var off = 0
+            while (off < buf.size) {
+                val n = body.read(buf, off, buf.size - off)
+                if (n < 0) break
+                off += n
+            }
+            return if (off == buf.size) buf else buf.copyOf(off)
+        }
     }
 
     private class Response(
@@ -257,6 +293,9 @@ object AdminServer {
 
     private fun route(req: Request, from: InetAddress): Response {
         if (!isLan(from)) throw HttpError(403, "同じネットワーク内からのみ利用できます")
+        // 偽のドメイン名を使った攻撃（DNS リバインディング）と、外部のサイトからの操作（CSRF）を拒否する
+        if (!RequestGuard.hostOk(req.headers["host"])) throw HttpError(403, "このアドレスでは利用できません")
+        req.headers["origin"]?.let { if (!isLanOrigin(it)) throw HttpError(403, "許可されていない接続元です") }
         if (req.method == "OPTIONS") {
             val origin = req.headers["origin"]
             if (origin == null || !isLanOrigin(origin)) throw HttpError(403, "許可されていない接続元です")
@@ -265,14 +304,38 @@ object AdminServer {
 
         if (req.method == "GET" && (req.path == "/" || req.path == "/index.html")) {
             val html = app.assets.open("admin.html").use { it.readBytes() }
-            return Response(200, "text/html; charset=utf-8", html.size.toLong()) { it.write(html) }
+            return Response(
+                200, "text/html; charset=utf-8", html.size.toLong(),
+                // 他のページに埋め込まれて操作されるのを防ぐ
+                mapOf("X-Frame-Options" to "DENY", "X-Content-Type-Options" to "nosniff", "Referrer-Policy" to "no-referrer"),
+            ) { it.write(html) }
         }
         if (!req.path.startsWith("/api/")) throw HttpError(404, "見つかりません")
+        val prefs = Prefs(app)
+        // 操作できる端末の制限（MAC アドレス）。この端末が MAC アドレスを調べられないときは、締め出さないよう制限しない
+        if (prefs.macLock && MacAccess.canResolve()) {
+            val why = MacAccess.gate(true, prefs.allowedMacs, prefs.allowVpn, from, MacAccess.lookup(from))
+            if (why.isNotEmpty()) throw HttpError(403, why)
+        }
         checkPin(req.headers["x-pin"])
 
-        val prefs = Prefs(app)
         return when ("${req.method} ${req.path}") {
-            "GET /api/state" -> json(200, state(prefs))
+            "GET /api/state" -> json(200, state(prefs).put("access", accessInfo(prefs, from)))
+            "GET /api/status" -> json(200, status(prefs))
+            "PUT /api/apk" -> receiveApk(prefs, req)
+            "GET /api/weather/offices" -> {
+                val arr = org.json.JSONArray()
+                Weather.offices(app).forEach { o ->
+                    arr.put(JSONObject().put("code", o.code).put("name", o.name)
+                        .put("areas", org.json.JSONArray().also { a -> o.areas.forEach { (c, n) -> a.put(org.json.JSONArray().put(c).put(n)) } })
+                        .put("cities", org.json.JSONArray().also { a -> o.cities.forEach { c ->
+                            a.put(JSONObject().put("code", c.code).put("name", c.name).put("areaCode", c.areaCode).put("areaName", c.areaName))
+                        } }))
+                }
+                val bytes = arr.toString().toByteArray(Charsets.UTF_8)
+                Response(200, "application/json; charset=utf-8", bytes.size.toLong()) { it.write(bytes) }
+            }
+            "POST /api/access" -> json(200, applyAccess(prefs, req.json(), from))
             "PUT /api/upload" -> {
                 val folder = writableFolder(prefs, req.query["zone"])
                 val name = FolderStore.sanitize(req.query["name"] ?: "")
@@ -285,6 +348,20 @@ object AdminServer {
                 val body = req.json()
                 val folder = writableFolder(prefs, body.optString("zone"))
                 FolderStore.delete(app, folder, body.getString("name"), prefs.recursive)
+                prefs.setFileRule(body.optString("zone").toIntOrNull() ?: 0, body.getString("name"), null)
+                json(200, JSONObject().put("ok", true))
+            }
+            "POST /api/filerule" -> {
+                val body = req.json()
+                writableFolder(prefs, body.optString("zone")) // 区画の確認
+                val zone = body.optString("zone").toInt()
+                val rule = try {
+                    FileRule.normalize(body.optJSONObject("rule"))
+                } catch (e: IllegalArgumentException) {
+                    throw HttpError(400, e.message ?: "条件が正しくありません")
+                }
+                prefs.setFileRule(zone, body.getString("name"), rule)
+                notify(EVENT_CONTENT)
                 json(200, JSONObject().put("ok", true))
             }
             "GET /api/file" -> {
@@ -334,6 +411,29 @@ object AdminServer {
                 Ticker.setSchedules(app, list)
                 json(200, JSONObject().put("ok", true))
             }
+            "POST /api/voice" -> {
+                // 管理画面のマイクの声（16kHz・モノラル・16bit PCM、0.2秒ぶんほど）。届いた順にすぐ再生する
+                val pcm = req.readBytes(64 * 1024)
+                if (pcm.size < 2 || pcm.size % 2 != 0) throw HttpError(400, "音声データが正しくありません")
+                if (!voiceActive) {
+                    voiceActive = true
+                    notify(EVENT_VOICE_START)
+                }
+                VoicePlayer.play(pcm)
+                // 途切れたとき（ブラウザを閉じた等）に、音量を元に戻して終わる
+                main.removeCallbacks(voiceIdle)
+                main.postDelayed(voiceIdle, 2500)
+                // 管理画面の診断表示用：受け取ったバイト数と、端末のメディア音量（0 だと音が出ない）
+                val am = app.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+                json(200, JSONObject().put("ok", true).put("bytes", pcm.size)
+                    .put("volume", am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC))
+                    .put("volumeMax", am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)))
+            }
+            "POST /api/voice/end" -> {
+                main.removeCallbacks(voiceIdle)
+                main.postDelayed(voiceIdle, 800) // 再生中の音を聞き終わってから止める
+                json(200, JSONObject().put("ok", true))
+            }
             "POST /api/reload" -> {
                 notify(EVENT_CONTENT)
                 json(200, JSONObject().put("ok", true))
@@ -346,6 +446,97 @@ object AdminServer {
             }
             else -> throw HttpError(404, "見つかりません")
         }
+    }
+
+    /** 配信状況（管理画面のモニタリング用） */
+    private fun status(prefs: Prefs): JSONObject {
+        val zones = JSONArray()
+        if (PlayerStatus.running) {
+            PlayerStatus.zones.toSortedMap().forEach { (i, z) ->
+                zones.put(JSONObject().put("zone", i).put("kind", z.kind).put("name", z.name).put("video", z.video)
+                    .put("pos", z.pos).put("total", z.total).put("paused", false).put("message", z.message))
+            }
+        }
+        val disk = runCatching {
+            val dir = app.getExternalFilesDir(null) ?: app.filesDir
+            val st = android.os.StatFs(dir.path)
+            JSONObject().put("free", st.availableBytes).put("total", st.totalBytes)
+        }.getOrNull()
+        return JSONObject()
+            .put("id", prefs.deviceId).put("name", prefs.deviceName).put("version", runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: "")
+            .put("time", System.currentTimeMillis())
+            .put("uptimeSec", (android.os.SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime()) / 1000)
+            .put("player", JSONObject().put("running", PlayerStatus.running).put("age", JSONObject.NULL).put("zones", zones))
+            .put("ticker", JSONObject().put("standing", Ticker.standing(app) != null).put("queued", 0))
+            .put("disk", disk ?: JSONObject.NULL)
+            .put("platform", "android")
+            .put("update", JSONObject().put("allowed", prefs.allowRemoteUpdate).put("canInstall", AppUpdater.canInstall(app))
+                .put("phase", AppUpdater.state.phase).put("message", AppUpdater.state.message).put("at", AppUpdater.state.at))
+    }
+
+    /** 管理画面から送られた APK を受け取り、更新を始める */
+    private fun receiveApk(prefs: Prefs, req: Request): Response {
+        if (!prefs.allowRemoteUpdate) {
+            throw HttpError(403, "この端末は、管理画面からのアプリ更新を許可していません。端末の設定画面で「管理画面からのアプリ更新を許可」を ON にしてください")
+        }
+        val len = req.contentLength
+        if (len <= 0) throw HttpError(400, "ファイルが空です")
+        if (len > AppUpdater.MAX_BYTES) throw HttpError(413, "ファイルが大きすぎます")
+        val f = AppUpdater.apkFile(app)
+        f.delete()
+        try {
+            f.outputStream().use { out ->
+                val buf = ByteArray(64 * 1024)
+                var left = len
+                while (left > 0) {
+                    val n = req.body.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
+                    if (n < 0) throw HttpError(400, "ファイルを最後まで受け取れませんでした")
+                    out.write(buf, 0, n)
+                    left -= n
+                }
+            }
+        } catch (e: IOException) {
+            f.delete()
+            throw HttpError(400, "ファイルを受け取れませんでした")
+        }
+        AppUpdater.state = AppUpdater.State("received", "APK を受け取りました。確認中…")
+        val why = AppUpdater.validate(app, f)
+        if (why != null) {
+            f.delete()
+            AppUpdater.state = AppUpdater.State("failed", why)
+            throw HttpError(400, why)
+        }
+        AppUpdater.install(app, f)
+        return json(200, JSONObject().put("ok", true).put("phase", AppUpdater.state.phase).put("message", AppUpdater.state.message))
+    }
+
+    private fun accessInfo(prefs: Prefs, from: InetAddress): JSONObject {
+        val you = JSONObject().put("ip", from.hostAddress?.substringBefore('%'))
+            .put("vpn", MacAccess.isVpn(from)).put("local", MacAccess.isLoopback(from))
+        you.put("mac", MacAccess.lookup(from) ?: JSONObject.NULL)
+        return JSONObject()
+            .put("enabled", prefs.macLock).put("allowVpn", prefs.allowVpn)
+            .put("devices", MacAccess.toJson(prefs.allowedMacs))
+            .put("canResolve", MacAccess.canResolve()).put("you", you)
+    }
+
+    private fun applyAccess(prefs: Prefs, j: JSONObject, from: InetAddress): JSONObject {
+        if (!MacAccess.canResolve()) {
+            throw HttpError(400, "この端末は、接続してきた端末の MAC アドレスを確認できないため、制限は使えません")
+        }
+        val devs = try {
+            if (j.has("devices")) MacAccess.clean(j.getJSONArray("devices")) else prefs.allowedMacs
+        } catch (e: IllegalArgumentException) {
+            throw HttpError(400, e.message ?: "端末の一覧が正しくありません")
+        }
+        val lock = if (j.has("enabled")) j.getBoolean("enabled") else prefs.macLock
+        val vpn = if (j.has("allowVpn")) j.getBoolean("allowVpn") else prefs.allowVpn
+        val why = MacAccess.checkUpdate(lock, devs, vpn, from, MacAccess.lookup(from))
+        if (why.isNotEmpty()) throw HttpError(400, why)
+        prefs.macLock = lock
+        prefs.allowVpn = vpn
+        prefs.allowedMacs = devs
+        return accessInfo(prefs, from)
     }
 
     private fun isLan(a: InetAddress): Boolean = when (a) {
@@ -410,11 +601,14 @@ object AdminServer {
                 if (folder != null) {
                     z.put("writable", FolderStore.isWritable(app, folder))
                     val files = JSONArray()
+                    val rules = prefs.fileRulesOf(i)
                     runCatching { MediaScanner.scan(app.contentResolver, folder, prefs.recursive) }
                         .onFailure { z.put("error", "フォルダを読み込めません") }
                         .getOrDefault(emptyList())
                         .forEach {
-                            files.put(JSONObject().put("name", it.name).put("video", it.isVideo).put("size", it.size))
+                            files.put(JSONObject().put("name", it.name).put("video", it.isVideo).put("size", it.size).apply {
+                                rules[it.name]?.let { r -> put("rule", r) }
+                            })
                         }
                     z.put("files", files)
                 }
@@ -433,6 +627,11 @@ object AdminServer {
             .put("videoSound", prefs.videoSound)
             .put("videoCompat", prefs.videoCompat)
             .put("fitMode", prefs.fitMode)
+            .put("orientation", when (prefs.orientation) {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE -> 1
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT -> 2
+                else -> 0
+            })
             .put("clockEnabled", prefs.clockEnabled)
             .put("clockPosition", prefs.clockPosition)
             .put("clockSize", prefs.clockSize)
@@ -441,6 +640,11 @@ object AdminServer {
             .put("weatherSeconds", prefs.weatherSeconds)
             .put("weatherTimeSeries", prefs.weatherTimeSeries)
             .put("weatherPlace", prefs.weatherCityName ?: prefs.weatherAreaName ?: "")
+            .put("weatherOffice", prefs.weatherOffice ?: JSONObject.NULL)
+            .put("weatherArea", prefs.weatherArea ?: JSONObject.NULL)
+            .put("weatherAreaName", prefs.weatherAreaName ?: JSONObject.NULL)
+            .put("weatherCity", prefs.weatherCity ?: JSONObject.NULL)
+            .put("weatherCityName", prefs.weatherCityName ?: JSONObject.NULL)
         val version = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull()
         val ticker = JSONObject()
             .put("standing", Ticker.standing(app)?.toJson() ?: JSONObject.NULL)
@@ -450,6 +654,7 @@ object AdminServer {
             .put("id", prefs.deviceId)
             .put("name", prefs.deviceName)
             .put("device", android.os.Build.MODEL)
+            .put("screen", screenSize())
             .put("version", version ?: "")
             .put("zones", zones)
             .put("settings", settings)
@@ -457,6 +662,14 @@ object AdminServer {
 
     private fun applySettings(prefs: Prefs, j: JSONObject) {
         if (j.has("layout")) prefs.layout = j.getInt("layout").coerceIn(0, 3)
+        // 画面の向き（0=端末の向きに従う / 1=横向きに固定 / 2=縦向きに固定）
+        if (j.has("orientation")) {
+            prefs.orientation = when (j.getInt("orientation")) {
+                1 -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                2 -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
+        }
         if (j.has("splitPercent")) prefs.splitPercent = j.getInt("splitPercent")
         if (j.has("mainPercent")) prefs.mainPercent = j.getInt("mainPercent")
         if (j.has("sidePercent")) prefs.sidePercent = j.getInt("sidePercent")
@@ -479,6 +692,19 @@ object AdminServer {
         if (j.has("weatherIntervalMin")) prefs.weatherIntervalMin = j.getInt("weatherIntervalMin")
         if (j.has("weatherSeconds")) prefs.weatherSeconds = j.getInt("weatherSeconds")
         if (j.has("weatherTimeSeries")) prefs.weatherTimeSeries = j.getBoolean("weatherTimeSeries")
+        // 天気予報の地域（気象庁のコード。数字のみ）
+        fun code(key: String): String? {
+            if (j.isNull(key)) return null
+            val v = j.get(key).toString()
+            if (!Regex("\\d{1,10}").matches(v)) throw HttpError(400, "天気予報の地域が正しくありません")
+            return v
+        }
+        fun name(key: String): String? = if (j.isNull(key)) null else j.getString(key).take(40).ifEmpty { null }
+        if (j.has("weatherOffice")) prefs.weatherOffice = code("weatherOffice")
+        if (j.has("weatherArea")) prefs.weatherArea = code("weatherArea")
+        if (j.has("weatherCity")) prefs.weatherCity = code("weatherCity")
+        if (j.has("weatherAreaName")) prefs.weatherAreaName = name("weatherAreaName")
+        if (j.has("weatherCityName")) prefs.weatherCityName = name("weatherCityName")
     }
 
     private fun json(status: Int, body: JSONObject): Response {

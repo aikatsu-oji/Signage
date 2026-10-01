@@ -3,3 +3,8 @@ build/
 local.properties
 *.iml
 .idea/
+
+# リリース署名の鍵とパスワード（絶対に Git に入れない）
+keystore.properties
+*.jks
+*.keystore

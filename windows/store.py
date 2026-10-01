@@ -63,6 +63,7 @@ DEFAULTS = {
     "shuffle": False,
     "recursive": True,
     "videoSound": True,
+    "orientation": 0,  # 画面の向き 0: 自動 / 1: 横 / 2: 縦（Windows の向きは Windows 側の設定。管理画面のプレビュー・必要な画像サイズの確認用）
     "fitMode": 3,  # 0: 全体を表示 / 1: 全体＋ぼかし背景 / 2: 画面いっぱい / 3: おまかせ
     "clockEnabled": False,
     "clockPosition": 0,
@@ -84,6 +85,10 @@ DEFAULTS = {
     "autoStart": False,
     "tickerStanding": None,
     "tickerSchedules": [],
+    "macLock": False,  # 操作できる端末を MAC アドレスで制限するか（初期状態は制限なし）
+    "allowVpn": True,  # 制限中でも VPN（Tailscale）経由は許可するか（VPN では MAC アドレスを確認できない）
+    "allowedMacs": [],  # 操作を許可する端末 [{mac, name}]
+    "fileRules": {},  # 画像・動画ごとの再生条件（キーは「区画|ファイル名」）
 }
 
 
@@ -205,6 +210,56 @@ class Store:
             return True
         except OSError:
             return False
+
+    def file_rule(self, zone, name):
+        return (self.get("fileRules") or {}).get(f"{zone}|{name}")
+
+    def set_file_rule(self, zone, name, rule):
+        rules = dict(self.get("fileRules") or {})
+        if rule:
+            rules[f"{zone}|{name}"] = rule
+        else:
+            rules.pop(f"{zone}|{name}", None)
+        self.update({"fileRules": rules})
+
+    MAX_RULE_SLOTS = 10
+
+    @staticmethod
+    def normalize_rule(raw):
+        """再生条件を検証して保存用の {"slots": [...]} に整える。どれか1つの条件に合えば再生する（複数の日時を指定できる）。
+        中身のない条件は無視し、1つも無ければ None（＝いつでも再生）。以前の形式（slots のない、条件1つだけのもの）も受け付ける
+        条件1つ: days 曜日 0=日〜6=土（空なら毎日） / start,end "HH:MM"（start > end は日またぎ） / from,to "YYYY-MM-DD"（両端を含む）"""
+        if not isinstance(raw, dict):
+            return None
+        items = raw.get("slots") if isinstance(raw.get("slots"), list) else [raw]
+        if len(items) > Store.MAX_RULE_SLOTS:
+            raise ValueError(f"条件は {Store.MAX_RULE_SLOTS} 個までです")
+        slots = [x for x in (Store._normalize_slot(i) for i in items if isinstance(i, dict)) if x]
+        return {"slots": slots} if slots else None
+
+    @staticmethod
+    def _normalize_slot(raw):
+        out = {}
+        days = sorted({d for d in (raw.get("days") or []) if isinstance(d, int) and 0 <= d <= 6})
+        if days and len(days) < 7:
+            out["days"] = days
+        for k in ("start", "end"):
+            v = str(raw.get(k) or "")
+            if v:
+                if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", v):
+                    raise ValueError("時刻は HH:MM の形式で指定してください")
+                out[k] = v
+        for k in ("from", "to"):
+            v = str(raw.get(k) or "")
+            if v:
+                if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])", v):
+                    raise ValueError("日付は YYYY-MM-DD の形式で指定してください")
+                out[k] = v
+        if out.get("from") and out.get("to") and out["from"] > out["to"]:
+            raise ValueError("期間の終わりは開始より後にしてください")
+        if "start" in out and out.get("start") == out.get("end"):
+            raise ValueError("開始と終了の時刻が同じです")
+        return out or None
 
     @staticmethod
     def sanitize(raw: str):

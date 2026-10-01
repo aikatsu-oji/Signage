@@ -51,6 +51,8 @@ class MediaZone(
     private val onChanged: () -> Unit = {},
     /** 天気予報の画面を表示中かどうか（時計の重ね表示を切り替えるため） */
     private val onPanelShown: (Boolean) -> Unit = {},
+    /** 何番目の区画か（ファイルごとの再生条件の参照用） */
+    private val zoneIndex: Int = 0,
 ) : Zone {
     override val view: FrameLayout =
         // 動画の互換モードでは、専用ボードでも安定しやすい SurfaceView で描画する
@@ -192,19 +194,20 @@ class MediaZone(
             return
         }
         showingWeather = false
-        val next = index + step
-        if (next in playlist.indices) {
+        // 再生条件（時間帯・曜日・期間）に合わないファイルは飛ばす
+        val next = nextActive(index + step, if (step < 0) -1 else 1)
+        if (next != null) {
             index = next
             play(playlist[index], my)
             return
         }
+        val wrapBack = index + step < 0
 
         val folder = folder
         if (folder == null) {
             showMessage("この区画のフォルダが設定されていません\n長押しで設定画面を開きます")
             return
         }
-        val wrapBack = next < 0
         val recursive = prefs.recursive
         io.execute {
             val result = runCatching { MediaScanner.scan(activity.contentResolver, folder, recursive) }
@@ -226,21 +229,57 @@ class MediaZone(
                     handler.postDelayed({ if (my == token) goto(1) }, 5000)
                     return@post
                 }
-                index = if (wrapBack) playlist.lastIndex else 0
+                val first = nextActive(if (wrapBack) playlist.lastIndex else 0, if (wrapBack) -1 else 1)
+                if (first == null) {
+                    // 全ファイルが条件外の時間帯。時間が来るまで待つ
+                    index = -1
+                    currentIsVideo = false
+                    layers.forEach(::hideLayer)
+                    showing = null
+                    showMessage("いま再生する条件に合うファイルがありません\n（時間帯・曜日・期間の設定を確認してください）")
+                    handler.postDelayed({ if (my == token) goto(1) }, 5000)
+                    return@post
+                }
+                index = first
                 play(playlist[index], my)
             }
         }
     }
 
+    /** start から dir 方向へ、いま再生してよい最初のファイルの位置。範囲内に無ければ null */
+    private fun nextActive(start: Int, dir: Int): Int? {
+        val now = java.util.Calendar.getInstance()
+        var i = start
+        while (i in playlist.indices) {
+            if (FileRule.isActive(prefs.fileRule(zoneIndex, playlist[i].name), now)) return i
+            i += dir
+        }
+        return null
+    }
+
+    /** 声の放送中は、動画の音を小さくする */
+    private var ducked = false
+
+    fun duck(on: Boolean) {
+        ducked = on
+        applyVolume()
+    }
+
+    private fun applyVolume() {
+        val base = if (isMain && prefs.videoSound) 1f else 0f
+        player.volume = if (ducked) base * 0.15f else base
+    }
+
     private fun play(item: MediaEntry, my: Int) {
         showMessage(null)
         currentIsVideo = item.isVideo
+        PlayerStatus.media(zoneIndex, item.name, item.isVideo, index + 1, playlist.size)
         onChanged()
         // 読み込みが終わらないファイルで止まらないように保険
         watchdog = Runnable { if (my == token) goto(1) }.also { handler.postDelayed(it, 20_000) }
 
         if (item.isVideo) {
-            player.volume = if (isMain && prefs.videoSound) 1f else 0f
+            applyVolume()
             player.setMediaItem(MediaItem.fromUri(item.uri))
             player.prepare()
             player.playWhenReady = !paused
@@ -288,6 +327,7 @@ class MediaZone(
         lastWeatherAt = System.currentTimeMillis()
         showingWeather = true
         currentIsVideo = false
+        PlayerStatus.media(zoneIndex, "天気予報", false, 0, 0)
         player.pause()
         showMessage(null)
         watchdog = Runnable { if (my == token) goto(1) }.also { handler.postDelayed(it, 20_000) }
@@ -510,6 +550,7 @@ class MediaZone(
     }
 
     private fun showMessage(text: String?) {
+        if (text != null) PlayerStatus.message(zoneIndex, text)
         messageView.text = text
         messageView.visibility = if (text == null) View.GONE else View.VISIBLE
         if (text != null) messageView.bringToFront()

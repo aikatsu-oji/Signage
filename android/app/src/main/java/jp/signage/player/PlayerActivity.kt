@@ -62,6 +62,15 @@ class PlayerActivity : Activity() {
     }
     private val hideInfo = Runnable { infoView.visibility = View.GONE }
 
+    private lateinit var voiceBanner: TextView
+
+    /** 管理画面からの声の放送中は「放送中」を表示し、動画の音を下げる */
+    private fun showVoice(on: Boolean) {
+        voiceBanner.visibility = if (on) View.VISIBLE else View.GONE
+        if (on) voiceBanner.bringToFront()
+        zones.filterIsInstance<MediaZone>().forEach { it.duck(on) }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_player)
@@ -91,6 +100,17 @@ class PlayerActivity : Activity() {
             tickerView, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM)
         )
         announcer = Announcer(this)
+        voiceBanner = TextView(this).apply {
+            text = "📢 放送中"
+            setTextColor(0xFFFFFFFF.toInt())
+            setBackgroundColor(0xDDE53935.toInt())
+            textSize = 22f
+            setPadding(48, 20, 48, 20)
+            visibility = View.GONE
+        }
+        findViewById<FrameLayout>(R.id.root).addView(
+            voiceBanner, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = 24 }
+        )
         infoView.bringToFront()
 
         zones = createZones()
@@ -109,6 +129,7 @@ class PlayerActivity : Activity() {
                     mainAssigned = true
                     MediaZone(
                         this, prefs, prefs.zoneFolder(i), isMain,
+                        zoneIndex = i,
                         onChanged = { if (isMain) updateInfo() },
                         // 1画面のときは、天気予報の画面に時計が含まれるので重ねて表示しない
                         onPanelShown = { panel ->
@@ -169,11 +190,15 @@ class PlayerActivity : Activity() {
         when (event) {
             AdminServer.EVENT_CONTENT -> zones.filterIsInstance<MediaZone>().forEach { it.reload() }
             AdminServer.EVENT_SETTINGS -> recreate() // 区画の構成なども変わるので作り直す
+            AdminServer.EVENT_VOICE_START -> showVoice(true)
+            AdminServer.EVENT_VOICE_END -> showVoice(false)
         }
     }
 
     override fun onStart() {
         super.onStart()
+        PlayerStatus.running = true
+        PlayerStatus.runningSince = System.currentTimeMillis()
         clockTick.run()
         zones.forEach { it.start() }
         AdminServer.addListener(adminListener)
@@ -184,6 +209,8 @@ class PlayerActivity : Activity() {
 
     override fun onStop() {
         super.onStop()
+        PlayerStatus.running = false
+        PlayerStatus.clear()
         AdminServer.removeListener(adminListener)
         Ticker.removeListener(tickerListener)
         handler.removeCallbacks(clockTick)

@@ -1,0 +1,63 @@
+# GitHub の Releases に、APK・exe を添付して公開する。次のどれかで始まる：
+#  ・タグ（v1.9.1 など）を push する
+#  ・Actions タブから「Run workflow」で、版（tag）と、APK・exe が入っているコミットを指定する
+#  ・.github/release-request.txt（1 行目：タグ、2 行目：APK・exe が入っているコミットの SHA）を push する
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+    branches: ['**']
+    paths: ['.github/release-request.txt']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release のタグ（例：v1.9.1）'
+        required: true
+      binaries_ref:
+        description: 'APK・exe が入っているコミット（省略すると、実行したコミット）'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 公開する版と、ファイルの場所を決める
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"; REF="${{ inputs.binaries_ref }}"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${{ github.ref_name }}"; REF=""
+          else
+            TAG="$(sed -n 1p .github/release-request.txt | tr -d '\r ')"
+            REF="$(sed -n 2p .github/release-request.txt | tr -d '\r ')"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "ref=${REF:-${{ github.sha }}}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.ref }}
+
+      - name: チェックサムを確認する
+        run: cd release && sha256sum -c SHA256SUMS
+
+      - name: Releases に添付して公開する
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.target.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.target.outputs.tag }}
+          body_path: release/README.md
+          files: |
+            release/*.apk
+            release/*.exe
+            release/SHA256SUMS
+            release/LICENSE
+            release/THIRD_PARTY_NOTICES.md

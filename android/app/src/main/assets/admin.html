@@ -59,8 +59,88 @@
   .thumb { aspect-ratio: 16 / 10; background: #0b0d12 center / contain no-repeat; display: flex; align-items: center; justify-content: center; color: #cfd6e4; font-size: 28px; cursor: pointer; }
   .meta { padding: 6px 8px; font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
   .meta .fname { word-break: break-all; }
-  .meta .row { display: flex; justify-content: space-between; align-items: center; color: var(--sub); }
-  .meta button { padding: 2px 8px; font-size: 12px; }
+  .meta .row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px; color: var(--sub); }
+  .meta button { padding: 2px 8px; font-size: 12px; white-space: nowrap; }
+  #zones section.pending { border: 2px dashed #b06000; }
+  .dirty { color: #b06000; font-weight: bold; font-size: 13px; }
+  #layoutSec { padding: 0; }
+  #layoutSec summary { display: flex; align-items: baseline; gap: 12px; padding: 12px 16px; cursor: pointer; list-style: none; }
+  #layoutSec summary::-webkit-details-marker { display: none; }
+  #layoutSec summary::before { content: '▾'; color: var(--sub); }
+  #layoutSec details:not([open]) summary::before { content: '▸'; }
+  #layoutSec summary h2 { margin: 0; }
+  .layoutBody { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; padding: 0 16px; }
+  .tiles { display: grid; grid-template-columns: repeat(2, 96px); gap: 10px; }
+  .tile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 6px; font-size: 12px; border: 2px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); cursor: pointer; }
+  .tile[aria-checked=true] { border-color: #1a73e8; background: rgba(26,115,232,.10); font-weight: bold; }
+  .tile .mini { width: 72px; height: 42px; display: grid; gap: 2px; }
+  .tile .mini i { background: var(--line); border-radius: 2px; }
+  .tile[aria-checked=true] .mini i { background: #1a73e8; opacity: .75; }
+  .lpwrap { flex: 1 1 320px; min-width: 260px; max-width: 640px; }
+  .lp { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #0b0d12; border-radius: 8px; overflow: hidden; user-select: none; touch-action: none; }
+  .lp.portrait { aspect-ratio: 9 / 16; width: 240px; max-width: 100%; }
+  .lp .box { position: absolute; box-sizing: border-box; border: 2px solid #0b0d12; background: #263043; color: #e8eaf0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 4px; text-align: center; font-size: 12px; overflow: hidden; }
+  .lp .box:nth-child(2) { background: #2d3b52; }
+  .lp .box b { font-size: 13px; }
+  .lp .box select { max-width: 100%; font-size: 12px; padding: 2px 4px; }
+  .lp .div { position: absolute; z-index: 2; background: #1a73e8; display: flex; align-items: center; justify-content: center; outline: none; }
+  .lp .div.v { width: 10px; margin-left: -5px; cursor: ew-resize; align-items: flex-start; }
+  .lp .div.v span { margin-top: 8px; }
+  .lp.portrait .div.v { align-items: flex-end; }
+  .lp.portrait .div.v span { margin-top: 0; margin-bottom: 8px; }
+  .lp .div.h { height: 10px; margin-top: -5px; cursor: ns-resize; }
+  .lp .div:focus-visible { box-shadow: 0 0 0 3px #fff; }
+  .lp .div span { background: #1a73e8; color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 10px; white-space: nowrap; pointer-events: none; }
+  .orientRow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 0 16px 10px; }
+  .orientRow .ol { font-size: 13px; font-weight: bold; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 5px 12px; font-size: 13px; background: var(--card); color: var(--text); cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-checked=true] { background: #1a73e8; color: #fff; font-weight: bold; }
+  #orientNote { flex: 1 1 260px; }
+  #lpRatios { margin-top: 10px; font-size: 13px; }
+  #lpRatios .scr { color: var(--sub); margin-bottom: 4px; }
+  #lpRatios table { border-collapse: collapse; width: 100%; }
+  #lpRatios td { padding: 3px 8px 3px 0; vertical-align: baseline; }
+  #lpRatios td.n { white-space: nowrap; font-weight: bold; }
+  #lpRatios td.r { white-space: nowrap; }
+  #lpRatios .ratio { font-weight: bold; color: #1a73e8; }
+  .lp .box small { font-size: 11px; opacity: .85; }
+  .layoutFoot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px 16px; }
+  #fitDialog { max-width: 980px; width: calc(100% - 24px); max-height: calc(100% - 24px); overflow: auto; }
+  .fitzones { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+  .fitzones .zt { border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px; font-size: 12px; }
+  .fitrow { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); }
+  .fitname { width: 100%; font-size: 13px; word-break: break-all; }
+  .fitcell { width: 200px; display: flex; flex-direction: column; gap: 4px; }
+  .fp { position: relative; width: 100%; background: #000; overflow: hidden; border-radius: 4px; outline: 1px solid var(--line); }
+  .fp img, .fp video { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .fp .bg { object-fit: cover; filter: blur(8px) brightness(.5); transform: scale(1.15); }
+  .verdict { font-size: 12px; font-weight: bold; }
+  .verdict.v-ok { color: var(--ok); } .verdict.v-warn { color: #b06000; } .verdict.v-ng { color: var(--danger); }
+  .fitnote { font-size: 11px; color: var(--sub); }
+  .voiceResult { list-style: none; margin: 4px 0 8px; padding: 0; font-size: 12px; display: flex; flex-direction: column; gap: 2px; }
+  .voiceResult li.ok { color: var(--ok); } .voiceResult li.ng { color: var(--danger); font-weight: bold; } .voiceResult li.warn { color: #b06000; font-weight: bold; }
+  #voiceTalk.live { background: #e53935; border-color: #e53935; color: #fff; }
+  #voiceTalk { touch-action: none; user-select: none; -webkit-user-select: none; }
+  #importDialog { max-width: 560px; }
+  #importDialog fieldset label { display: flex; margin: 4px 0; }
+  #impTargets { display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow: auto; }
+  #impTargets label { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+  #impLog { max-height: 150px; overflow: auto; font-size: 12px; padding-left: 20px; margin: 8px 0 0; }
+  .meta .btns { display: flex; gap: 4px; }
+  .rule { font-size: 11px; color: var(--sub); }
+  .rule.on { color: #b06000; }
+  .slot { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px 10px; margin-top: 8px; }
+  .slot .slothead { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: bold; margin-bottom: 4px; }
+  .slot .field { margin-top: 6px; }
+  dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); max-width: 480px; width: calc(100% - 32px); max-height: calc(100% - 24px); overflow: auto; padding: 16px; }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  dialog h3 { margin: 0 0 4px; font-size: 16px; }
+  .days { display: flex; gap: 4px; flex-wrap: wrap; }
+  .days label { display: inline-flex; align-items: center; gap: 2px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+  input[type=time], input[type=date] { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); }
+  .dlgrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .form { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px 20px; }
   .field { display: flex; flex-direction: column; gap: 4px; }
   .field > span { font-size: 13px; color: var(--sub); }
@@ -76,6 +156,42 @@
   textarea { font: inherit; width: 100%; min-height: 64px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); resize: vertical; }
   .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; margin: 8px 0; }
   .opts label { display: flex; flex-direction: column; font-size: 12px; color: var(--sub); gap: 2px; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; position: sticky; top: 58px; z-index: 4; background: var(--bg); padding: 4px 0; }
+  .tabs button { padding: 8px 14px; border-radius: 999px; }
+  .tabs button[aria-selected=true] { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: bold; }
+  .tabs .sub { margin-left: 6px; color: inherit; opacity: .85; }
+  .pane[hidden] { display: none; }
+  .tbar { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: 8px 0; }
+  .tbarhead { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .tbarhead strong { flex: 1; font-size: 13px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 4px 12px; font-size: 13px; }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sub); }
+  .chip .dot.ok { background: var(--ok); } .chip .dot.pin, .chip .dot.denied { background: #e6a700; } .chip .dot.offline { background: var(--danger); }
+  .chip[aria-pressed=true] { background: var(--brand-weak); border-color: var(--brand); font-weight: bold; }
+  .chip.off { opacity: .55; }
+  .mongrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; margin-top: 8px; }
+  .moncard { border: 2px solid var(--line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+  .moncard.ok { border-color: var(--ok); } .moncard.warn { border-color: #e6a700; } .moncard.bad { border-color: var(--danger); }
+  .moncard .mh { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .moncard .mh b { font-size: 15px; }
+  .badge { border-radius: 999px; padding: 1px 10px; font-size: 12px; font-weight: bold; color: #fff; white-space: nowrap; }
+  .badge.ok { background: var(--ok); } .badge.warn { background: #b06000; } .badge.bad { background: var(--danger); } .badge.na { background: var(--sub); }
+  .moncard.excl { border-style: dashed; background: transparent; }
+  .exclTag { display: inline-block; margin-left: 6px; padding: 0 8px; border-radius: 999px; background: var(--sub); color: #fff; font-size: 11px; font-weight: normal; vertical-align: middle; white-space: nowrap; }
+  .device .dname { overflow-wrap: anywhere; }
+  .moncard .issues { color: var(--danger); font-weight: bold; }
+  .moncard .issues.w { color: #b06000; }
+  .moncard .zl { word-break: break-all; }
+  .tplTools { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 0 6px; }
+  #tplDialog { max-width: 620px; width: calc(100% - 24px); max-height: calc(100% - 24px); overflow: auto; }
+  .tplRow { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .tplRow textarea { min-height: 52px; }
+  .recent { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0; font-size: 12px; color: var(--sub); }
+  .recent button { font-size: 12px; padding: 2px 8px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #tickerCount { font-size: 12px; color: var(--sub); text-align: right; }
+  #jump { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 12px; }
+  #jump button { font-size: 12px; padding: 3px 10px; white-space: nowrap; }
   .templates { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
   .templates button { font-size: 12px; padding: 3px 8px; }
   .sched { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -85,6 +201,7 @@
   .days label { display: inline-flex; align-items: center; gap: 2px; font-size: 13px; }
   .badge { display: inline-block; border-radius: 6px; padding: 0 6px; font-size: 12px; color: #fff; }
   .badge.s0 { background: #333; } .badge.s1 { background: #1565c0; } .badge.s2 { background: #c62828; }
+  .log li.ok { color: var(--ok); } .log li.ng { color: var(--danger); font-weight: bold; } .log li.warn { color: #b06000; }
   .log { font-size: 13px; max-height: 220px; overflow: auto; margin: 6px 0 0; padding-left: 18px; }
 </style>
 </head>
@@ -117,7 +234,7 @@
           <h2>端末一覧</h2>
           <button class="small" id="addDeviceBtn" title="自動で見つからない端末を IP アドレスで追加">＋ 追加</button>
         </div>
-        <p class="sub">同じネットワークのサイネージ端末が自動で表示されます。クリックで操作する端末を切り替え、チェックした端末はまとめて操作できます。</p>
+        <p class="sub">同じネットワークのサイネージ端末が自動で表示されます。<b>チェック</b>＝テロップ・マイクなどを送る端末。<b>名前をクリック</b>＝その端末の設定を開きます。</p>
         <label class="check sub"><input type="checkbox" id="checkAll"> すべて選択</label>
         <ul class="devices" id="devices"></ul>
         <div class="bulk" id="bulk" hidden>
@@ -135,12 +252,29 @@
           <ol class="log" id="bulkLog"></ol>
         </div>
       </section>
+    </aside>
 
+    <main>
+      <div class="tabs" id="tabs" role="tablist">
+        <button type="button" role="tab" data-tab="send">📣 送る（テロップ・マイク）</button>
+        <button type="button" role="tab" data-tab="dev">⚙ 端末の設定<span class="sub" id="tabDevName"></span></button>
+        <button type="button" role="tab" data-tab="status">📊 配信状況<span class="sub" id="tabStatusBadge"></span></button>
+        <button type="button" role="tab" data-tab="access">🔒 入れる端末</button>
+      </div>
+      <div class="pane" id="pane-send">
       <section id="tickerSec">
         <h2>テロップを流す</h2>
+        <div class="tbar">
+          <div class="tbarhead"><strong>送信先</strong>
+            <button type="button" class="small" data-tb="all">全部</button>
+            <button type="button" class="small" data-tb="none">解除</button></div>
+          <div class="chips" id="tickerChips"></div>
+        </div>
         <p class="sub" id="tickerTarget"></p>
         <div class="templates" id="templates"></div>
-        <textarea id="tickerText" placeholder="例：10番でお待ちのお客様、カウンターまでお越しください"></textarea>
+        <textarea id="tickerText" placeholder="例：10番でお待ちのお客様、カウンターまでお越しください（Ctrl + Enter で流す）"></textarea>
+        <div id="tickerCount"></div>
+        <div class="recent" id="tickerRecent" hidden></div>
         <div class="opts" id="tickerOpts"></div>
         <div class="row" style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="primary" id="tickerSend">流す</button>
@@ -148,9 +282,34 @@
         </div>
         <p class="sub" id="tickerStatus"></p>
       </section>
-    </aside>
 
-    <main>
+      <section id="voiceSec">
+        <h2>マイクで声を届ける</h2>
+        <div class="tbar">
+          <div class="tbarhead"><strong>送信先</strong>
+            <button type="button" class="small" data-tb="all">全部</button>
+            <button type="button" class="small" data-tb="none">解除</button></div>
+          <div class="chips" id="voiceChips"></div>
+        </div>
+        <p class="sub" id="voiceTarget"></p>
+        <div class="warn" id="voiceWarn" hidden></div>
+        <div class="dlgrow" style="margin:8px 0">
+          <button class="primary" type="button" id="voiceTalk">🎤 押している間、話す</button>
+          <meter id="voiceLevel" min="0" max="1" value="0" style="width:90px"></meter>
+          <button type="button" id="voiceTest" title="声を出さずに、放送先の端末までテスト音が届くか確かめます">テスト音を送る</button>
+        </div>
+        <ul id="voiceResult" class="voiceResult"></ul>
+        <label class="check sub"><input type="checkbox" id="voiceLatch"> ボタンを押さなくても話し続ける（もう一度押すと止まる）</label>
+        <p class="sub" id="voiceStatus">話すと、選んだ端末のスピーカーからすぐ流れます（遅れは 1 秒前後）。放送中は端末の動画の音が小さくなります。ハウリングを防ぐため、ヘッドセットの使用をおすすめします。</p>
+      </section>
+      </div>
+      <div class="pane" id="pane-dev" hidden>
+      <nav id="jump" aria-label="この端末の設定の項目">
+        <button type="button" data-to="zones">画像・動画</button>
+        <button type="button" data-to="layoutSec">画面分割</button>
+        <button type="button" data-to="scheduleSec">予約テロップ</button>
+        <button type="button" data-to="settingsSec">設定</button>
+      </nav>
       <section id="deviceHead">
         <div class="head">
           <div>
@@ -160,10 +319,40 @@
           <div class="row">
             <button class="small primary" id="reloadBtn" title="フォルダを読み直して先頭から再生">今すぐ反映</button>
             <button class="small" id="renameBtn">端末名を変更</button>
+            <button class="small" id="exportBtn" title="この端末の設定をファイルに保存（別の端末へまとめて反映できます）">設定をエクスポート</button>
+            <button class="small" id="importBtn" title="保存した設定ファイルを読み込んで、選んだ端末にまとめて反映します">設定ファイルから反映</button>
             <button class="small" id="removeBtn" hidden>一覧から外す</button>
           </div>
         </div>
         <div class="warn" id="devWarn" hidden></div>
+      </section>
+      <section id="layoutSec">
+        <details id="layoutDetails" open>
+          <summary><h2>画面分割</h2><span class="sub" id="layoutSummary"></span></summary>
+          <div class="orientRow">
+            <span class="ol">画面の向き</span>
+            <div class="seg" id="orientSeg" role="radiogroup" aria-label="画面の向き"></div>
+            <span class="sub" id="orientNote"></span>
+          </div>
+          <div class="layoutBody">
+            <div class="tiles" id="layoutTiles" role="radiogroup" aria-label="分割方法"></div>
+            <div class="lpwrap">
+              <div class="lp" id="lp"></div>
+              <div id="lpRatios"></div>
+              <p class="sub" id="lpHint"></p>
+            </div>
+          </div>
+          <input type="hidden" name="layout" form="settings">
+          <input type="hidden" name="splitPercent" form="settings">
+          <input type="hidden" name="mainPercent" form="settings">
+          <input type="hidden" name="sidePercent" form="settings">
+          <div class="layoutFoot">
+            <button class="primary" type="button" id="layoutSave">画面分割を保存</button>
+            <button type="button" id="fitOpen" title="画像・動画が各区画にピッタリ収まるかを、反映する前に確認します">画像のフィットを確認</button>
+            <span class="sub" id="layoutSaveHint">保存すると、再生画面にすぐ反映されます</span>
+            <span class="dirty" id="layoutDirty" hidden>● 未保存の変更があります</span>
+          </div>
+        </details>
       </section>
       <div id="zones"></div>
       <section id="scheduleSec">
@@ -190,27 +379,8 @@
 
       <section id="settingsSec">
         <h2>設定</h2>
-        <p class="sub">保存すると、この端末の再生画面にすぐ反映されます。フォルダと天気予報の地域は、端末の設定画面で変更してください。</p>
+        <p class="sub">保存すると、この端末の再生画面にすぐ反映されます。フォルダは、端末の設定画面で変更してください。</p>
         <form id="settings">
-          <fieldset>
-            <legend>画面分割</legend>
-            <div class="form">
-              <label class="field"><span>分割方法</span>
-                <select name="layout">
-                  <option value="0">1画面</option><option value="1">左右2分割</option>
-                  <option value="2">上下2分割</option><option value="3">メイン＋サイド</option>
-                </select></label>
-              <label class="field" id="splitField"><span>比率（区画1 : 区画2）</span>
-                <select name="splitPercent"></select></label>
-              <label class="field" id="mainField"><span>メインとサイドの比率（区画1 : 区画2・3）</span>
-                <select name="mainPercent"></select></label>
-              <label class="field" id="sideField"><span>サイドの比率（区画2 : 区画3）</span>
-                <select name="sidePercent"></select></label>
-              <label class="field"><span>区画1 の表示内容</span><select name="zone0"></select></label>
-              <label class="field" data-zone="1"><span>区画2 の表示内容</span><select name="zone1"></select></label>
-              <label class="field" data-zone="2"><span>区画3 の表示内容</span><select name="zone2"></select></label>
-            </div>
-          </fieldset>
           <fieldset>
             <legend>再生</legend>
             <div class="form">
@@ -246,14 +416,160 @@
               <label class="field"><span>表示間隔（分）</span><input type="number" name="weatherIntervalMin" min="1" max="1440"></label>
               <label class="field"><span>1画面の表示秒数</span><input type="number" name="weatherSeconds" min="3" max="600"></label>
               <label class="check"><input type="checkbox" name="weatherTimeSeries"> 3時間ごとの予報も表示</label>
+              <label class="field"><span>地方（都道府県）</span><select id="wxOffice"><option>読み込み中…</option></select></label>
+              <label class="field"><span>市区町村・地域</span><select id="wxCity"></select></label>
             </div>
+            <p class="sub" id="wxNote">予報は「東京地方」などの地域単位で、画面の見出しには市区町村名を表示します。地域の一覧は、端末がインターネットに接続できるときに取得されます。</p>
           </fieldset>
           <button class="primary">この端末に保存</button>
         </form>
       </section>
+      </div>
+      <div class="pane" id="pane-status" hidden>
+        <section>
+          <div class="head">
+            <h2>配信状況</h2>
+            <div class="row"><span class="sub" id="monUpdated"></span><button class="small" id="monRefresh">今すぐ更新</button></div>
+          </div>
+          <p class="sub">各端末の再生画面が動いているか、いま何を再生しているか、空き容量などを、5 秒ごとに確認します（このタブを開いている間）。</p>
+          <p id="monSummary" style="font-weight:bold; margin-bottom:2px"></p>
+          <p class="sub" id="monExclNote" style="margin-top:0"></p>
+          <div class="mongrid" id="monGrid"></div>
+          <div id="monExcludedBox" hidden>
+            <h3 style="font-size:14px; margin:16px 0 4px">監視対象外の端末</h3>
+            <p class="sub">夜間に電源を切る端末など、異常として数えたくない端末です。件数・タブの表示・出来事の記録には含まれません。</p>
+            <div class="mongrid" id="monExcluded"></div>
+          </div>
+        </section>
+        <section id="apkSec">
+          <h2>アプリ（APK）の更新</h2>
+          <p class="sub">新しい版の APK を選び、端末一覧でチェックした Android 端末に送って更新します。端末側で「管理画面からのアプリ更新を許可」を ON にした端末だけが受け付けます。同じアプリで、いまより新しい版で、同じ署名の APK だけ入ります。</p>
+          <div class="dlgrow" style="margin:8px 0">
+            <input type="file" id="apkFile" accept=".apk,application/vnd.android.package-archive">
+            <button type="button" class="primary" id="apkSend" disabled>チェックした端末に送って更新</button>
+          </div>
+          <p class="sub" id="apkTarget"></p>
+          <ol class="log" id="apkLog" style="padding-left:20px"></ol>
+          <p class="sub">・端末の画面に「更新しますか？」の確認が出る場合があります（初回は特に）。確認が出た端末の画面で、タップして進めてください。<br>
+          ・更新が終わると、アプリが自動で再起動します（端末の「自動再生」が ON のときは、再生画面も開き直します）。<br>
+          ・Windows 版は、この方法では更新できません（新しい Signage.exe に差し替えてください）。</p>
+        </section>
+        <section>
+          <h2>最近の出来事</h2>
+          <ol class="log" id="monLog" style="max-height:220px; overflow:auto; padding-left:20px"><li class="sub">まだありません</li></ol>
+        </section>
+      </div>
+      <div class="pane" id="pane-access" hidden>
+      <section id="accessSec">
+        <details>
+          <summary><h2>管理画面に入れる端末</h2><span class="sub" id="accessSummary"></span></summary>
+          <p class="sub">この管理画面を開いて操作できるスマホ・PC を、MAC アドレスで制限します。ここで決めた内容は、見つかっているサイネージ端末すべてに反映されます（端末ごとの設定ではありません）。初期状態は制限なし。PIN は引き続き必要です。</p>
+          <p class="sub" id="accessNoSupport" hidden></p>
+          <div id="accessMain">
+            <p>いま操作している端末：<b id="accessYouMac"></b> <span class="sub" id="accessYouIp"></span></p>
+            <div class="dlgrow" style="margin:6px 0">
+              <input type="text" id="accessYouName" placeholder="名前（例：店長のスマホ）" maxlength="30" style="flex:1; min-width:120px">
+              <button type="button" class="small" id="accessAddYou">この端末を追加</button>
+            </div>
+            <div class="dlgrow" style="margin:6px 0">
+              <input type="text" id="accessMac" placeholder="MAC アドレス（AA:BB:CC:DD:EE:FF）" maxlength="17" style="flex:1; min-width:150px">
+              <input type="text" id="accessMacName" placeholder="名前" maxlength="30" style="width:110px">
+              <button type="button" class="small" id="accessAddMac">追加</button>
+            </div>
+            <ul class="log" id="accessList" style="margin:8px 0"></ul>
+            <div style="display:flex; flex-direction:column; gap:6px; margin:8px 0">
+              <label class="check"><input type="checkbox" id="accessEnabled"> 登録した端末だけ入れるようにする</label>
+              <label class="check"><input type="checkbox" id="accessVpn"> VPN（Tailscale）経由は許可する</label>
+            </div>
+            <div class="warn" id="accessMismatch" hidden>
+              <span id="accessMismatchText"></span>
+              <button type="button" class="small" id="accessSync">全端末にそろえる</button>
+            </div>
+            <p class="sub" id="accessSkipped" hidden></p>
+            <p class="sub">・スマホは Wi-Fi の「プライベート アドレス（ランダム MAC）」を使うことがあります。「この端末を追加」なら、実際に使われている MAC アドレスを登録できます。<br>
+            ・VPN 経由・ルーターを挟んだ先の端末は MAC アドレスを確認できません。<br>
+            ・入れなくなったときは、サイネージを動かしている端末側で解除できます（Windows：タスクトレイ／設定画面、Android：端末の設定画面）。</p>
+          </div>
+        </details>
+      </section>
+      </div>
     </main>
   </div>
 </div>
+
+<dialog id="ruleDialog">
+  <form id="ruleForm" method="dialog">
+    <h3>再生する条件</h3>
+    <p class="sub" id="ruleFile"></p>
+    <p class="sub">条件は複数追加できます。<b>どれか1つに合うとき</b>に再生します（例：「土日の終日」と「12/24〜12/25 の 18:00〜22:00」）。1つの条件の中では、設定した項目のすべてに合うときだけ合います。空欄の項目は条件なし、中身のない条件は無視されます。条件がひとつも無ければ、いつでも再生します。</p>
+    <div id="ruleSlots"></div>
+    <div class="dlgrow" style="margin-top:10px"><button type="button" id="ruleAdd" class="small">＋ 条件を追加</button><span class="sub" id="ruleCount"></span></div>
+    <div class="dlgrow" style="margin-top:14px; justify-content: flex-end">
+      <button type="button" id="ruleClear" class="danger">条件をすべてなくす</button>
+      <button type="button" id="ruleCancel">キャンセル</button>
+      <button class="primary" id="ruleSave" value="save">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="fitDialog">
+  <h3>画像のフィット確認</h3>
+  <p class="sub" id="fitInfo"></p>
+  <div class="dlgrow" style="margin:8px 0">
+    <button type="button" class="primary" id="fitPick">確認する画像・動画を選ぶ</button>
+    <input type="file" id="fitFiles" multiple accept="image/*,video/*" hidden>
+    <button type="button" id="fitDevice" title="この端末の区画に入っている画像を読み込んで確認（動画は端末に入れる前のファイルで確認できます）">この端末の画像も確認</button>
+    <label class="dlgrow">表示方法 <select id="fitMode">
+      <option value="3">おまかせ（なるべく余白を残さない）</option>
+      <option value="1">全体を表示＋余白をぼかした背景</option>
+      <option value="2">画面いっぱい（はみ出す部分は切り取り）</option>
+      <option value="0">全体を表示（余白は黒）</option>
+    </select></label>
+    <button type="button" id="fitApply" title="いま選んでいる表示方法を、この端末の設定にする">この表示方法を端末に設定</button>
+  </div>
+  <p class="sub">分割・比率は、画面分割カードの現在の内容（未保存の変更を含む）で計算します。ここで選ぶファイルは端末には送られません。</p>
+  <div id="fitResults"></div>
+  <div class="dlgrow" style="margin-top:12px; justify-content:flex-end"><button type="button" id="fitClose">閉じる</button></div>
+</dialog>
+
+<dialog id="tplDialog">
+  <h3>テロップのボタンを編集</h3>
+  <p class="sub">ボタンの名前と、押したときに入る文言・種類・回数を決めます。この PC のブラウザに保存されます（別の PC・スマホには引き継がれません）。</p>
+  <div id="tplList"></div>
+  <div class="dlgrow" style="margin-top:10px">
+    <button type="button" id="tplAdd">＋ ボタンを追加</button>
+    <button type="button" id="tplReset">初期の状態に戻す</button>
+  </div>
+  <div class="dlgrow" style="margin-top:12px; justify-content:flex-end">
+    <button type="button" id="tplCancel">キャンセル</button>
+    <button type="button" class="primary" id="tplSave">保存</button>
+  </div>
+</dialog>
+
+<dialog id="importDialog">
+  <h3>設定ファイルから反映</h3>
+  <p class="sub">「設定をエクスポート」で保存したファイルを読み込み、選んだ端末にまとめて反映します。フォルダ・端末名・PIN・天気の地域・画像や動画のファイル本体は、端末ごとの設定なので含まれません。</p>
+  <div class="dlgrow" style="margin:8px 0">
+    <button type="button" class="primary" id="impPick">設定ファイルを選ぶ</button>
+    <input type="file" id="impFile" accept=".json,application/json" hidden>
+    <span class="sub" id="impInfo">ファイル未選択</span>
+  </div>
+  <fieldset id="impParts" disabled style="margin:8px 0">
+    <legend>反映する内容</legend>
+    <label class="check"><input type="checkbox" id="impSettings" checked> <span id="impSettingsLabel">設定（画面分割・再生・時計・天気予報）</span></label>
+    <label class="check"><input type="checkbox" id="impSchedules" checked> <span id="impSchedulesLabel">予約テロップ（反映先の予約は置き換わります）</span></label>
+    <label class="check"><input type="checkbox" id="impRules" checked> <span id="impRulesLabel">画像・動画ごとの再生条件（反映先に同じ区画・同じファイル名があるもののみ）</span></label>
+  </fieldset>
+  <fieldset style="margin:8px 0">
+    <legend>反映先の端末</legend>
+    <div id="impTargets"></div>
+  </fieldset>
+  <ol class="log" id="impLog"></ol>
+  <div class="dlgrow" style="margin-top:12px; justify-content:flex-end">
+    <button type="button" id="impClose">閉じる</button>
+    <button type="button" class="primary" id="impApply" disabled>反映する</button>
+  </div>
+</dialog>
 
 <div id="toast"></div>
 
@@ -325,11 +641,12 @@
   const self = { key: null, url: '', pin: '', self: true };
 
   async function start() {
+    showTab(store.get('signage-tab', 'send'));
     self.pin = defaultPin;
     try {
       self.state = await api(self, '/api/state');
     } catch (e) {
-      if (e.status === 401 || e.status === 429) showLogin(e.message); else toast(e.message);
+      if (e.status === 401 || e.status === 429 || e.status === 403) showLogin(e.message); else toast(e.message);
       return;
     }
     self.key = self.id = self.state.id;
@@ -393,13 +710,278 @@
       pins[dev.id] = dev.pin;
       savePins();
     } catch (e) {
-      dev.status = e.status === 401 || e.status === 429 ? 'pin' : 'offline';
+      dev.status = e.status === 401 || e.status === 429 ? 'pin' : e.status === 403 ? 'denied' : 'offline';
       dev.error = e.message;
     }
     return dev;
   }
 
   const selected = () => devices.get(selectedKey) || self;
+
+  // ------------------------------------------------------------ タブ・送信先の選択（テロップ・マイク共通）
+
+  const TABS = ['send', 'dev', 'status', 'access'];
+  function showTab(name) {
+    if (!TABS.includes(name)) name = 'send';
+    for (const t of TABS) $('#pane-' + t).hidden = t !== name;
+    for (const b of $('#tabs').children) b.setAttribute('aria-selected', String(b.dataset.tab === name));
+    store.set('signage-tab', name);
+    if (name === 'status' && typeof pollStatus === 'function') pollStatus();
+  }
+  $('#tabs').addEventListener('click', (e) => { const t = e.target.closest('button')?.dataset.tab; if (t) showTab(t); });
+
+  /** 送信先の説明。何もチェックしていないときは、設定を開いている端末に送ることをはっきり書く */
+  function targetSummary(list, verb) {
+    if (!list.length) return `${verb}先の端末がありません`;
+    if (checked.size) return `${list.length} 台に${verb}します：${list.map((d) => d.name).join('、')}`;
+    return `何も選んでいないため、設定を開いている端末（${list[0].name}）だけに${verb}します。複数の端末に送るときは、上の送信先をタップして選んでください。`;
+  }
+
+  /** 送信先の選択ボタン。端末一覧のチェックと同じ内容を、その場で切り替えられる */
+  function renderTargetBars() {
+    for (const id of ['ticker', 'voice']) {
+      const box = $('#' + id + 'Chips');
+      if (!box) continue;
+      box.replaceChildren();
+      const list = [...devices.values()].sort((a, b) => ((b.self ? 1 : 0) - (a.self ? 1 : 0)) || String(a.name).localeCompare(String(b.name), 'ja'));
+      for (const d of list) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        const on = checked.has(d.key);
+        b.className = 'chip' + (d.status === 'ok' ? '' : ' off');
+        b.setAttribute('aria-pressed', String(on));
+        b.title = { ok: '接続中', pin: 'PIN が違います', denied: 'この端末からは操作できません', offline: '応答なし', checking: '確認中…' }[d.status] || '';
+        b.innerHTML = '<span class="dot"></span><span class="n"></span>';
+        b.firstChild.classList.add(d.status);
+        b.lastChild.textContent = (on ? '✓ ' : '') + d.name + (d.self ? '（この端末）' : '');
+        b.addEventListener('click', () => {
+          on ? checked.delete(d.key) : checked.add(d.key);
+          saveChecked();
+          renderDevices();
+        });
+        box.append(b);
+      }
+    }
+  }
+  for (const bar of document.querySelectorAll('.tbar')) {
+    bar.addEventListener('click', (e) => {
+      const act = e.target.dataset?.tb;
+      if (!act) return;
+      for (const d of devices.values()) act === 'all' ? checked.add(d.key) : checked.delete(d.key);
+      saveChecked();
+      renderDevices();
+    });
+  }
+
+  // ------------------------------------------------------------ 配信状況のモニタリング
+
+  const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtUptime = (sec) => sec >= 86400 ? `${Math.floor(sec / 86400)}日${Math.floor(sec % 86400 / 3600)}時間`
+    : sec >= 3600 ? `${Math.floor(sec / 3600)}時間${Math.floor(sec % 3600 / 60)}分` : `${Math.max(1, Math.floor(sec / 60))}分`;
+  const hhmmss = (t) => new Date(t).toLocaleTimeString('ja-JP', { hour12: false });
+  const monLevelText = { ok: '正常', warn: '注意', bad: '異常', na: '確認中' };
+
+  /** 端末の状況から、正常・注意・異常を決める */
+  function verdict(dev) {
+    const m = dev.mon;
+    const bad = [], warn = [];
+    if (!m) return { level: 'na', bad, warn };
+    if (!m.ok) {
+      if (m.http === 401 || m.http === 429) warn.push('PIN が違うため、状況を取得できません');
+      else if (m.http === 403) warn.push(m.error || 'この端末からは操作できません');
+      else if (m.http === 404) warn.push('この端末のアプリが、配信状況の確認に未対応です（アプリを更新してください）');
+      else bad.push(`応答がありません${m.lastOk ? `（最後に確認できた時刻 ${hhmmss(m.lastOk)}）` : ''}`);
+    } else {
+      const d = m.data;
+      if (!d.player.running) bad.push('再生画面が動いていません');
+      for (const z of d.player.zones || []) if (z.message) warn.push(`区画${z.zone + 1}：${z.message.replace(/\n/g, ' ')}`);
+      if (d.disk) {
+        if (d.disk.free < 200e6) bad.push(`空き容量がほとんどありません（${fmtSize(d.disk.free)}）`);
+        else if (d.disk.free < 1e9) warn.push(`空き容量が少なくなっています（${fmtSize(d.disk.free)}）`);
+      }
+    }
+    return { level: bad.length ? 'bad' : warn.length ? 'warn' : m.ok ? 'ok' : 'warn', bad, warn };
+  }
+
+  /** 監視対象外の端末（このブラウザに保存。オフラインの端末も指定できる） */
+  const monExcluded = new Set(store.get('signage-mon-excluded', []));
+  const isExcluded = (dev) => monExcluded.has(dev.key) || (dev.id && monExcluded.has(dev.id));
+  function setExcluded(dev, on) {
+    for (const k of new Set([dev.key, dev.id].filter(Boolean))) on ? monExcluded.add(k) : monExcluded.delete(k);
+    store.set('signage-mon-excluded', [...monExcluded]);
+    delete dev.monLevel; // 戻したときに、状態の変化として記録しない
+    renderStatus();
+    renderDevices();
+    if (!on) pollStatus();
+  }
+
+  const monLog = [];
+  function logMon(text) {
+    monLog.unshift(`${hhmmss(Date.now())}　${text}`);
+    monLog.length = Math.min(monLog.length, 40);
+    const ol = $('#monLog');
+    ol.replaceChildren(...monLog.map((t) => { const li = document.createElement('li'); li.textContent = t; return li; }));
+  }
+
+  async function pollOne(dev) {
+    const prev = dev.mon;
+    try {
+      const data = await api(dev, '/api/status', {}, 4000);
+      dev.mon = { ok: true, data, at: Date.now(), lastOk: Date.now() };
+    } catch (e) {
+      dev.mon = { ok: false, error: e.message, http: e.status, at: Date.now(), lastOk: prev?.lastOk || 0 };
+    }
+    const v = verdict(dev);
+    if (dev.monLevel && dev.monLevel !== v.level) {
+      const why = [...v.bad, ...v.warn][0] || '';
+      logMon(`${dev.name}：${monLevelText[dev.monLevel]} → ${monLevelText[v.level]}${why ? `（${why}）` : ''}`);
+    }
+    dev.monLevel = v.level;
+  }
+
+  let polling = false;
+  async function pollStatus() {
+    if (polling) return;
+    polling = true;
+    try {
+      await Promise.all([...devices.values()].filter((d) => !isExcluded(d)).map(pollOne));
+    } finally { polling = false; }
+    renderStatus();
+  }
+
+  function monCard(dev, excluded) {
+    const v = excluded ? { level: 'na', bad: [], warn: [] } : verdict(dev);
+    const card = document.createElement('div');
+    card.className = 'moncard ' + v.level + (excluded ? ' excl' : '');
+    const d = !excluded && dev.mon?.ok ? dev.mon.data : null;
+    const lines = [];
+    if (d) {
+      lines.push(`再生画面：${d.player.running ? '動作中' : '停止中'}`);
+      for (const z of d.player.zones || []) {
+        const what = z.message ? `（${z.message.replace(/\n/g, ' ')}）` : z.kind === 'weather' || z.name === '天気予報' ? '天気予報' : z.name ? `[${z.video ? '動画' : '画像'}] ${z.name}${z.total ? `（${z.pos}/${z.total}）` : ''}` : '—';
+        lines.push(`<div class="zl">区画${z.zone + 1}：${esc(what)}</div>`);
+      }
+      lines.push(`テロップ：${d.ticker.standing ? '止めるまで流すテロップあり' : d.ticker.queued ? `待機 ${d.ticker.queued} 件` : 'なし'}`);
+      if (d.disk) lines.push(`空き容量：${fmtSize(d.disk.free)}（全体 ${fmtSize(d.disk.total)}）`);
+      lines.push(`稼働：${fmtUptime(d.uptimeSec)}　v${d.version}`);
+    } else if (excluded) {
+      const st = { ok: '接続中', pin: 'PIN が違います', denied: '操作できません', offline: '応答なし', checking: '確認中…' }[dev.status] || '';
+      if (st) lines.push(`接続：${st}${dev.version ? `　v${dev.version}` : ''}`);
+      lines.push('監視していません');
+    } else if (!excluded && dev.mon?.lastOk) {
+      lines.push(`最後に確認できた時刻：${hhmmss(dev.mon.lastOk)}`);
+    }
+    const badge = excluded ? '<span class="badge na">監視対象外</span>' : `<span class="badge ${v.level}">${monLevelText[v.level]}</span>`;
+    card.innerHTML = `<div class="mh"><b></b>${badge}</div>`
+      + [...v.bad.map((t) => `<div class="issues">${esc(t)}</div>`), ...v.warn.map((t) => `<div class="issues w">${esc(t)}</div>`)].join('')
+      + lines.map((l) => l.startsWith('<') ? l : `<div>${esc(l)}</div>`).join('')
+      + `<div class="row" style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="small" data-open>設定を開く</button>`
+      + `<button type="button" class="small" data-excl>${excluded ? '監視に戻す' : '監視対象外にする'}</button></div>`;
+    $('b', card).textContent = dev.name + (dev.self ? '（この端末）' : '');
+    $('[data-open]', card).addEventListener('click', () => select(dev.key));
+    $('[data-excl]', card).addEventListener('click', () => {
+      if (!excluded && !confirm(`「${dev.name}」を監視対象外にします。応答がなくても、異常として数えなくなります。よろしいですか？`)) return;
+      setExcluded(dev, !excluded);
+    });
+    return card;
+  }
+
+  function renderStatus() {
+    const all = [...devices.values()].sort((a, b) => ((b.self ? 1 : 0) - (a.self ? 1 : 0)) || String(a.name).localeCompare(String(b.name), 'ja'));
+    const list = all.filter((d) => !isExcluded(d));
+    const skipped = all.filter(isExcluded);
+    const counts = { ok: 0, warn: 0, bad: 0, na: 0 };
+    const grid = $('#monGrid');
+    grid.replaceChildren();
+    for (const dev of list) {
+      counts[verdict(dev).level]++;
+      grid.append(monCard(dev, false));
+    }
+    $('#monExcludedBox').hidden = !skipped.length;
+    $('#monExcluded').replaceChildren(...skipped.map((d) => monCard(d, true)));
+    const total = list.length;
+    $('#monSummary').textContent = total
+      ? `${total} 台中 ${counts.ok} 台が正常` + (counts.warn ? `、注意 ${counts.warn} 台` : '') + (counts.bad ? `、異常 ${counts.bad} 台` : '')
+      : (skipped.length ? '監視する端末がありません' : '端末がありません');
+    $('#monExclNote').textContent = skipped.length ? `監視対象外：${skipped.length} 台（${skipped.map((d) => d.name).join('、')}）` : '';
+    $('#monSummary').style.color = counts.bad ? 'var(--danger)' : counts.warn ? '#b06000' : 'var(--ok)';
+    $('#monUpdated').textContent = `最終更新 ${hhmmss(Date.now())}`;
+    const alert = counts.bad + counts.warn;
+    $('#tabStatusBadge').textContent = alert ? ` ⚠${alert}` : '';
+    document.title = counts.bad ? `⚠ ${counts.bad}台に異常 - サイネージ管理` : 'サイネージ管理';
+  }
+
+  $('#monRefresh').addEventListener('click', pollStatus);
+  let monTick = 0;
+  setInterval(() => {
+    if (document.visibilityState !== 'visible' || !self.state) return;
+    // 状況タブを見ているときは 5 秒ごと、ほかのタブでは 30 秒ごと（異常の件数をタブに出すため）
+    monTick++;
+    if (!$('#pane-status').hidden || monTick % 6 === 0) pollStatus();
+  }, 5000);
+
+  // ------------------------------------------------------------ アプリ（APK）の更新
+
+  const apkTargets = () => targets().filter((d) => d.status === 'ok' || d.status === 'pin');
+  function renderApkTarget() {
+    const list = targets();
+    $('#apkTarget').textContent = list.length
+      ? `送り先：チェックした ${list.length} 台（${list.map((d) => d.name).join('、')}）`
+      : '送り先：端末一覧で、更新する端末にチェックを入れてください';
+    $('#apkSend').disabled = !list.length || !$('#apkFile').files.length;
+  }
+  $('#apkFile').addEventListener('change', renderApkTarget);
+
+  function apkLine(text, cls = '') {
+    const li = document.createElement('li');
+    li.textContent = text; li.className = cls;
+    $('#apkLog').append(li);
+    return li;
+  }
+
+  async function updateOneDevice(dev, file) {
+    const li = apkLine(`${dev.name}：状況を確認中…`);
+    const say = (t, cls = '') => { li.textContent = `${dev.name}：${t}`; li.className = cls; };
+    await pollOne(dev);
+    const m = dev.mon;
+    if (!m?.ok) return say(m?.http === 404 ? 'この端末のアプリが古く、遠隔更新に未対応です（一度、手動で更新してください）' : `接続できません（${m?.error || ''}）`, 'ng');
+    if (m.data.platform !== 'android') return say('Android 端末ではないため、対象外です', 'warn');
+    if (!m.data.update?.allowed) return say('端末側で「管理画面からのアプリ更新を許可」が OFF です。端末の設定画面で ON にしてください', 'ng');
+    if (!m.data.update.canInstall) say('「不明なアプリのインストール」の許可がありません。端末の設定画面から許可してください（このまま送ります）', 'warn');
+    const before = m.data.version;
+    say(`APK を送信中…（${(file.size / 1e6).toFixed(1)} MB）`);
+    try {
+      await api(dev, '/api/apk', { method: 'PUT', body: file }, 300000);
+    } catch (e) { return say(e.message, 'ng'); }
+    say('端末で確認・インストール中…');
+    const t0 = Date.now();
+    while (Date.now() - t0 < 240000) {
+      await new Promise((r) => setTimeout(r, 2500));
+      let st = null;
+      try { st = await api(dev, '/api/status', {}, 4000); } catch (e) { say('再起動中…（更新が終わると自動で再開します）'); continue; }
+      if (st.version !== before) return say(`更新しました（v${before} → v${st.version}）`, 'ok');
+      const u = st.update || {};
+      if (u.phase === 'pending_user') say(`${u.message}`, 'warn');
+      else if (u.phase === 'failed') return say(u.message || '更新できませんでした', 'ng');
+      else if (u.phase === 'success') return say('更新しました', 'ok');
+      else if (u.phase === 'installing' && Date.now() - t0 > 45000) {
+        say('端末から結果が返ってきません。端末の通知（「サイネージの更新があります」）か、端末のサイネージのアプリを確認してください。それでも進まないときは、APK を端末に直接入れてください', 'warn');
+      }
+    }
+    say('完了を確認できませんでした。端末の画面を確認してください', 'warn');
+  }
+
+  $('#apkSend').addEventListener('click', async () => {
+    const file = $('#apkFile').files[0];
+    const list = targets();
+    if (!file || !list.length) return;
+    if (!/\.apk$/i.test(file.name)) { toast('APK ファイルを選んでください'); return; }
+    if (!confirm(`「${file.name}」を、チェックした ${list.length} 台（${list.map((d) => d.name).join('、')}）に送って更新します。\n更新中は、再生が一時的に止まります。よろしいですか？`)) return;
+    $('#apkLog').replaceChildren();
+    $('#apkSend').disabled = true;
+    try { await Promise.all(list.map((d) => updateOneDevice(d, file))); }
+    finally { renderApkTarget(); setTimeout(() => $('#refreshBtn').click(), 3000); }
+  });
 
   // ------------------------------------------------------------ 端末一覧
 
@@ -415,7 +997,13 @@
       cb.checked = checked.has(d.key);
       cb.addEventListener('click', (e) => e.stopPropagation());
       cb.addEventListener('change', () => { cb.checked ? checked.add(d.key) : checked.delete(d.key); saveChecked(); renderBulk(); });
-      $('.dname', li).textContent = d.name + (d.self ? '（この端末）' : '');
+      const nameEl = $('.dname', li);
+      nameEl.textContent = d.name + (d.self ? '（この端末）' : '');
+      if (isExcluded(d)) {
+        const tag = document.createElement('span');
+        tag.className = 'exclTag'; tag.textContent = '監視対象外';
+        nameEl.append(tag);
+      }
       const dot = $('.dot', li);
       dot.classList.add(d.status);
       $('.st', li).textContent = {
@@ -427,6 +1015,9 @@
     }
     $('#checkAll').checked = list.length > 0 && list.every((d) => checked.has(d.key));
     renderBulk();
+    renderTargetBars();
+    renderApkTarget();
+    renderAccess();
   }
 
   function saveChecked() { store.set('signage-checked', [...checked]); }
@@ -440,6 +1031,7 @@
   async function select(key) {
     selectedKey = key;
     store.set('signage-selected', key);
+    showTab('dev');
     renderDevices();
     const dev = selected();
     if (dev.status !== 'ok') await check(dev);
@@ -482,6 +1074,7 @@
   // ------------------------------------------------------------ 選択中の端末の詳細
 
   function renderDetail() {
+    $('#tabDevName').textContent = selected().name ? `：${selected().name}` : '';
     const dev = selected();
     $('#devTitle').textContent = dev.name + (dev.self ? '（この端末）' : '');
     $('#devSub').textContent = dev.self ? location.host : (dev.url || '').replace(/^http:\/\//, '');
@@ -490,9 +1083,11 @@
     const ok = dev.status === 'ok' && dev.state;
     $('#reloadBtn').disabled = !ok;
     $('#renameBtn').disabled = !ok;
+    $('#exportBtn').disabled = !ok;
     $('#settingsSec').hidden = !ok;
     $('#scheduleSec').hidden = !ok;
     renderTickerTarget();
+    if (typeof renderVoiceTarget === 'function') renderVoiceTarget();
     blobUrls.splice(0).forEach(URL.revokeObjectURL);
     $('#zones').replaceChildren();
     warn.hidden = ok;
@@ -504,16 +1099,119 @@
         b.className = 'small'; b.textContent = 'PIN を入力';
         b.addEventListener('click', () => askPin(dev));
         warn.append(b);
+      } else if (dev.status === 'denied') {
+        warn.textContent = dev.error || 'この端末からは操作できません';
       } else {
         warn.textContent = dev.status === 'checking' ? '確認中…' :
           '端末に接続できません。端末の電源・Wi-Fi・管理画面の設定（ON になっているか）を確認してください。';
       }
       return;
     }
-    renderZones(dev);
     renderSettings(dev);
+    renderZones(dev);
     renderSchedules(dev);
   }
+
+  // ------------------------------------------------------------ 管理画面に入れる端末（MAC アドレスの制限・全端末共通）
+
+  /** 制限に対応している端末（MAC アドレスを確認できる端末） */
+  const accessDevices = () => [...devices.values()].filter((d) => d.status === 'ok' && d.state?.access?.canResolve);
+  /** 基準にする端末（このページの端末が対応していればそれ、なければ最初の対応端末） */
+  const accessBase = () => (self.state?.access?.canResolve ? self : accessDevices()[0]);
+  const accessKey = (a) => JSON.stringify([!!a.enabled, !!a.allowVpn, a.devices.map((d) => d.mac + '|' + d.name).sort()]);
+
+  function renderAccess() {
+    const sec = $('#accessSec');
+    if (!sec || !self.state) return;
+    const base = accessBase();
+    $('#accessNoSupport').hidden = true;
+    $('#accessMain').hidden = false;
+    if (!base) {
+      $('#accessSummary').textContent = '（使えません）';
+      $('#accessNoSupport').hidden = false;
+      $('#accessNoSupport').textContent = '見つかっている端末が、どれも MAC アドレスの制限に対応していません（Android 10 以降は、接続してきた端末の MAC アドレスを確認できません。Windows 版のサイネージで使えます）。';
+      $('#accessMain').hidden = true;
+      return;
+    }
+    const a = base.state.access;
+    $('#accessSummary').textContent = a.enabled ? `（制限中・${a.devices.length} 台を許可）` : '（制限なし）';
+    const you = a.you || {};
+    $('#accessYouMac').textContent = you.local ? 'この端末自身（常に許可）' : you.vpn ? 'VPN 経由（MAC アドレスなし）' : (you.mac || '確認できません');
+    $('#accessYouIp').textContent = you.ip ? `（${you.ip}）` : '';
+    $('#accessAddYou').disabled = !you.mac || a.devices.some((d) => d.mac === you.mac);
+    $('#accessEnabled').checked = !!a.enabled;
+    $('#accessVpn').checked = !!a.allowVpn;
+    const list = $('#accessList');
+    list.replaceChildren();
+    if (!a.devices.length) {
+      const li = document.createElement('li');
+      li.className = 'sub'; li.textContent = '登録された端末はありません（制限なし）';
+      list.append(li);
+    }
+    for (const d of a.devices) {
+      const li = document.createElement('li');
+      li.style.cssText = 'display:flex; gap:8px; align-items:center; justify-content:space-between';
+      const span = document.createElement('span');
+      span.textContent = (d.name ? `${d.name}　${d.mac}` : d.mac) + (you.mac === d.mac ? '　（いま操作中）' : '');
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'small danger'; b.textContent = '削除';
+      b.addEventListener('click', () => saveAccess({ devices: a.devices.filter((x) => x.mac !== d.mac) }));
+      li.append(span, b);
+      list.append(li);
+    }
+    // 端末ごとに内容が違う（あとから増えた端末など）ときは、そろえるよう知らせる
+    const targets = accessDevices();
+    const differ = targets.filter((d) => accessKey(d.state.access) !== accessKey(a));
+    $('#accessMismatch').hidden = !differ.length;
+    $('#accessMismatchText').textContent = differ.length ? `設定が違う端末があります：${differ.map((d) => d.name).join('、')}　` : '';
+    const skipped = [...devices.values()].filter((d) => d.status === 'ok' && d.state && !d.state.access?.canResolve);
+    $('#accessSkipped').hidden = !skipped.length;
+    $('#accessSkipped').textContent = skipped.length
+      ? `次の端末は MAC アドレスを確認できない（または古い版の）ため、制限されません：${skipped.map((d) => d.name).join('、')}` : '';
+  }
+
+  /** 変更を、制限に対応しているすべての端末に反映する（基準の端末で先に確かめ、締め出しを防ぐ） */
+  async function saveAccess(patch) {
+    const base = accessBase();
+    if (!base) return;
+    const cur = base.state.access;
+    const body = {
+      enabled: cur.enabled, allowVpn: cur.allowVpn, devices: cur.devices, ...patch,
+    };
+    try {
+      base.state.access = await post(base, '/api/access', body);
+    } catch (e) {
+      toast(e.message);
+      renderAccess();
+      return;
+    }
+    const fixed = base.state.access;
+    const fails = [];
+    await Promise.all(accessDevices().filter((d) => d !== base).map(async (d) => {
+      try {
+        d.state.access = await post(d, '/api/access', { enabled: fixed.enabled, allowVpn: fixed.allowVpn, devices: fixed.devices });
+      } catch (e) { fails.push(`${d.name}（${e.message}）`); }
+    }));
+    renderAccess();
+    toast(fails.length ? `一部の端末に反映できませんでした：${fails.join('、')}` : '全端末に反映しました');
+  }
+
+  $('#accessAddYou').addEventListener('click', async () => {
+    const a = accessBase().state.access;
+    await saveAccess({ devices: [...a.devices, { mac: a.you.mac, name: $('#accessYouName').value.trim() }] });
+    $('#accessYouName').value = '';
+  });
+  $('#accessAddMac').addEventListener('click', async () => {
+    const a = accessBase().state.access;
+    const mac = $('#accessMac').value.trim();
+    if (!mac) return;
+    await saveAccess({ devices: [...a.devices, { mac, name: $('#accessMacName').value.trim() }] });
+    const norm = mac.toLowerCase().replace(/[^0-9a-f]/g, '');
+    if (accessBase().state.access.devices.some((d) => d.mac.replace(/:/g, '') === norm)) { $('#accessMac').value = ''; $('#accessMacName').value = ''; }
+  });
+  $('#accessEnabled').addEventListener('change', (e) => saveAccess({ enabled: e.target.checked }));
+  $('#accessVpn').addEventListener('change', (e) => saveAccess({ allowVpn: e.target.checked }));
+  $('#accessSync').addEventListener('click', () => saveAccess({}));
 
   async function askPin(dev) {
     const p = prompt(`「${dev.name}」の PIN（6桁）を入力してください`);
@@ -530,7 +1228,25 @@
 
   function renderZones(dev) {
     const root = $('#zones');
-    for (const z of dev.state.zones) {
+    // 画面分割カードで変更中（未保存）の分割方法・区画の種類に合わせる。保存済みの内容と食い違う区画は、保存後の内容を案内する
+    const pendingLayout = fval('layout');
+    const count = { 0: 1, 1: 2, 2: 2, 3: 3 }[pendingLayout] || 1;
+    for (let i = 0; i < count; i++) {
+      const saved = dev.state.zones.find((x) => x.index === i);
+      const pendingType = Number(layoutZoneTypes[i] ?? 0);
+      const label = `区画${i + 1}（${zoneLabels(pendingLayout, screenDims(dev).portrait)[i] ?? ''}）`;
+      if (!saved || saved.type !== pendingType) {
+        const stub = document.createElement('section');
+        stub.innerHTML = '<h2></h2><p class="sub"></p>';
+        $('h2', stub).textContent = label;
+        $('p', stub).textContent = pendingType === 0
+          ? 'フォルダの画像・動画を表示する区画に変更中です。「画面分割を保存」を押すと、この区画のフォルダの内容が表示されます。'
+          : '天気予報を表示する区画に変更中です。「画面分割を保存」を押すと反映されます（地域：' + (dev.state.settings.weatherPlace || '未設定') + '）。';
+        stub.classList.add('pending');
+        root.append(stub);
+        continue;
+      }
+      const z = saved;
       const sec = document.createElement('section');
       if (z.type !== 0) {
         sec.innerHTML = `<h2></h2><p class="sub">天気予報を表示中（地域：<span></span>）</p>`;
@@ -583,19 +1299,105 @@
     const card = document.createElement('div');
     card.className = 'file';
     card.innerHTML = `<div class="thumb"></div>
-      <div class="meta"><div class="fname"></div>
-        <div class="row"><span></span><button class="danger" type="button">削除</button></div></div>`;
+      <div class="meta"><div class="fname"></div><div class="rule"></div>
+        <div class="row"><span></span><div class="btns"><button class="cond" type="button" title="時間帯・曜日・期間で再生を絞る">条件</button><button class="danger" type="button">削除</button></div></div></div>`;
     const thumb = $('.thumb', card);
     thumb.textContent = f.video ? '▶' : '';
     if (!f.video) { thumb.dataset.zone = z.index; thumb.dataset.name = f.name; thumb.dataset.dev = dev.key; }
     thumb.addEventListener('click', () => openFile(dev, z.index, f.name));
     $('.fname', card).textContent = f.name;
     $('.row span', card).textContent = (f.video ? '動画・' : '画像・') + fmtSize(f.size);
-    const del = $('button', card);
+    const del = $('button.danger', card);
     del.disabled = !z.writable;
     del.addEventListener('click', () => remove(dev, z, f));
+    const cond = $('button.cond', card);
+    cond.disabled = !z.writable;
+    cond.classList.toggle('primary', !!f.rule);
+    cond.addEventListener('click', () => editRule(dev, z, f));
+    const ruleEl = $('.rule', card);
+    ruleEl.textContent = f.rule ? '🕒 ' + describeRule(f.rule) : '';
+    ruleEl.classList.toggle('on', !!f.rule);
     return card;
   }
+
+  // ------------------------------------------------------------ ファイルごとの再生条件
+
+  const RULE_DAYS = ['日', '月', '火', '水', '木', '金', '土'];
+  const MAX_SLOTS = 10;
+
+  /** 保存されている条件は {slots: [...]}。以前の形式（条件1つだけ）も読めるように配列にそろえる */
+  const slotsOf = (rule) => (!rule ? [] : Array.isArray(rule.slots) ? rule.slots : [rule]);
+
+  function describeSlot(r) {
+    const parts = [];
+    if (r.days && r.days.length) parts.push(r.days.map((d) => RULE_DAYS[d]).join(''));
+    if (r.start || r.end) parts.push(`${r.start || ''}〜${r.end || ''}`);
+    if (r.from || r.to) parts.push(`${(r.from || '').replace(/-/g, '/')}〜${(r.to || '').replace(/-/g, '/')}`);
+    return parts.join(' ') || '（常時）';
+  }
+  const describeRule = (rule) => slotsOf(rule).map(describeSlot).join(' ／ ');
+
+  let ruleTarget = null;
+
+  function addSlot(r = {}) {
+    const list = $('#ruleSlots');
+    if (list.children.length >= MAX_SLOTS) { toast(`条件は ${MAX_SLOTS} 個までです`); return; }
+    const el = document.createElement('div');
+    el.className = 'slot';
+    el.innerHTML = `<div class="slothead"><span class="no"></span><button type="button" class="small danger del">この条件を削除</button></div>
+      <div class="field"><span>曜日（チェックなし＝毎日）</span><div class="days">${RULE_DAYS.map((n, i) => `<label><input type="checkbox" value="${i}">${n}</label>`).join('')}</div></div>
+      <div class="field"><span>時間帯（終了が開始より前なら日をまたぎます）</span><div class="dlgrow"><input type="time" class="rs"> 〜 <input type="time" class="re"></div></div>
+      <div class="field"><span>期間（両端を含む）</span><div class="dlgrow"><input type="date" class="rf"> 〜 <input type="date" class="rt"></div></div>`;
+    el.querySelectorAll('.days input').forEach((c) => { c.checked = (r.days || []).includes(+c.value); });
+    $('.rs', el).value = r.start || ''; $('.re', el).value = r.end || '';
+    $('.rf', el).value = r.from || ''; $('.rt', el).value = r.to || '';
+    $('.del', el).addEventListener('click', () => { el.remove(); renumberSlots(); });
+    list.append(el);
+    renumberSlots();
+  }
+
+  function renumberSlots() {
+    const items = [...$('#ruleSlots').children];
+    items.forEach((el, i) => { $('.no', el).textContent = `条件 ${i + 1}`; });
+    $('#ruleCount').textContent = items.length ? `${items.length} 個（どれか1つに合えば再生）` : '条件なし（いつでも再生）';
+  }
+
+  function collectSlots() {
+    return [...$('#ruleSlots').children].map((el) => ({
+      days: [...el.querySelectorAll('.days input:checked')].map((c) => +c.value),
+      start: $('.rs', el).value, end: $('.re', el).value, from: $('.rf', el).value, to: $('.rt', el).value,
+    }));
+  }
+
+  function editRule(dev, z, f) {
+    ruleTarget = { dev, zone: z.index, name: f.name };
+    $('#ruleFile').textContent = `${dev.name}：${f.name}`;
+    $('#ruleSlots').replaceChildren();
+    const slots = slotsOf(f.rule);
+    (slots.length ? slots : [{}]).forEach(addSlot);
+    $('#ruleDialog').showModal();
+  }
+
+  async function saveRule(rule) {
+    const t = ruleTarget;
+    try {
+      await post(t.dev, '/api/filerule', { zone: t.zone, name: t.name, rule });
+      $('#ruleDialog').close();
+      toast(rule ? '再生条件を保存しました' : '再生条件をなくしました');
+      refreshDevice(t.dev);
+    } catch (e) { toast(e.message); }
+  }
+
+  $('#ruleForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const slots = collectSlots();
+    // 中身のない条件は無視する。ひとつも無ければ「条件なし」として保存する
+    const used = slots.filter((x) => x.days.length || x.start || x.end || x.from || x.to);
+    saveRule(used.length ? { slots: used } : null);
+  });
+  $('#ruleAdd').addEventListener('click', () => addSlot());
+  $('#ruleClear').addEventListener('click', () => saveRule(null));
+  $('#ruleCancel').addEventListener('click', () => $('#ruleDialog').close());
 
   const fileUrl = (zone, name) => `/api/file?zone=${zone}&name=${encodeURIComponent(name)}`;
 
@@ -698,53 +1500,457 @@
   // ------------------------------------------------------------ 設定
 
   const ZONE_TYPES = [['0', 'フォルダの画像・動画'], ['1', '天気予報']];
-  const SPLITS = [25, 30, 40, 50, 60, 70, 75];
-  const MAINS = [50, 60, 65, 70, 75, 80];
-  const SIDES = [30, 40, 50, 60, 70];
+  // 分割の比率（％）の範囲と刻み。ドラッグ・矢印キーで 5% ずつ動かす
+  const LIMITS = { splitPercent: [20, 80], mainPercent: [50, 85], sidePercent: [20, 80] };
+  const DEFAULT_PCT = { splitPercent: 50, mainPercent: 70, sidePercent: 50 };
+  const LAYOUTS = [
+    { id: 0, name: '1画面', grid: ['1fr', '1fr'], cells: [[1, 1, 2, 2]] },
+    { id: 1, name: '左右2分割', grid: ['1fr 1fr', '1fr'], cells: [[1, 1, 2, 2], [2, 1, 3, 2]] },
+    { id: 2, name: '上下2分割', grid: ['1fr', '1fr 1fr'], cells: [[1, 1, 2, 2], [1, 2, 2, 3]] },
+    { id: 3, name: 'メイン＋サイド', grid: ['2fr 1fr', '1fr 1fr'], cells: [[1, 1, 2, 3], [2, 1, 3, 2], [2, 2, 3, 3]] },
+  ];
+  const ZONE_LABELS = { 0: ['全画面'], 1: ['左', '右'], 2: ['上', '下'], 3: ['メイン', 'サイド1（右上）', 'サイド2（右下）'] };
+  // 縦向きのメイン＋サイドは、メインが上、サイドが下に横並び（再生画面と同じ）
+  const ZONE_LABELS_PORTRAIT_MAIN_SIDE = ['メイン（上）', 'サイド1（左下）', 'サイド2（右下）'];
+  const zoneLabels = (layout, portrait) => (layout === 3 && portrait ? ZONE_LABELS_PORTRAIT_MAIN_SIDE : ZONE_LABELS[layout]);
+
+  /** 画面の向き（0=自動 / 1=横 / 2=縦）。保存前の変更中の値。Windows では確認用の表示（向きは Windows 側で決まる） */
+  let layoutOrientation = 0;
+
+  /** 計算に使う画面の大きさ。向きを「横／縦」に選んでいれば、端末が報告した大きさをその向きに合わせて入れ替える */
+  function screenDims(dev) {
+    const sc = dev.state?.screen;
+    const known = !!sc;
+    const W0 = sc?.width || 1920, H0 = sc?.height || 1080;
+    const big = Math.max(W0, H0), small = Math.min(W0, H0);
+    const portrait = layoutOrientation === 2 ? true : layoutOrientation === 1 ? false : H0 > W0;
+    return { w: portrait ? small : big, h: portrait ? big : small, portrait, known, actualPortrait: H0 > W0, actualW: W0, actualH: H0 };
+  }
+  const isWindowsDev = (dev) => /^Windows/.test(dev.state?.device || '');
+  const layoutForm = () => $('#settings');
+  const fval = (name) => Number(layoutForm().elements[name].value);
 
   function renderSettings(dev) {
     const s = dev.state.settings;
-    const f = $('#settings');
-    for (const i of [0, 1, 2]) {
-      const sel = f.elements['zone' + i];
-      sel.innerHTML = ZONE_TYPES.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
-      sel.value = String(s.zoneTypes[i] ?? 0);
-    }
-    f.elements.splitPercent.innerHTML = SPLITS.map((p) => `<option value="${p}">${p} : ${100 - p}</option>`).join('');
-    f.elements.mainPercent.innerHTML = MAINS.map((p) => `<option value="${p}">メイン ${p} : サイド ${100 - p}</option>`).join('');
-    f.elements.sidePercent.innerHTML = SIDES.map((p) => `<option value="${p}">サイド1 ${p} : サイド2 ${100 - p}</option>`).join('');
+    const f = layoutForm();
+    for (const i of [0, 1, 2]) layoutZoneTypes[i] = String(s.zoneTypes[i] ?? 0);
+    layoutOrientation = Number(s.orientation ?? 0);
     for (const el of f.elements) {
-      if (!el.name || el.name.startsWith('zone')) continue;
+      if (!el.name) continue;
       const v = s[el.name];
       if (v === undefined) continue;
       if (el.type === 'checkbox') el.checked = !!v; else el.value = String(v);
     }
-    if (!SPLITS.includes(s.splitPercent)) f.elements.splitPercent.value = '50';
-    if (!MAINS.includes(s.mainPercent)) f.elements.mainPercent.value = '70';
-    if (!SIDES.includes(s.sidePercent)) f.elements.sidePercent.value = '50';
-    $('#weatherPlace').textContent = s.weatherPlace ? `（地域：${s.weatherPlace}）` : '';
-    syncLayoutFields();
+    for (const [k, [lo, hi]] of Object.entries(LIMITS)) {
+      const v = fval(k);
+      if (!(v >= lo && v <= hi)) f.elements[k].value = String(Math.min(hi, Math.max(lo, Math.round((v || DEFAULT_PCT[k]) / 5) * 5)));
+    }
+    if (!LAYOUTS.some((l) => l.id === fval('layout'))) f.elements.layout.value = '0';
+    $('#weatherPlace').textContent = `（地域：${s.weatherPlace || '未設定'}）`;
+    renderWeatherRegion(dev);
+    renderLayoutCard();
   }
 
-  function syncLayoutFields() {
-    const f = $('#settings');
-    const layout = Number(f.elements.layout.value);
-    const count = layout === 3 ? 3 : layout === 0 ? 1 : 2;
-    $('#splitField').hidden = count !== 2;
-    $('#mainField').hidden = count !== 3;
-    $('#sideField').hidden = count !== 3;
-    f.querySelectorAll('[data-zone]').forEach((el) => { el.hidden = Number(el.dataset.zone) >= count; });
+  /** 保存済みの内容と違う値があるか。あれば「未保存」を表示する */
+  function updateLayoutDirty() {
+    const dev = selected();
+    const st = dev.state?.settings;
+    if (!st) return;
+    const dirty = fval('layout') !== st.layout || fval('splitPercent') !== st.splitPercent
+      || fval('mainPercent') !== st.mainPercent || fval('sidePercent') !== st.sidePercent
+      || [0, 1, 2].some((i) => Number(layoutZoneTypes[i]) !== (st.zoneTypes[i] ?? 0))
+      || layoutOrientation !== Number(st.orientation ?? 0);
+    $('#layoutDirty').hidden = !dirty;
   }
-  $('#settings').elements.layout.addEventListener('change', syncLayoutFields);
+
+  /** 区画のセクション（ファイル一覧など）を、変更中の内容に合わせて描き直す */
+  function refreshZones() {
+    const dev = selected();
+    if (!dev.state) return;
+    blobUrls.splice(0).forEach(URL.revokeObjectURL);
+    $('#zones').replaceChildren();
+    renderZones(dev);
+  }
+
+  /** 区画の表示内容（フォルダ／天気）。プレビュー内のプルダウンと保存内容をつなぐ */
+  const layoutZoneTypes = ['0', '0', '0'];
+
+  /** 縦横比を整数比で表す（例 16:9）。誤差 0.2% 以内でいちばん簡単な比を探し、無ければ 1% 以内の比を「約 5:4」の形で返す。小数も返す */
+  function ratioLabel(w, h) {
+    const r = w / h;
+    const fit = (tol) => {
+      for (let q = 1; q <= 32; q++) {
+        const p = Math.max(1, Math.round(q * r));
+        if (Math.abs(p / q - r) / r <= tol) return [p, q];
+      }
+      return null;
+    };
+    const exact = fit(0.002), near = exact || fit(0.01);
+    const text = near ? `${exact ? '' : '約 '}${near[0]}:${near[1]}` : `約 ${r.toFixed(2)}:1`;
+    return { text, value: r.toFixed(2) };
+  }
+
+  /** 区画ごとに必要な画像の大きさ（px）と縦横比を、画面分割カードに表示する */
+  function renderRatios(layout) {
+    const dev = selected();
+    const sd = screenDims(dev);
+    const sizes = zoneSizes(sd.w, sd.h);
+    const names = zoneLabels(layout, sd.portrait);
+    const sr = ratioLabel(sd.w, sd.h);
+    const rows = sizes.map((sz, i) => {
+      const w = Math.round(sz[0]), h = Math.round(sz[1]);
+      const rl = ratioLabel(w, h);
+      const isFolder = layoutZoneTypes[i] === '0';
+      return `<tr><td class="n">区画${i + 1}（${names[i]}）</td><td class="r">${w} × ${h} px</td>
+        <td class="r">縦横比 <span class="ratio">${rl.text}</span>（${rl.value}）</td>
+        <td class="sub">${isFolder ? '' : '天気予報（画像は不要）'}</td></tr>`;
+    }).join('');
+    $('#lpRatios').innerHTML = `<div class="scr">画面（${sd.portrait ? '縦向き' : '横向き'}）：${sd.w} × ${sd.h} px（${sr.text}）${sd.known ? '' : '　※画面サイズを取得できない端末のため 1920 × 1080 と仮定しています'}</div>
+      <div class="scr"><b>各区画にピッタリ収まる画像・動画の大きさと縦横比</b>（この比率・サイズで用意すると余白も切り取りもありません）</div><table>${rows}</table>`;
+    return sizes;
+  }
+
+  /** 画面の向きの選択と、説明文 */
+  function renderOrientation() {
+    const dev = selected();
+    const sd = screenDims(dev);
+    const OPTS = [[0, '自動'], [1, '横向き'], [2, '縦向き']];
+    $('#orientSeg').innerHTML = OPTS.map(([v, t]) => `<button type="button" role="radio" aria-checked="${layoutOrientation === v}" data-v="${v}">${t}</button>`).join('');
+    $('#orientSeg').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+      layoutOrientation = Number(b.dataset.v);
+      renderLayoutCard();
+      refreshZones();
+    }));
+    const now = `端末の画面は今 ${sd.actualPortrait ? '縦向き' : '横向き'}（${sd.actualW} × ${sd.actualH} px）`;
+    let note;
+    if (isWindowsDev(dev)) {
+      note = layoutOrientation === 0 ? `${now}。Windows の画面の向きは、Windows のディスプレイ設定で変えます。`
+        : `Windows の画面の向きは、Windows のディスプレイ設定で${layoutOrientation === 2 ? '縦' : '横'}にしてください。ここでの選択は、プレビューと必要な画像サイズの確認用です（${now}）。`;
+    } else {
+      note = layoutOrientation === 0 ? `${now}。端末の向きに従います。` : `保存すると、再生画面を${layoutOrientation === 2 ? '縦' : '横'}向きに固定します（${now}）。`;
+    }
+    $('#orientNote').textContent = note;
+  }
+
+  function renderLayoutCard() {
+    const layout = fval('layout');
+    // 分割方法のタイル
+    $('#layoutTiles').innerHTML = LAYOUTS.map((l) => `<button type="button" class="tile" role="radio" aria-checked="${l.id === layout}" data-id="${l.id}">
+      <span class="mini" style="grid-template-columns:${l.grid[0]};grid-template-rows:${l.grid[1]}">${l.cells.map((c) => `<i style="grid-area:${c[1]}/${c[0]}/${c[3]}/${c[2]}"></i>`).join('')}</span>${l.name}</button>`).join('');
+    $('#layoutTiles').querySelectorAll('.tile').forEach((b) => b.addEventListener('click', () => { layoutForm().elements.layout.value = b.dataset.id; renderLayoutCard(); refreshZones(); }));
+
+    // プレビュー（選んだ画面の向きのイメージ）。境界線をドラッグして比率を変える
+    const sp = fval('splitPercent'), mp = fval('mainPercent'), sd = fval('sidePercent');
+    const portrait = screenDims(selected()).portrait;
+    renderOrientation();
+    const rects = {
+      0: [[0, 0, 100, 100]],
+      1: [[0, 0, sp, 100], [sp, 0, 100 - sp, 100]],
+      2: [[0, 0, 100, sp], [0, sp, 100, 100 - sp]],
+      3: portrait
+        ? [[0, 0, 100, mp], [0, mp, sd, 100 - mp], [sd, mp, 100 - sd, 100 - mp]]           // 縦向き：メインが上、サイドが下に横並び
+        : [[0, 0, mp, 100], [mp, 0, 100 - mp, sd], [mp, sd, 100 - mp, 100 - sd]],          // 横向き：メインが左、サイドが右に縦並び
+    }[layout];
+    const names = zoneLabels(layout, portrait);
+    const sizes = renderRatios(layout);
+    const lp = $('#lp');
+    lp.classList.toggle('portrait', portrait);
+    lp.innerHTML = rects.map((r, i) => `<div class="box" style="left:${r[0]}%;top:${r[1]}%;width:${r[2]}%;height:${r[3]}%">
+      <b>区画${i + 1}</b><span>${names[i]}</span><small>${ratioLabel(sizes[i][0], sizes[i][1]).text}</small><select data-zone="${i}" aria-label="区画${i + 1}の表示内容">${ZONE_TYPES.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></div>`).join('');
+    lp.querySelectorAll('select').forEach((sel) => {
+      sel.value = layoutZoneTypes[sel.dataset.zone];
+      sel.addEventListener('change', () => { layoutZoneTypes[sel.dataset.zone] = sel.value; updateLayoutDirty(); refreshZones(); });
+    });
+    if (layout === 1) addDivider(lp, 'v', 'splitPercent', sp, 0, 100, `${sp} : ${100 - sp}`);
+    if (layout === 2) addDivider(lp, 'h', 'splitPercent', sp, 0, 100, `${sp} : ${100 - sp}`);
+    if (layout === 3 && !portrait) {
+      addDivider(lp, 'v', 'mainPercent', mp, 0, 100, `${mp} : ${100 - mp}`);
+      addDivider(lp, 'h', 'sidePercent', sd, mp, 100 - mp, `${sd} : ${100 - sd}`);
+    }
+    if (layout === 3 && portrait) {
+      addDivider(lp, 'h', 'mainPercent', mp, 0, 100, `${mp} : ${100 - mp}`);
+      addDivider(lp, 'v', 'sidePercent', sd, mp, 100 - mp, `${sd} : ${100 - sd}`);
+    }
+    $('#lpHint').textContent = layout === 0 ? '画面全体に区画1を表示します。'
+      : `青い境界線をドラッグ（またはクリックして ←→↑↓ キー）で比率を変えられます。${layout === 3 ? (portrait ? '縦向きでは、メインが上、サイドが下に横並びになります。' : '横向きでは、メインが左、サイドが右に縦並びになります。') : ''}`;
+    updateLayoutDirty();
+    $('#layoutSummary').textContent = LAYOUTS[layout].name + (layout === 1 || layout === 2 ? `（${sp} : ${100 - sp}）` : layout === 3 ? `（メイン ${mp}%）` : '');
+  }
+
+  /** 境界線。axis: 'v'=縦線（左右に動かす）/ 'h'=横線（上下に動かす）。offset・len は線の始まりの位置と長さ（％） */
+  function addDivider(lp, axis, field, value, offset, len, label) {
+    const d = document.createElement('div');
+    d.className = 'div ' + axis;
+    d.dataset.field = field;
+    d.tabIndex = 0;
+    d.setAttribute('role', 'slider');
+    d.setAttribute('aria-label', '区画の比率');
+    d.setAttribute('aria-valuenow', value);
+    d.setAttribute('aria-valuetext', label);
+    if (axis === 'v') { d.style.left = value + '%'; d.style.top = offset + '%'; d.style.height = len + '%'; }
+    else { d.style.top = value + '%'; d.style.left = offset + '%'; d.style.width = len + '%'; }
+    d.innerHTML = `<span>${label}</span>`;
+    const [lo, hi] = LIMITS[field];
+    /** 比率を 5% 刻みで設定して描き直す。境界線の要素は入れ替わるので、フォーカスも付け直す */
+    const set = (pct, keepFocus) => {
+      const v = Math.min(hi, Math.max(lo, Math.round(pct / 5) * 5));
+      if (v === fval(field)) return;
+      layoutForm().elements[field].value = String(v);
+      renderLayoutCard();
+      if (keepFocus) $('#lp').querySelector(`.div[data-field="${field}"]`)?.focus();
+    };
+    d.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      const rect = lp.getBoundingClientRect();
+      const move = (ev) => set((axis === 'v' ? (ev.clientX - rect.left) / rect.width : (ev.clientY - rect.top) / rect.height) * 100);
+      const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up);
+    });
+    d.addEventListener('keydown', (e) => {
+      const step = { ArrowLeft: -5, ArrowUp: -5, ArrowRight: 5, ArrowDown: 5 }[e.key];
+      if (!step) return;
+      e.preventDefault();
+      set(fval(field) + step, true);
+    });
+    lp.append(d);
+  }
+
+  // ------------------------------------------------------------ 画像のフィット確認
+
+  const FIT_FIT = 0, FIT_BLUR = 1, FIT_FILL = 2, FIT_AUTO = 3;
+  const FIT_NAMES = { 0: '全体を表示', 1: '全体を表示＋ぼかし背景', 2: '画面いっぱい', 3: 'おまかせ' };
+  const fitItems = [];   // { name, w, h, video, src, isLocal }
+  let fitUrls = [];
+
+  /** 各区画の大きさ（px）。分割・比率は、フォームの現在の内容（未保存を含む）で計算する。画面の向きも考慮 */
+  function zoneSizes(W, H) {
+    const layout = fval('layout'), sp = fval('splitPercent') / 100, mp = fval('mainPercent') / 100, sd = fval('sidePercent') / 100;
+    if (layout === 1) return [[W * sp, H], [W * (1 - sp), H]];
+    if (layout === 2) return [[W, H * sp], [W, H * (1 - sp)]];
+    if (layout === 3) {
+      return W >= H
+        ? [[W * mp, H], [W * (1 - mp), H * sd], [W * (1 - mp), H * (1 - sd)]]            // 横長：メインが左、サイドが右に縦並び
+        : [[W, H * mp], [W * sd, H * (1 - mp)], [W * (1 - sd), H * (1 - mp)]];          // 縦長：メインが上、サイドが下に横並び
+    }
+    return [[W, H]];
+  }
+
+  /** 実際に使う表示方法。「おまかせ」は、切り取られる割合が 20% 以下なら画面いっぱい、それ以外はぼかし背景（再生画面と同じ判定） */
+  function decideFit(mode, cw, ch, aw, ah) {
+    if (mode !== FIT_AUTO) return mode;
+    const c = cw / ch, a = aw / ah;
+    return 1 - Math.min(c / a, a / c) <= 0.2 ? FIT_FILL : FIT_BLUR;
+  }
+
+  function fitVerdict(mode, it, zw, zh) {
+    const c = it.w / it.h, a = zw / zh;
+    const diff = 1 - Math.min(c / a, a / c);   // 縦横比のずれ（0＝ピッタリ）
+    const fit = decideFit(mode, it.w, it.h, zw, zh);
+    const pct = Math.round(diff * 100);
+    const notes = [];
+    const scale = fit === FIT_FILL ? Math.max(zw / it.w, zh / it.h) : Math.min(zw / it.w, zh / it.h);
+    if (scale > 1.5) notes.push(`画像が小さめです（${it.w}×${it.h}px を ${Math.round(scale * 100)}% に拡大して表示）`);
+    let level, text;
+    if (diff <= 0.02) { level = 'ok'; text = '✓ ピッタリ'; }
+    else if (fit === FIT_FILL) { level = pct <= 5 ? 'ok' : pct <= 20 ? 'warn' : 'ng'; text = `${pct <= 5 ? '✓ ほぼピッタリ' : '△'} 切り取り ${pct}%（はみ出す部分は映りません）`; }
+    else if (fit === FIT_BLUR) { level = pct <= 5 ? 'ok' : 'warn'; text = `${pct <= 5 ? '✓ ほぼピッタリ' : '△'} 全体を表示・余白 ${pct}% はぼかして補います`; }
+    else { level = pct <= 5 ? 'ok' : pct <= 20 ? 'warn' : 'ng'; text = `${pct <= 5 ? '✓ ほぼピッタリ' : '△'} 余白 ${pct}%（黒い余白が出ます）`; }
+    if (mode === FIT_AUTO) notes.unshift(`おまかせ → ${FIT_NAMES[fit]}で表示`);
+    if (scale > 1.5) { if (level === 'ok') level = 'warn'; text += '・画像は小さめ'; }
+    return { level, text, notes, fit };
+  }
+
+  function renderFit() {
+    const dev = selected();
+    const sd0 = screenDims(dev);
+    const scr = { width: sd0.w, height: sd0.h };
+    const types = layoutZoneTypes;
+    const sizes = zoneSizes(scr.width, scr.height);
+    const zones = sizes.map((sz, i) => ({ i, w: sz[0], h: sz[1], folder: types[i] === '0' })).filter((z) => z.folder);
+    const mode = Number($('#fitMode').value);
+    $('#fitInfo').textContent = `${dev.name}：画面 ${scr.width}×${scr.height}px（${scr.width >= scr.height ? '横長' : '縦長'}）／ ${LAYOUTS[fval('layout')].name}`
+      + (zones.length ? '' : ' ／ フォルダの区画がありません');
+    const box = $('#fitResults');
+    if (!zones.length) { box.textContent = '画像を表示する区画（フォルダ）がありません。'; return; }
+    box.innerHTML = `<div class="fitzones">${zones.map((z) => `<span class="zt">区画${z.i + 1}：${Math.round(z.w)}×${Math.round(z.h)}px（縦横比 ${(z.w / z.h).toFixed(2)}）</span>`).join('')}</div>`;
+    if (!fitItems.length) { box.insertAdjacentHTML('beforeend', '<p class="sub">「確認する画像・動画を選ぶ」から、反映したいファイルを選んでください（複数可）。</p>'); return; }
+    for (const it of fitItems) {
+      const row = document.createElement('div');
+      row.className = 'fitrow';
+      row.innerHTML = `<div class="fitname"></div>`;
+      $('.fitname', row).textContent = `${it.name}（${it.w}×${it.h}px・縦横比 ${(it.w / it.h).toFixed(2)}${it.isLocal ? '' : '・この端末内'}）`;
+      for (const z of zones) {
+        const v = fitVerdict(mode, it, z.w, z.h);
+        const cell = document.createElement('div');
+        cell.className = 'fitcell';
+        const tag = it.video ? 'video' : 'img';
+        const media = (cls) => `<${tag} ${cls} src="${it.src}" ${it.video ? 'muted preload="metadata"' : ''} style="object-fit:${cls === 'class="bg"' ? 'cover' : v.fit === FIT_FILL ? 'cover' : 'contain'}"></${tag}>`;
+        cell.innerHTML = `<div class="fp" style="aspect-ratio:${z.w} / ${z.h}">${v.fit === FIT_BLUR ? media('class="bg"') : ''}${media('')}</div>
+          <div class="verdict v-${v.level}"></div><div class="fitnote"></div>`;
+        $('.verdict', cell).textContent = `区画${z.i + 1}：${v.text}`;
+        $('.fitnote', cell).textContent = v.notes.join(' / ');
+        row.append(cell);
+      }
+      box.append(row);
+    }
+  }
+
+  const imageSize = (src) => new Promise((res) => { const i = new Image(); i.onload = () => res({ w: i.naturalWidth, h: i.naturalHeight }); i.onerror = () => res(null); i.src = src; });
+  const videoSize = (src) => new Promise((res) => {
+    const v = document.createElement('video');
+    v.preload = 'metadata'; v.muted = true;
+    v.onloadedmetadata = () => res({ w: v.videoWidth, h: v.videoHeight });
+    v.onerror = () => res(null);
+    v.src = src;
+  });
+
+  $('#fitOpen').addEventListener('click', () => {
+    const dev = selected();
+    if (dev.status !== 'ok' || !dev.state) { toast('この端末に接続できていません'); return; }
+    $('#fitMode').value = String(dev.state.settings.fitMode ?? 3);
+    renderFit();
+    $('#fitDialog').showModal();
+  });
+  $('#fitPick').addEventListener('click', () => $('#fitFiles').click());
+  $('#fitFiles').addEventListener('change', async (e) => {
+    const skipped = [];
+    for (const f of mediaOnly([...e.target.files])) {
+      const src = URL.createObjectURL(f);
+      fitUrls.push(src);
+      const video = /^video\//.test(f.type) || /\.(mp4|m4v|webm|mkv|3gp|mov|ts)$/i.test(f.name);
+      const size = await (video ? videoSize(src) : imageSize(src));
+      if (size && size.w > 0) fitItems.push({ name: f.name, ...size, video, src, isLocal: true }); else skipped.push(f.name);
+    }
+    e.target.value = '';
+    if (skipped.length) toast(`このブラウザでは読み込めないファイルがありました：${skipped.join('、')}`);
+    renderFit();
+  });
+  $('#fitDevice').addEventListener('click', async () => {
+    const dev = selected();
+    const files = (dev.state.zones || []).flatMap((z) => (z.files || []).filter((f) => !f.video).map((f) => ({ zone: z.index, name: f.name }))).slice(0, 12);
+    if (!files.length) { toast('この端末に確認できる画像がありません'); return; }
+    toast(`この端末の画像を読み込み中…（最大 12 枚）`);
+    for (const f of files) {
+      if (fitItems.some((x) => !x.isLocal && x.name === f.name)) continue;
+      try {
+        const blob = await (await api(dev, fileUrl(f.zone, f.name), {}, 30000)).blob();
+        const src = URL.createObjectURL(blob);
+        fitUrls.push(src);
+        const size = await imageSize(src);
+        if (size) fitItems.push({ name: f.name, ...size, video: false, src, isLocal: false });
+      } catch (e) {}
+    }
+    renderFit();
+  });
+  $('#fitMode').addEventListener('change', renderFit);
+  $('#fitApply').addEventListener('click', async () => {
+    const dev = selected();
+    try {
+      await post(dev, '/api/settings', { fitMode: Number($('#fitMode').value) });
+      toast(`「${dev.name}」の表示方法を「${FIT_NAMES[$('#fitMode').value]}」にしました`);
+      setTimeout(() => refreshDevice(dev), 1200);
+    } catch (err) { toast(err.message); }
+  });
+  const closeFit = () => { $('#fitDialog').close(); };
+  $('#fitClose').addEventListener('click', closeFit);
+  $('#fitDialog').addEventListener('close', () => { fitUrls.forEach((u) => URL.revokeObjectURL(u)); fitUrls = []; fitItems.length = 0; });
+
+  $('#layoutSave').addEventListener('click', async () => {
+    const dev = selected();
+    const body = {
+      layout: fval('layout'), splitPercent: fval('splitPercent'), mainPercent: fval('mainPercent'), sidePercent: fval('sidePercent'),
+      zoneTypes: [0, 1, 2].map((i) => Number(layoutZoneTypes[i])),
+      orientation: layoutOrientation,
+    };
+    try {
+      await post(dev, '/api/settings', body);
+      toast(`「${dev.name}」の画面分割を保存し、再生画面に反映しました`);
+      setTimeout(() => refreshDevice(dev), 1200);
+    } catch (err) { toast(err.message); }
+  });
+
+  try {
+    const d = $('#layoutDetails');
+    d.open = localStorage.getItem('signage-layout-open') !== '0';
+    d.addEventListener('toggle', () => { try { localStorage.setItem('signage-layout-open', d.open ? '1' : '0'); } catch (e) {} });
+  } catch (e) {}
+
+  // ---- 天気予報の地域（気象庁の地方・市区町村）
+
+  let wxOffices = null;
+  let wxCities = [];
+
+  async function loadWxOffices(dev) {
+    if (wxOffices) return wxOffices;
+    // 一覧は全端末で同じ。選択中の端末から取れなければ、ほかの接続できる端末から取る
+    const order = [dev, ...[...devices.values()].filter((d) => d !== dev && d.status === 'ok')];
+    for (const d of order) {
+      try {
+        const list = await api(d, '/api/weather/offices', {}, 20000);
+        if (Array.isArray(list) && list.length) { wxOffices = list; return list; }
+      } catch (e) { /* 次の端末で試す */ }
+    }
+    return null;
+  }
+
+  function fillWxCities(keepCity, keepArea) {
+    const o = (wxOffices || []).find((x) => x.code === $('#wxOffice').value);
+    wxCities = !o ? [] : o.cities.length
+      ? o.cities.map((c) => ({ code: c.code, name: c.name, areaCode: c.areaCode, areaName: c.areaName, label: `${c.name}　— ${c.areaName}` }))
+      : o.areas.map(([code, name]) => ({ code: null, name: null, areaCode: code, areaName: name, label: name }));
+    $('#wxCity').innerHTML = wxCities.map((c, i) => `<option value="${i}">${c.label}</option>`).join('');
+    let i = wxCities.findIndex((c) => c.code && c.code === keepCity);
+    if (i < 0) i = wxCities.findIndex((c) => c.areaCode === keepArea);
+    $('#wxCity').selectedIndex = Math.max(0, i);
+  }
+
+  async function renderWeatherRegion(dev) {
+    const st = dev.state?.settings || {};
+    const list = await loadWxOffices(dev);
+    if (selected() !== dev) return; // 読み込み中に別の端末へ切り替わった
+    if (!list) {
+      $('#wxOffice').innerHTML = '<option>（地域の一覧を取得できません）</option>';
+      $('#wxCity').innerHTML = '';
+      return;
+    }
+    $('#wxOffice').innerHTML = list.map((o) => `<option value="${o.code}">${o.name}</option>`).join('');
+    $('#wxOffice').value = st.weatherOffice || '130000';
+    if ($('#wxOffice').selectedIndex < 0) $('#wxOffice').selectedIndex = 0;
+    fillWxCities(st.weatherCity, st.weatherArea);
+    if (!st.weatherPlace) {
+      const c = wxCities[Number($('#wxCity').value)];
+      $('#weatherPlace').textContent = c ? `（地域：${c.name || c.areaName}　※未保存・「この端末に保存」で反映）` : '（地域：未設定）';
+    }
+  }
+  $('#wxOffice').addEventListener('change', () => { fillWxCities(null, null); previewWxPlace(); });
+  $('#wxCity').addEventListener('change', previewWxPlace);
+
+  /** 選んだ地域を見出しにすぐ出す（保存前は「未保存」と添える） */
+  function previewWxPlace() {
+    const c = wxCities[Number($('#wxCity').value)];
+    if (!c) return;
+    const name = c.name || c.areaName;
+    const saved = selected().state?.settings?.weatherPlace;
+    $('#weatherPlace').textContent = `（地域：${name}${name === saved ? '' : '　※未保存・「この端末に保存」で反映'}）`;
+  }
+
+  /** 設定欄の地域（一覧を取得できているときだけ送る） */
+  function wxBody() {
+    const c = wxCities[Number($('#wxCity').value)];
+    if (!wxOffices || !c || !$('#wxOffice').value) return {};
+    return { weatherOffice: $('#wxOffice').value, weatherArea: c.areaCode, weatherAreaName: c.areaName, weatherCity: c.code, weatherCityName: c.name };
+  }
 
   function formSettings() {
     const f = $('#settings');
-    const body = { zoneTypes: [0, 1, 2].map((i) => Number(f.elements['zone' + i].value)) };
+    const body = { zoneTypes: [0, 1, 2].map((i) => Number(layoutZoneTypes[i])) };
     for (const el of f.elements) {
-      if (!el.name || el.name.startsWith('zone')) continue;
+      if (!el.name) continue;
       body[el.name] = el.type === 'checkbox' ? el.checked : Number(el.value);
     }
-    return body;
+    return { ...body, ...wxBody() };
   }
 
   $('#settings').addEventListener('submit', async (e) => {
@@ -753,6 +1959,7 @@
     try {
       await post(dev, '/api/settings', formSettings());
       toast(`「${dev.name}」の設定を保存し、再生画面に反映しました`);
+      await refreshDevice(dev);
       setTimeout(() => refreshDevice(dev), 1200);
     } catch (err) { toast(err.message); }
   });
@@ -766,27 +1973,27 @@
     $('#bulk').hidden = list.length === 0;
     $('#bulkTitle').textContent = `チェックした ${list.length} 台をまとめて操作`;
     if (typeof renderTickerTarget === 'function') renderTickerTarget();
+    if (typeof renderVoiceTarget === 'function') renderVoiceTarget();
   }
 
-  function logLine(text, cls = '') {
+  function logLine(text, cls = '', log = $('#bulkLog')) {
     const li = document.createElement('li');
     li.textContent = text;
     li.className = cls;
-    $('#bulkLog').append(li);
+    log.append(li);
     li.scrollIntoView({ block: 'nearest' });
     return li;
   }
 
   /** 各端末に順番に実行して結果を記録する */
-  async function forEachTarget(label, fn) {
-    const list = targets();
-    $('#bulkLog').replaceChildren();
+  async function forEachTarget(label, fn, list = targets(), log = $('#bulkLog')) {
+    log.replaceChildren();
     let ok = 0;
     for (const dev of list) {
-      const li = logLine(`${dev.name}：${label}…`);
+      const li = logLine(`${dev.name}：${label}…`, '', log);
       try {
         if (dev.status !== 'ok') await check(dev);
-        if (dev.status !== 'ok') throw new Error(dev.status === 'pin' ? 'PIN が違います' : '応答なし');
+        if (dev.status !== 'ok') throw new Error(dev.status === 'pin' ? 'PIN が違います' : dev.status === 'denied' ? dev.error : '応答なし');
         const msg = await fn(dev, li);
         li.textContent = `${dev.name}：${msg || '完了'}`;
         li.className = 'done';
@@ -800,6 +2007,334 @@
     renderDevices();
     return ok;
   }
+
+  // ------------------------------------------------------------ マイクで声を届ける
+
+  const VOICE_RATE = 16000;        // 端末へ送る音声：16kHz・モノラル・16bit PCM
+  const VOICE_CHUNK = 3200;        // 0.2 秒ぶんずつ送る
+  const voice = { on: false, starting: false, ctx: null, stream: null, node: null, src: null, targets: [], pending: [], chain: new Map(), failed: new Set(), sent: 0 };
+
+  /** 放送先：端末一覧でチェックした端末。ひとつもチェックが無ければ、いま選んでいる端末 */
+  const voiceTargets = () => (checked.size ? targets() : [selected()]).filter((d) => d && d.state);
+
+  function renderVoiceTarget() {
+    const list = voiceTargets();
+    $('#voiceTarget').textContent = targetSummary(list, '放送');
+    const warn = $('#voiceWarn');
+    // ブラウザは、https のページか localhost で開いたページでしかマイクを使わせない
+    const ok = window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+    warn.hidden = !!ok;
+    if (!ok) {
+      warn.textContent = 'このページは http://' + location.host + '/ で開かれているため、ブラウザがマイクの使用を許可しません。'
+        + '管理に使う PC で Windows 版 Signage を起動し、同じ PC のブラウザで http://localhost:' + (location.port || '8080') + '/ を開いてください。';
+    }
+    $('#voiceTalk').disabled = !ok || !list.length;
+    $('#voiceTest').disabled = !list.length;   // テスト音は、マイクが使えない（IP アドレスで開いた）ページからも送れる
+  }
+
+  /** 端末ごとの送信結果（成功・失敗の回数、最後のエラー、端末の音量など）。画面に残して、届かない原因が分かるようにする */
+  const voiceInfo = new Map();
+  function voiceInfoFor(dev) {
+    if (!voiceInfo.has(dev.key)) voiceInfo.set(dev.key, { name: dev.name, ok: 0, fail: 0, err: '', volume: null, volumeMax: null, listeners: null });
+    return voiceInfo.get(dev.key);
+  }
+  function renderVoiceResult() {
+    const ul = $('#voiceResult');
+    ul.replaceChildren();
+    for (const i of voiceInfo.values()) {
+      const li = document.createElement('li');
+      const parts = [`送信 ${i.ok} 回成功`];
+      if (i.fail) parts.push(`${i.fail} 回失敗（${i.err}）`);
+      if (i.volume === 0) parts.push('端末のメディア音量が 0 です。端末の音量を上げてください');
+      else if (i.volume !== null) parts.push(`端末の音量 ${i.volume}/${i.volumeMax}`);
+      if (i.listeners === 0) parts.push('再生画面が開いていないため、声が出ません');
+      li.textContent = `${i.name}：${parts.join('／')}`;
+      li.className = i.fail ? 'ng' : (i.volume === 0 || i.listeners === 0) ? 'warn' : (i.ok ? 'ok' : '');
+      ul.append(li);
+    }
+  }
+
+  /** 端末へ順番どおりに送る（端末ごとに、前の送信が終わってから次を送る） */
+  function voiceSend(dev, path, body) {
+    const prev = voice.chain.get(dev.key) || Promise.resolve();
+    const info = voiceInfoFor(dev);
+    const next = prev.then(() => fetch(dev.url + path, {
+      method: 'POST', body,
+      headers: { 'X-Pin': dev.pin || '', 'Content-Type': 'application/octet-stream' },
+    }).then(async (r) => {
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ('エラー ' + r.status));
+      info.ok++;
+      if (j.volume !== undefined) { info.volume = j.volume; info.volumeMax = j.volumeMax; }
+      if (j.listeners !== undefined) info.listeners = j.listeners;
+      renderVoiceResult();
+      return j;
+    })).catch((e) => {
+      info.fail++;
+      info.err = e.message === 'Failed to fetch' ? '端末に接続できません（アプリの版・ネットワーク・管理画面の設定を確認）' : e.message;
+      renderVoiceResult();
+      if (!voice.failed.has(dev.key)) { voice.failed.add(dev.key); toast(`「${dev.name}」への放送に失敗しました：${info.err}`); }
+    });
+    voice.chain.set(dev.key, next);
+    return next;
+  }
+
+  /** 声を出さずに、放送先の端末までテスト音（0.8 秒のピー音）が届くか確かめる */
+  async function voiceTest() {
+    const list = voiceTargets();
+    if (!list.length) return;
+    voiceInfo.clear(); voice.failed.clear();
+    list.forEach(voiceInfoFor);
+    renderVoiceResult();
+    $('#voiceStatus').textContent = `テスト音を送っています：${list.map((d) => d.name).join('、')}`;
+    const total = Math.round(VOICE_RATE * 0.8);
+    const all = new Int16Array(total);
+    for (let i = 0; i < total; i++) {
+      const fade = Math.min(1, i / 800, (total - i) / 800);       // 最初と最後を少しずつ大きく・小さくして、プツッという音を防ぐ
+      all[i] = Math.round(Math.sin(2 * Math.PI * 440 * i / VOICE_RATE) * 0.4 * 32767 * fade);
+    }
+    for (let off = 0; off < total; off += VOICE_CHUNK) {
+      const chunk = all.slice(off, off + VOICE_CHUNK);
+      await Promise.all(list.map((dev) => voiceSend(dev, '/api/voice', chunk.buffer.slice(0))));
+      await new Promise((r) => setTimeout(r, 180));
+    }
+    await Promise.all(list.map((dev) => voiceSend(dev, '/api/voice/end', new ArrayBuffer(0))));
+    $('#voiceStatus').textContent = 'テスト音を送りました。端末から「ピー」と聞こえれば、声も届きます。聞こえないときは、上の結果を確認してください。';
+  }
+  $('#voiceTest').addEventListener('click', voiceTest);
+
+  function voiceFlush(force) {
+    while (voice.pending.length >= VOICE_CHUNK || (force && voice.pending.length > 0)) {
+      const samples = voice.pending.splice(0, VOICE_CHUNK);
+      const pcm = new Int16Array(samples.length);
+      for (let i = 0; i < samples.length; i++) pcm[i] = Math.max(-32768, Math.min(32767, Math.round(samples[i] * 32767)));
+      voice.sent++;
+      for (const dev of voice.targets) {
+        voiceSend(dev, '/api/voice', pcm.buffer.slice(0)).then((r) => {
+          if (r && r.listeners === 0 && !voice.warned) { voice.warned = true; toast(`「${dev.name}」は再生画面が開いていないため、声が出ません`); }
+        });
+      }
+    }
+  }
+
+  async function voiceStart() {
+    if (voice.on || voice.starting) return;
+    voice.starting = true;
+    voice.targets = voiceTargets();
+    voice.failed.clear(); voice.warned = false; voice.sent = 0; voice.pending = [];
+    voiceInfo.clear(); voice.targets.forEach(voiceInfoFor); renderVoiceResult();
+    try {
+      voice.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    } catch (e) {
+      voice.starting = false;
+      $('#voiceStatus').textContent = e.name === 'NotAllowedError' ? 'マイクの使用が許可されていません。ブラウザのアドレスバーの鍵（サイト設定）から許可してください。' : `マイクを使えません：${e.message}`;
+      return;
+    }
+    voice.starting = false;
+    if (voice.wantStop) { voice.wantStop = false; voiceStopTracks(); return; }
+    voice.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const inRate = voice.ctx.sampleRate;
+    voice.src = voice.ctx.createMediaStreamSource(voice.stream);
+    voice.node = voice.ctx.createScriptProcessor(4096, 1, 1);
+    let frac = 0;
+    voice.node.onaudioprocess = (e) => {
+      const data = e.inputBuffer.getChannelData(0);
+      // 16kHz に間引く（線形補間）。音量メーターも更新する
+      const step = inRate / VOICE_RATE;
+      let peak = 0;
+      for (let pos = frac; pos < data.length; pos += step) {
+        const i = Math.floor(pos), f = pos - i;
+        const v = data[i] * (1 - f) + (data[Math.min(i + 1, data.length - 1)] * f);
+        voice.pending.push(v);
+        peak = Math.max(peak, Math.abs(v));
+        frac = pos + step - data.length;
+      }
+      $('#voiceLevel').value = peak;
+      voiceFlush(false);
+    };
+    voice.src.connect(voice.node);
+    voice.node.connect(voice.ctx.destination);   // 出力は無音（入力をそのまま返さないので、自分の声は聞こえない）
+    voice.on = true;
+    $('#voiceTalk').classList.add('live');
+    $('#voiceTalk').textContent = '🔴 放送中…（離すと止まる）';
+    $('#voiceStatus').textContent = `放送中：${voice.targets.map((d) => d.name).join('、')}`;
+  }
+
+  function voiceStopTracks() {
+    try { voice.node && (voice.node.onaudioprocess = null, voice.node.disconnect()); } catch (e) {}
+    try { voice.src && voice.src.disconnect(); } catch (e) {}
+    try { voice.stream && voice.stream.getTracks().forEach((t) => t.stop()); } catch (e) {}     // マイクの使用中の表示も消える
+    try { voice.ctx && voice.ctx.close(); } catch (e) {}
+    voice.node = voice.src = voice.stream = voice.ctx = null;
+  }
+
+  function voiceStop() {
+    if (voice.starting) { voice.wantStop = true; return; }
+    if (!voice.on) return;
+    voice.on = false;
+    voiceFlush(true);
+    voiceStopTracks();
+    for (const dev of voice.targets) voiceSend(dev, '/api/voice/end', new ArrayBuffer(0));
+    $('#voiceLevel').value = 0;
+    $('#voiceTalk').classList.remove('live');
+    $('#voiceTalk').textContent = '🎤 押している間、話す';
+    $('#voiceStatus').textContent = voice.failed.size ? '一部の端末に送れませんでした。' : `放送しました（${voice.sent} 回に分けて送信）。`;
+  }
+
+  (() => {
+    const btn = $('#voiceTalk');
+    const latch = () => $('#voiceLatch').checked;
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (latch()) { voice.on || voice.starting ? voiceStop() : voiceStart(); return; }
+      btn.setPointerCapture?.(e.pointerId);
+      voiceStart();
+    });
+    const release = () => { if (!latch()) voiceStop(); };
+    btn.addEventListener('pointerup', release);
+    btn.addEventListener('pointercancel', release);
+    // キーボードでも：スペース／Enter を押している間だけ話す
+    btn.addEventListener('keydown', (e) => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); latch() ? (voice.on ? voiceStop() : voiceStart()) : voiceStart(); } });
+    btn.addEventListener('keyup', (e) => { if ((e.key === ' ' || e.key === 'Enter') && !latch()) voiceStop(); });
+    window.addEventListener('blur', () => { if (!latch()) voiceStop(); });
+    window.addEventListener('beforeunload', () => voiceStop());
+    $('#voiceLatch').addEventListener('change', () => { if (!latch()) voiceStop(); });
+  })();
+
+  // ------------------------------------------------------------ 設定のエクスポート・一括反映
+
+  /** 設定ファイルに含める設定の項目（端末ごとに違うフォルダ・端末名・PIN・天気の地域は含めない） */
+  const EXPORT_KEYS = ['layout', 'splitPercent', 'mainPercent', 'sidePercent', 'zoneTypes', 'imageSeconds', 'shuffle', 'recursive',
+    'videoSound', 'videoCompat', 'fitMode', 'clockEnabled', 'clockPosition', 'clockSize',
+    'weatherEnabled', 'weatherIntervalMin', 'weatherSeconds', 'weatherTimeSeries'];
+  const EXPORT_KIND = 'signage-settings';
+
+  $('#exportBtn').addEventListener('click', async () => {
+    const dev = selected();
+    await check(dev);                       // 最新の設定を読み直してから書き出す
+    if (dev.status !== 'ok' || !dev.state) { toast('この端末に接続できていません'); renderDevices(); return; }
+    const st = dev.state;
+    const settings = {};
+    for (const k of EXPORT_KEYS) if (st.settings[k] !== undefined) settings[k] = st.settings[k];
+    const now = new Date();
+    const data = {
+      kind: EXPORT_KIND, version: 1, exportedAt: now.toISOString(),
+      source: { name: dev.name, device: st.device || '', appVersion: st.version || '' },
+      settings,
+      schedules: (st.ticker?.schedules || []).map(({ id, ...rest }) => rest),
+      fileRules: st.zones.filter((z) => z.type === 0).flatMap((z) => (z.files || []).filter((f) => f.rule).map((f) => ({ zone: z.index, name: f.name, rule: f.rule }))),
+    };
+    const p2 = (n) => String(n).padStart(2, '0');
+    const fname = `signage-settings_${dev.name.replace(/[\\/:*?"<>|\s]+/g, '_')}_${now.getFullYear()}${p2(now.getMonth() + 1)}${p2(now.getDate())}.json`;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = fname;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    toast(`「${dev.name}」の設定を保存しました（${fname}）`);
+  });
+
+  let importData = null;
+
+  function renderImportTargets() {
+    // 反映先：端末一覧でチェックした端末。ひとつもチェックがなければ、いま選んでいる端末
+    const pre = new Set(checked.size ? [...checked] : [selectedKey]);
+    const box = $('#impTargets');
+    box.replaceChildren();
+    for (const d of [...devices.values()].sort((a, b) => ((b.self ? 1 : 0) - (a.self ? 1 : 0)) || String(a.name).localeCompare(String(b.name), 'ja'))) {
+      const label = document.createElement('label');
+      label.innerHTML = '<input type="checkbox"><span></span>';
+      const cb = $('input', label);
+      cb.value = d.key; cb.checked = pre.has(d.key);
+      cb.addEventListener('change', updateImportButton);
+      $('span', label).textContent = d.name + (d.self ? '（この端末）' : '') + (d.status === 'ok' ? '' : '　※接続できていません');
+      box.append(label);
+    }
+  }
+
+  function updateImportButton() {
+    $('#impApply').disabled = !importData || !$$('#impTargets input:checked').length
+      || !(($('#impSettings').checked && importData.hasSettings) || ($('#impSchedules').checked && importData.hasSchedules) || ($('#impRules').checked && importData.hasRules));
+  }
+  const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+
+  $('#importBtn').addEventListener('click', () => {
+    importData = null;
+    $('#impInfo').textContent = 'ファイル未選択';
+    $('#impParts').disabled = true;
+    $('#impLog').replaceChildren();
+    renderImportTargets();
+    updateImportButton();
+    $('#importDialog').showModal();
+  });
+  $('#impPick').addEventListener('click', () => $('#impFile').click());
+  ['impSettings', 'impSchedules', 'impRules'].forEach((id) => $('#' + id).addEventListener('change', updateImportButton));
+
+  $('#impFile').addEventListener('change', async (e) => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    importData = null;
+    try {
+      const j = JSON.parse(await f.text());
+      if (j.kind !== EXPORT_KIND || !j.settings || typeof j.settings !== 'object') throw new Error('サイネージの設定ファイルではありません');
+      if (j.version > 1) throw new Error('新しい形式の設定ファイルです。管理画面（アプリ）を新しい版にしてください');
+      const settings = {};
+      for (const k of EXPORT_KEYS) if (j.settings[k] !== undefined) settings[k] = j.settings[k];
+      const schedules = Array.isArray(j.schedules) ? j.schedules : [];
+      const fileRules = Array.isArray(j.fileRules) ? j.fileRules.filter((r) => r && Number.isInteger(r.zone) && typeof r.name === 'string' && r.rule) : [];
+      importData = { settings, schedules, fileRules, hasSettings: Object.keys(settings).length > 0, hasSchedules: true, hasRules: fileRules.length > 0 };
+      const when = j.exportedAt ? new Date(j.exportedAt).toLocaleString('ja-JP') : '';
+      $('#impInfo').textContent = `${f.name}（元の端末：${j.source?.name || '不明'}${when ? '・' + when : ''}）`;
+      $('#impSettingsLabel').textContent = `設定（画面分割・再生・時計・天気予報）${importData.hasSettings ? '' : '：ファイルに含まれていません'}`;
+      $('#impSchedulesLabel').textContent = `予約テロップ ${schedules.length} 件（反映先の予約は置き換わります）`;
+      $('#impRulesLabel').textContent = `画像・動画ごとの再生条件 ${fileRules.length} 件（反映先に同じ区画・同じファイル名があるもののみ）`;
+      $('#impSettings').checked = importData.hasSettings;
+      $('#impRules').checked = importData.hasRules;
+      $('#impParts').disabled = false;
+    } catch (err) {
+      $('#impInfo').textContent = 'ファイル未選択';
+      $('#impParts').disabled = true;
+      toast(err instanceof SyntaxError ? '設定ファイルを読み込めません（JSON の形式が正しくありません）' : err.message);
+    }
+    updateImportButton();
+  });
+
+  $('#impApply').addEventListener('click', async () => {
+    const list = $$('#impTargets input:checked').map((c) => devices.get(c.value)).filter(Boolean);
+    const parts = [
+      $('#impSettings').checked && importData.hasSettings && '設定',
+      $('#impSchedules').checked && `予約テロップ ${importData.schedules.length} 件`,
+      $('#impRules').checked && importData.hasRules && '再生条件',
+    ].filter(Boolean);
+    if (!confirm(`${list.map((d) => d.name).join('、')}（${list.length} 台）に、次の内容を反映します。\n・${parts.join('\n・')}\n反映先の現在の内容は上書きされます。よろしいですか？`)) return;
+    $('#impApply').disabled = true;
+    await forEachTarget('設定を反映', async (dev) => {
+      const done = [];
+      if ($('#impSettings').checked && importData.hasSettings) {
+        await post(dev, '/api/settings', importData.settings);
+        done.push('設定');
+      }
+      if ($('#impSchedules').checked) {
+        await post(dev, '/api/ticker/schedules', { schedules: importData.schedules });
+        done.push(`予約 ${importData.schedules.length} 件`);
+      }
+      if ($('#impRules').checked && importData.hasRules) {
+        await check(dev);   // 反映した設定（区画の種類など）を踏まえて、いまあるファイルを調べる
+        let ok = 0, skipped = 0;
+        for (const r of importData.fileRules) {
+          const z = dev.state?.zones?.find((x) => x.index === r.zone);
+          if (!z || z.type !== 0 || !(z.files || []).some((f) => f.name === r.name)) { skipped++; continue; }
+          try { await post(dev, '/api/filerule', { zone: r.zone, name: r.name, rule: r.rule }); ok++; } catch (e) { skipped++; }
+        }
+        done.push(`再生条件 ${ok} 件${skipped ? `（${skipped} 件はファイルが無いため省略）` : ''}`);
+      }
+      return done.join('、') + ' を反映しました';
+    }, list, $('#impLog'));
+    $('#impApply').disabled = false;
+    setTimeout(() => refreshDevice(selected()), 1200);
+  });
+  $('#impClose').addEventListener('click', () => $('#importDialog').close());
 
   $('#bulkReload').addEventListener('click', () => forEachTarget('今すぐ反映', (dev) => post(dev, '/api/reload', {}).then(() => '反映しました')));
 
@@ -855,12 +2390,19 @@
 
   // ------------------------------------------------------------ テロップ
 
-  const TEMPLATES = [
+  const DEFAULT_TEMPLATES = [
     { label: '呼び出し', text: '〇番でお待ちのお客様、カウンターまでお越しください', style: 2, repeat: 3, chime: true, speak: true },
     { label: '閉店のご案内', text: '本日のご来店まことにありがとうございます。まもなく閉店のお時間です。', style: 1, repeat: 3, chime: true, speak: false },
     { label: '閉店時刻', text: '本日は〇時で閉店いたします。', style: 1, repeat: 2, chime: false, speak: false },
     { label: 'タイムセール', text: 'ただいまタイムセール実施中！', style: 0, repeat: 0, chime: false, speak: false },
   ];
+  /** テロップのボタン（名前・文言・種類・回数）。この PC のブラウザに保存する */
+  const loadTemplates = () => {
+    const v = store.get('signage-templates', null);
+    return Array.isArray(v) && v.length ? v : DEFAULT_TEMPLATES.map((t) => ({ ...t }));
+  };
+  let TEMPLATES = loadTemplates();
+  const saveTemplates = () => { store.set('signage-templates', TEMPLATES); rebuildTemplates(); };
   const OPTS = [
     ['style', '種類', [['0', '通常（黒）'], ['1', 'お知らせ（青）'], ['2', '呼び出し（赤）']]],
     ['repeat', '流す回数', [['1', '1回'], ['2', '2回'], ['3', '3回'], ['5', '5回'], ['0', '止めるまでずっと']]],
@@ -910,17 +2452,125 @@
     set('chime', t.chime);
     set('speak', t.speak);
     textEl.focus();
+    if (typeof updateTickerCount === 'function' && textEl.id === 'tickerText') updateTickerCount();
   }
 
+  const templateRoots = [];
+
   function buildTemplates(root, textEl, optsEl) {
+    templateRoots.push([root, textEl, optsEl]);
+    // ボタンの下に「いまの内容をボタンに保存」「ボタンを編集」を置く
+    const tools = document.createElement('div');
+    tools.className = 'tplTools';
+    const save = document.createElement('button');
+    save.type = 'button'; save.className = 'small'; save.textContent = '＋ いまの内容をボタンに保存';
+    save.addEventListener('click', () => {
+      const m = readOpts(optsEl, textEl.value);
+      if (!m.text) { toast('保存する文字を入力してください'); return; }
+      const label = (prompt('ボタンの名前', m.text.slice(0, 10)) || '').trim();
+      if (!label) return;
+      if (TEMPLATES.length >= 12) { toast('ボタンは 12 個までです'); return; }
+      TEMPLATES.push({ label: label.slice(0, 20), text: m.text, style: m.style, repeat: m.repeat, chime: !!m.chime, speak: !!m.speak });
+      saveTemplates();
+      toast(`「${label}」を保存しました`);
+    });
+    const edit = document.createElement('button');
+    edit.type = 'button'; edit.className = 'small'; edit.textContent = 'ボタンを編集';
+    edit.addEventListener('click', openTemplateEditor);
+    tools.append(save, edit);
+    root.after(tools);
+    fillTemplates(root, textEl, optsEl);
+  }
+
+  function fillTemplates(root, textEl, optsEl) {
+    root.replaceChildren();
     for (const t of TEMPLATES) {
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = t.label;
+      b.title = t.text;
       b.addEventListener('click', () => applyTemplate(t, textEl, optsEl));
       root.append(b);
     }
   }
+
+  function rebuildTemplates() { templateRoots.forEach(([r, t, o]) => fillTemplates(r, t, o)); }
+
+  // ---- ボタンの編集
+
+  let tplDraft = [];
+
+  function openTemplateEditor() {
+    tplDraft = TEMPLATES.map((t) => ({ ...t }));
+    renderTemplateEditor();
+    $('#tplDialog').showModal();
+  }
+
+  function renderTemplateEditor() {
+    const list = $('#tplList');
+    list.replaceChildren();
+    const optSel = (key, value) => {
+      const [, , items] = OPTS.find((o) => o[0] === key);
+      return `<select data-k="${key}">${items.map(([v, l]) => `<option value="${v}"${String(value) === v ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
+    };
+    tplDraft.forEach((t, i) => {
+      const row = document.createElement('div');
+      row.className = 'tplRow';
+      row.innerHTML = `
+        <div class="dlgrow">
+          <input type="text" data-k="label" maxlength="20" placeholder="ボタンの名前" style="flex:1; min-width:120px">
+          <button type="button" class="small" data-act="up" title="上へ">↑</button>
+          <button type="button" class="small" data-act="down" title="下へ">↓</button>
+          <button type="button" class="small danger" data-act="del">削除</button>
+        </div>
+        <textarea data-k="text" placeholder="流す文言"></textarea>
+        <div class="dlgrow">
+          ${optSel('style', t.style)} ${optSel('repeat', t.repeat)}
+          <label class="check"><input type="checkbox" data-k="chime"> チャイム</label>
+          <label class="check"><input type="checkbox" data-k="speak"> 読み上げ</label>
+        </div>`;
+      row.querySelector('[data-k=label]').value = t.label;
+      row.querySelector('[data-k=text]').value = t.text;
+      row.querySelector('[data-k=chime]').checked = !!t.chime;
+      row.querySelector('[data-k=speak]').checked = !!t.speak;
+      row.addEventListener('input', (e) => {
+        const k = e.target.dataset.k;
+        if (!k) return;
+        if (e.target.type === 'checkbox') t[k] = e.target.checked;
+        else t[k] = ['style', 'repeat'].includes(k) ? Number(e.target.value) : e.target.value;
+      });
+      row.addEventListener('click', (e) => {
+        const act = e.target.dataset?.act;
+        if (!act) return;
+        if (act === 'del') tplDraft.splice(i, 1);
+        else if (act === 'up' && i > 0) [tplDraft[i - 1], tplDraft[i]] = [tplDraft[i], tplDraft[i - 1]];
+        else if (act === 'down' && i < tplDraft.length - 1) [tplDraft[i + 1], tplDraft[i]] = [tplDraft[i], tplDraft[i + 1]];
+        renderTemplateEditor();
+      });
+      list.append(row);
+    });
+    $('#tplAdd').disabled = tplDraft.length >= 12;
+  }
+
+  $('#tplAdd').addEventListener('click', () => {
+    tplDraft.push({ label: '新しいボタン', text: '', style: 1, repeat: 2, chime: false, speak: false });
+    renderTemplateEditor();
+    $('#tplList').lastElementChild?.querySelector('[data-k=label]').select();
+  });
+  $('#tplReset').addEventListener('click', () => {
+    if (!confirm('ボタンを初期の 4 つに戻します。よろしいですか？')) return;
+    tplDraft = DEFAULT_TEMPLATES.map((t) => ({ ...t }));
+    renderTemplateEditor();
+  });
+  $('#tplCancel').addEventListener('click', () => $('#tplDialog').close());
+  $('#tplSave').addEventListener('click', () => {
+    const bad = tplDraft.findIndex((t) => !t.label.trim() || !t.text.trim());
+    if (bad >= 0) { toast(`${bad + 1} 番目のボタンの名前と文言を入力してください`); return; }
+    TEMPLATES = tplDraft.map((t) => ({ ...t, label: t.label.trim().slice(0, 20) }));
+    saveTemplates();
+    $('#tplDialog').close();
+    toast('ボタンを保存しました');
+  });
 
   buildOpts($('#tickerOpts'), false);
   buildOpts($('#schedOpts'), true);
@@ -932,9 +2582,7 @@
 
   function renderTickerTarget() {
     const list = tickerTargets();
-    $('#tickerTarget').textContent = list.length > 1
-      ? `送り先：チェックした ${list.length} 台（${list.map((d) => d.name).join('、')}）`
-      : `送り先：${list[0]?.name || ''}（複数台に送るときは端末一覧でチェック）`;
+    $('#tickerTarget').textContent = targetSummary(list, '送信');
   }
 
   async function sendToTickerTargets(label, fn) {
@@ -957,7 +2605,54 @@
     if (!m.text) { toast('テロップの文字を入力してください'); return; }
     if (m.text.includes('〇')) { if (!confirm('文字に「〇」が残っています。このまま送りますか？')) return; }
     await sendToTickerTargets('テロップを流しました', (dev) => post(dev, '/api/ticker', m));
+    rememberRecent(m.text);
   });
+
+  // ---- 操作しやすくする工夫（移動・文字数・最近の文言・Ctrl+Enter）
+
+  $('#jump').addEventListener('click', (e) => {
+    const id = e.target.dataset?.to;
+    const el = id && document.getElementById(id);
+    if (!el || el.hidden) { if (id) toast('この項目は、端末に接続すると表示されます'); return; }
+    const d = el.querySelector('details');
+    if (d) d.open = true;
+    const top = el.getBoundingClientRect().top + window.scrollY - ($('header').offsetHeight + $('#tabs').offsetHeight + 12);
+    window.scrollTo({ top, behavior: 'smooth' });
+  });
+
+  const recent = store.get('signage-recent', []);
+  function renderRecent() {
+    const box = $('#tickerRecent');
+    box.replaceChildren();
+    box.hidden = !recent.length;
+    if (!recent.length) return;
+    box.append('最近流した文言：');
+    for (const text of recent) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'small'; b.textContent = text; b.title = text;
+      b.addEventListener('click', () => { $('#tickerText').value = text; updateTickerCount(); $('#tickerText').focus(); });
+      box.append(b);
+    }
+  }
+  function rememberRecent(text) {
+    const i = recent.indexOf(text);
+    if (i >= 0) recent.splice(i, 1);
+    recent.unshift(text);
+    recent.length = Math.min(recent.length, 6);
+    store.set('signage-recent', recent);
+    renderRecent();
+  }
+  function updateTickerCount() {
+    const n = $('#tickerText').value.trim().length;
+    $('#tickerCount').textContent = n ? `${n} 文字` : '';
+    $('#tickerSend').disabled = !n;
+  }
+  $('#tickerText').addEventListener('input', updateTickerCount);
+  $('#tickerText').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#tickerSend').click(); }
+  });
+  renderRecent();
+  updateTickerCount();
 
   $('#tickerStop').addEventListener('click', () =>
     sendToTickerTargets('テロップを止めました', (dev) => post(dev, '/api/ticker/stop', {})));
