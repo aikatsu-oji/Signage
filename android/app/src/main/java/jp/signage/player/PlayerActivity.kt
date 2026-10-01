@@ -37,12 +37,17 @@ import kotlin.math.abs
  */
 class PlayerActivity : Activity() {
     companion object {
-        /** テレビ端末で縦向きを選んでいるとき（画面が横長のままなので、再生画面そのものを回して表示する） */
+        /** Fire TV（Amazon のテレビ端末）かどうか。画面を回す処理はこの端末だけが対象 */
+        fun isFireTv(ctx: android.content.Context): Boolean =
+            Build.MANUFACTURER.equals("Amazon", ignoreCase = true) &&
+                ctx.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
+
+        /** Fire TV で縦向きを選んでいるとき（画面が横長のままなので、再生画面そのものを回して表示する） */
         @Suppress("DEPRECATION")
         fun needsSoftRotation(ctx: android.content.Context, prefs: Prefs): Boolean {
             val want = prefs.orientation
             if (want != ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT && want != ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT) return false
-            if (!ctx.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)) return false
+            if (!isFireTv(ctx)) return false
             val dm = android.util.DisplayMetrics()
             (ctx.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay.getRealMetrics(dm)
             return dm.widthPixels > dm.heightPixels
@@ -87,9 +92,8 @@ class PlayerActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_player)
         prefs = Prefs(this)
-        // テレビ端末（Fire TV など）は向きの指定を受け付けず、細い窓になってしまうので、指定せずに再生画面を回して表示する
-        val tv = packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
-        requestedOrientation = if (tv) ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED else prefs.orientation
+        // Fire TV は向きの指定を受け付けず、細い窓になってしまうので、指定せずに再生画面を回して表示する
+        requestedOrientation = if (isFireTv(this)) ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED else prefs.orientation
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
