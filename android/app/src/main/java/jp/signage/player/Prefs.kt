@@ -190,7 +190,7 @@ class Prefs(context: Context) {
     /** メイン＋サイドのときのメイン区画の割合（%）。残りがサイド */
     var mainPercent: Int
         get() = sp.getInt("mainPercent", 70)
-        set(v) = sp.edit().putInt("mainPercent", v.coerceIn(40, 90)).apply()
+        set(v) = sp.edit().putInt("mainPercent", v.coerceIn(20, 90)).apply()
 
     /** メイン＋サイドのときのサイド1（区画2）の割合（%）。残りがサイド2（区画3） */
     var sidePercent: Int

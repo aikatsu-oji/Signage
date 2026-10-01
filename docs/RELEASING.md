@@ -34,3 +34,7 @@ scripts/publish-release.sh "- 変更点1
 - 変更点2"
 ```
 ブランチに、ファイルを入れたコミットと、公開を依頼するコミット（`.github/release-request.txt`）を push し、Actions が Releases に載せます。
+
+## ブランチの運用
+- 作業は、`main` を起点にしたブランチで行い、PR で `main` に合流します。
+- Release の本文のリンクは、`main` のファイルを指します（`scripts/publish-release.sh`）。リリースのあと、`main` に合流してください。

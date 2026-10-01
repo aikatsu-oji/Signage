@@ -106,6 +106,7 @@
   #lpRatios td.r { white-space: nowrap; }
   #lpRatios .ratio { font-weight: bold; color: #1a73e8; }
   .lp .box small { font-size: 11px; opacity: .85; }
+  .fitRow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
   .layoutFoot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px 16px; }
   #fitDialog { max-width: 980px; width: calc(100% - 24px); max-height: calc(100% - 24px); overflow: auto; }
   .fitzones { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
@@ -340,6 +341,18 @@
               <div class="lp" id="lp"></div>
               <div id="lpRatios"></div>
               <p class="sub" id="lpHint"></p>
+              <div class="fitRow" id="fitRatioRow">
+                <b>区画の縦横比を合わせる</b>
+                <select id="frZone" aria-label="合わせる区画"></select>
+                <select id="frRatio" aria-label="縦横比">
+                  <option value="16:9">16:9（横長の動画）</option><option value="4:3">4:3</option><option value="1:1">1:1（正方形）</option>
+                  <option value="3:4">3:4（縦長）</option><option value="9:16">9:16（縦長の動画）</option><option value="21:9">21:9（ワイド）</option>
+                </select>
+                <button type="button" class="small primary" id="frApply">ぴったり合わせる</button>
+                <span class="sub" id="frNote"></span>
+              </div>
+              <label class="field" id="frFine" style="margin-top:6px"><span>比率を数字で指定（1% 刻み）</span>
+                <span class="dlgrow"><input type="number" id="frPct" min="10" max="90" step="1" style="width:90px"> <span class="sub" id="frPctLabel"></span></span></label>
             </div>
           </div>
           <input type="hidden" name="layout" form="settings">
@@ -1501,7 +1514,7 @@
 
   const ZONE_TYPES = [['0', 'フォルダの画像・動画'], ['1', '天気予報']];
   // 分割の比率（％）の範囲と刻み。ドラッグ・矢印キーで 5% ずつ動かす
-  const LIMITS = { splitPercent: [20, 80], mainPercent: [50, 85], sidePercent: [20, 80] };
+  const LIMITS = { splitPercent: [10, 90], mainPercent: [20, 90], sidePercent: [10, 90] };
   const DEFAULT_PCT = { splitPercent: 50, mainPercent: 70, sidePercent: 50 };
   const LAYOUTS = [
     { id: 0, name: '1画面', grid: ['1fr', '1fr'], cells: [[1, 1, 2, 2]] },
@@ -1543,7 +1556,7 @@
     }
     for (const [k, [lo, hi]] of Object.entries(LIMITS)) {
       const v = fval(k);
-      if (!(v >= lo && v <= hi)) f.elements[k].value = String(Math.min(hi, Math.max(lo, Math.round((v || DEFAULT_PCT[k]) / 5) * 5)));
+      if (!(v >= lo && v <= hi)) f.elements[k].value = String(Math.min(hi, Math.max(lo, Math.round(v || DEFAULT_PCT[k]))));
     }
     if (!LAYOUTS.some((l) => l.id === fval('layout'))) f.elements.layout.value = '0';
     $('#weatherPlace').textContent = `（地域：${s.weatherPlace || '未設定'}）`;
@@ -1672,10 +1685,74 @@
       addDivider(lp, 'v', 'sidePercent', sd, mp, 100 - mp, `${sd} : ${100 - sd}`);
     }
     $('#lpHint').textContent = layout === 0 ? '画面全体に区画1を表示します。'
-      : `青い境界線をドラッグ（またはクリックして ←→↑↓ キー）で比率を変えられます。${layout === 3 ? (portrait ? '縦向きでは、メインが上、サイドが下に横並びになります。' : '横向きでは、メインが左、サイドが右に縦並びになります。') : ''}`;
+      : `青い境界線をドラッグ（またはクリックして ←→↑↓ キー、Shift で 5% ずつ）で比率を変えられます。${layout === 3 ? (portrait ? '縦向きでは、メインが上、サイドが下に横並びになります。' : '横向きでは、メインが左、サイドが右に縦並びになります。') : ''}`;
+    renderRatioFit();
     updateLayoutDirty();
     $('#layoutSummary').textContent = LAYOUTS[layout].name + (layout === 1 || layout === 2 ? `（${sp} : ${100 - sp}）` : layout === 3 ? `（メイン ${mp}%）` : '');
   }
+
+  // ---- 区画の縦横比をぴったり合わせる（例：縦長の画面のメインに、16:9 の横長動画）
+
+  /** 合わせる区画を動かす比率の項目と、その区画が決まる割合（0〜1）。合わせられない（区画が画面全体など）ときは null */
+  function ratioTarget(layout, zone, portrait, W, H, r) {
+    if (layout === 1) return { field: 'splitPercent', frac: zone === 0 ? (r * H) / W : 1 - (r * H) / W };
+    if (layout === 2) return { field: 'splitPercent', frac: zone === 0 ? W / (r * H) : 1 - W / (r * H) };
+    if (layout === 3 && zone === 0) return { field: 'mainPercent', frac: portrait ? W / (r * H) : (r * H) / W };
+    return null;
+  }
+
+  /** 現在の比率の項目（1% 刻みの数字）の表示と、合わせる区画の選択肢を、いまの分割に合わせる */
+  function renderRatioFit() {
+    const layout = fval('layout');
+    const zones = layout === 1 || layout === 2 ? [0, 1] : layout === 3 ? [0] : [];
+    $('#fitRatioRow').hidden = !zones.length;
+    $('#frFine').hidden = !zones.length;
+    if (!zones.length) return;
+    const portrait = screenDims(selected()).portrait;
+    const names = zoneLabels(layout, portrait);
+    const prev = $('#frZone').value;
+    $('#frZone').innerHTML = zones.map((i) => `<option value="${i}">区画${i + 1}（${names[i]}）を</option>`).join('');
+    if (zones.map(String).includes(prev)) $('#frZone').value = prev;
+    const field = layout === 3 ? 'mainPercent' : 'splitPercent';
+    const [lo, hi] = LIMITS[field];
+    $('#frPct').min = lo; $('#frPct').max = hi;
+    if (document.activeElement !== $('#frPct')) $('#frPct').value = fval(field);
+    $('#frPctLabel').textContent = layout === 3 ? `メイン ${lo}〜${hi}%` : `区画1 ${lo}〜${hi}%`;
+  }
+
+  $('#frApply').addEventListener('click', () => {
+    const layout = fval('layout');
+    const [rw, rh] = $('#frRatio').value.split(':').map(Number);
+    const { w: W, h: H, portrait } = screenDims(selected());
+    const zone = Number($('#frZone').value || 0);
+    const t = ratioTarget(layout, zone, portrait, W, H, rw / rh);
+    if (!t) return;
+    const [lo, hi] = LIMITS[t.field];
+    const want = Math.round(t.frac * 100);
+    const pct = Math.min(hi, Math.max(lo, want));
+    layoutForm().elements[t.field].value = String(pct);
+    renderLayoutCard();
+    refreshZones();
+    const size = zoneSizes(W, H)[zone];
+    const got = ratioLabel(size[0], size[1]).text;
+    const err = Math.abs(size[0] / size[1] / (rw / rh) - 1) * 100;
+    $('#frNote').textContent = want < lo || want > hi
+      ? `範囲（${lo}〜${hi}%）の端までしか動かせず、${got} になります`
+      : `${pct}% に設定しました（区画${zone + 1}は ${got}、${$('#frRatio').value} との差 ${err.toFixed(1)}%）。「保存」で反映されます`;
+  });
+  $('#frPct').addEventListener('input', () => {
+    const layout = fval('layout');
+    const field = layout === 3 ? 'mainPercent' : 'splitPercent';
+    const [lo, hi] = LIMITS[field];
+    const v = Math.round(Number($('#frPct').value));
+    if (!(v >= lo && v <= hi)) return;
+    layoutForm().elements[field].value = String(v);
+    const keep = $('#frPct').value;
+    renderLayoutCard();
+    $('#frPct').value = keep;
+    refreshZones();
+  });
+  $('#frRatio').addEventListener('change', () => { $('#frNote').textContent = ''; });
 
   /** 境界線。axis: 'v'=縦線（左右に動かす）/ 'h'=横線（上下に動かす）。offset・len は線の始まりの位置と長さ（％） */
   function addDivider(lp, axis, field, value, offset, len, label) {
@@ -1691,9 +1768,9 @@
     else { d.style.top = value + '%'; d.style.left = offset + '%'; d.style.width = len + '%'; }
     d.innerHTML = `<span>${label}</span>`;
     const [lo, hi] = LIMITS[field];
-    /** 比率を 5% 刻みで設定して描き直す。境界線の要素は入れ替わるので、フォーカスも付け直す */
+    /** 比率を 1% 刻みで設定して描き直す。境界線の要素は入れ替わるので、フォーカスも付け直す */
     const set = (pct, keepFocus) => {
-      const v = Math.min(hi, Math.max(lo, Math.round(pct / 5) * 5));
+      const v = Math.min(hi, Math.max(lo, Math.round(pct)));
       if (v === fval(field)) return;
       layoutForm().elements[field].value = String(v);
       renderLayoutCard();
@@ -1709,7 +1786,8 @@
       window.addEventListener('pointercancel', up);
     });
     d.addEventListener('keydown', (e) => {
-      const step = { ArrowLeft: -5, ArrowUp: -5, ArrowRight: 5, ArrowDown: 5 }[e.key];
+      const unit = e.shiftKey ? 5 : 1;
+      const step = { ArrowLeft: -unit, ArrowUp: -unit, ArrowRight: unit, ArrowDown: unit }[e.key];
       if (!step) return;
       e.preventDefault();
       set(fval(field) + step, true);
