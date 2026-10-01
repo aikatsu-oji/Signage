@@ -189,6 +189,13 @@
     } catch (e) { toast(e.message); }
   });
 
+  // モニターは選んだ時点で反映する（保存ボタンを押さずに「再生画面を開く」を押しても、選んだモニターで開くように）
+  $('#monitor').addEventListener('change', async () => {
+    try {
+      await post('/local/settings', { monitor: Number($('#monitor').value) });
+      toast('表示するモニターを切り替えました');
+    } catch (e) { toast(e.message); }
+  });
   $('#openPlayer').addEventListener('click', () => post('/local/open-player'));
   $('#openAdmin').addEventListener('click', () => { window.open('/', '_blank'); });
 

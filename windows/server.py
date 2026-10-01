@@ -35,7 +35,7 @@ mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
-VERSION = "1.5.4"
+VERSION = "1.5.5"
 
 
 def resource_dir() -> Path:
