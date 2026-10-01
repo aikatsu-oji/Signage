@@ -44,6 +44,9 @@ class MainActivity : Activity() {
         private val MAIN_CHOICES = listOf(50, 60, 65, 70, 75, 80)
         private val SIDE_CHOICES = listOf(30, 40, 50, 60, 70)
 
+        /** 選択肢に、いま設定されている値（管理画面で 1% 刻みに決めた値など）も加える。入れないと、画面を開いたときに近い選択肢へ書き換わってしまう */
+        private fun withCurrent(base: List<Int>, value: Int) = (base + value).distinct().sorted()
+
         private fun nearest(choices: List<Int>, value: Int) =
             choices.indices.minByOrNull { kotlin.math.abs(choices[it] - value) } ?: 0
     }
@@ -335,15 +338,18 @@ class MainActivity : Activity() {
         findViewById<View>(R.id.splitSpinner2).visibility = if (threeZones) View.VISIBLE else View.GONE
         if (count == 2) {
             label.text = "画面の比率（区画1 : 区画2）"
-            spinner.adapter = adapter(SPLIT_CHOICES.map { "${names[0]} $it% : ${names[1]} ${100 - it}%" })
-            spinner.setSelection(nearest(SPLIT_CHOICES, prefs.splitPercent))
+            splitChoices = withCurrent(SPLIT_CHOICES, prefs.splitPercent)
+            spinner.adapter = adapter(splitChoices.map { "${names[0]} $it% : ${names[1]} ${100 - it}%" })
+            spinner.setSelection(splitChoices.indexOf(prefs.splitPercent).coerceAtLeast(0))
         } else if (threeZones) {
             label.text = "メインとサイドの比率（区画1 : 区画2・3）"
-            spinner.adapter = adapter(MAIN_CHOICES.map { "メイン $it% : サイド ${100 - it}%" })
-            spinner.setSelection(nearest(MAIN_CHOICES, prefs.mainPercent))
+            mainChoices = withCurrent(MAIN_CHOICES, prefs.mainPercent)
+            spinner.adapter = adapter(mainChoices.map { "メイン $it% : サイド ${100 - it}%" })
+            spinner.setSelection(mainChoices.indexOf(prefs.mainPercent).coerceAtLeast(0))
             val side = findViewById<Spinner>(R.id.splitSpinner2)
-            side.adapter = adapter(SIDE_CHOICES.map { "サイド1 $it% : サイド2 ${100 - it}%" })
-            side.setSelection(nearest(SIDE_CHOICES, prefs.sidePercent))
+            sideChoices = withCurrent(SIDE_CHOICES, prefs.sidePercent)
+            side.adapter = adapter(sideChoices.map { "サイド1 $it% : サイド2 ${100 - it}%" })
+            side.setSelection(sideChoices.indexOf(prefs.sidePercent).coerceAtLeast(0))
         }
     }
 
@@ -368,13 +374,17 @@ class MainActivity : Activity() {
         }
     }
 
+    private var splitChoices = SPLIT_CHOICES
+    private var mainChoices = MAIN_CHOICES
+    private var sideChoices = SIDE_CHOICES
+
     private fun setupSplit() {
         findViewById<Spinner>(R.id.splitSpinner).onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 if (Prefs.zoneCount(prefs.layout) == 3) {
-                    MAIN_CHOICES.getOrNull(position)?.let { prefs.mainPercent = it }
+                    mainChoices.getOrNull(position)?.let { prefs.mainPercent = it }
                 } else {
-                    SPLIT_CHOICES.getOrNull(position)?.let { prefs.splitPercent = it }
+                    splitChoices.getOrNull(position)?.let { prefs.splitPercent = it }
                 }
             }
 
@@ -382,7 +392,7 @@ class MainActivity : Activity() {
         }
         findViewById<Spinner>(R.id.splitSpinner2).onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                SIDE_CHOICES.getOrNull(position)?.let { prefs.sidePercent = it }
+                sideChoices.getOrNull(position)?.let { prefs.sidePercent = it }
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}

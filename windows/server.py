@@ -37,7 +37,7 @@ mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
-VERSION = "1.8.4"
+VERSION = "1.8.5"
 
 
 def resource_dir() -> Path:
@@ -273,7 +273,7 @@ class Server:
         u = {}
         if "layout" in j: u["layout"] = clamp(j["layout"], 0, 3)
         if "splitPercent" in j: u["splitPercent"] = clamp(j["splitPercent"], 10, 90)
-        if "mainPercent" in j: u["mainPercent"] = clamp(j["mainPercent"], 40, 90)
+        if "mainPercent" in j: u["mainPercent"] = clamp(j["mainPercent"], 20, 90)
         if "sidePercent" in j: u["sidePercent"] = clamp(j["sidePercent"], 10, 90)
         if isinstance(j.get("zoneTypes"), list):
             types = list(self.store.get("zoneTypes"))
