@@ -75,7 +75,6 @@ class MediaZone(
     /** 動画が固まったことを見つけるための記録 */
     private var lastPosition = -1L
     private var lastProgressAt = 0L
-    private var recoveredOnce = false
     private var stallCheck: Runnable? = null
 
     private val handler = Handler(Looper.getMainLooper())
@@ -142,6 +141,7 @@ class MediaZone(
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                if (currentIsVideo) PlayerStatus.issue("再生エラー ${error.errorCodeName}：$currentName ${videoInfo()}")
                 if (currentIsVideo) handler.post { goto(1) }
             }
         })
@@ -278,6 +278,9 @@ class MediaZone(
     /** いま再生している画像・動画の回転（0・90・180・270） */
     private var rotation = 0
 
+    /** いま再生している項目のファイル名（問題の記録用） */
+    private var currentName = ""
+
     /**
      * 画像・動画のレイヤーを回転する。90・270 度は、区画の縦横を入れ替えた大きさにして中央で回す
      * （回したあとの見た目が区画にちょうど収まり、表示方法の判定も入れ替えた大きさで行われる）。
@@ -300,6 +303,7 @@ class MediaZone(
 
     private fun play(item: MediaEntry, my: Int) {
         applyRotation(prefs.fileRotation(zoneIndex, item.name))
+        currentName = item.name
         showMessage(null)
         currentIsVideo = item.isVideo
         PlayerStatus.media(zoneIndex, item.name, item.isVideo, index + 1, playlist.size)
@@ -400,33 +404,73 @@ class MediaZone(
      * 再生位置が一定時間進まなければ「固まった」とみなし、まずその位置から読み込み直す。
      * それでも進まなければ次の項目へ進む（専用ボードなどで映像が止まったままになるのを防ぐ）。
      */
+    /** 動画の形式（止まる動画の特徴を調べるための記録） */
+    private fun videoInfo(): String {
+        val f = player.videoFormat ?: return ""
+        val fps = if (f.frameRate > 0) "${f.frameRate.toInt()}fps" else ""
+        val kbps = if (f.bitrate > 0) "${f.bitrate / 1000}kbps" else ""
+        return "（${f.sampleMimeType ?: "?"} ${f.width}x${f.height} $fps $kbps）".replace("  ", " ")
+    }
+
+    private fun stateName() = when (player.playbackState) {
+        Player.STATE_IDLE -> "IDLE"
+        Player.STATE_BUFFERING -> "BUFFERING"
+        Player.STATE_READY -> "READY"
+        Player.STATE_ENDED -> "ENDED"
+        else -> "?"
+    }
+
+    /**
+     * 動画が途中で固まったとき、段階的に復旧する：6 秒止まったら少し先へ移動 → さらに 6 秒で読み込み直し → さらに 6 秒で次へ進む。
+     * （再生を始めた直後は、読み込みに時間がかかることがあるので 15 秒まで待つ）。止まった記録は、管理画面の配信状況に出る
+     */
     private fun startStallCheck(my: Int) {
         lastPosition = -1L
         lastProgressAt = System.currentTimeMillis()
-        recoveredOnce = false
+        var step = 0
+        var stallPos = -1L // 最後に止まった位置（自分で動かした分を、復旧とは数えないため）
+        var everPlayed = false
         stallCheck = object : Runnable {
             override fun run() {
                 if (my != token || !currentIsVideo) return
                 val now = System.currentTimeMillis()
                 val position = player.currentPosition
-                if (paused || !player.playWhenReady || position != lastPosition) {
+                val progressed = position != lastPosition
+                if (paused || !player.playWhenReady || progressed) {
+                    if (progressed && position > 0) {
+                        everPlayed = true
+                        // 止まった位置より 3 秒以上先まで再生できたら、復旧できたとみなす
+                        if (stallPos < 0 || position > stallPos + 3000) {
+                            step = 0
+                            stallPos = -1L
+                        }
+                    }
                     lastPosition = position
                     lastProgressAt = now
-                } else if (now - lastProgressAt > 12_000) {
-                    if (!recoveredOnce) {
-                        recoveredOnce = true
-                        lastProgressAt = now
-                        player.prepare()
-                        player.seekTo(position + 500)
-                        player.playWhenReady = true
-                    } else {
-                        goto(1)
-                        return
+                } else if (now - lastProgressAt > (if (everPlayed) 6_000 else 15_000)) {
+                    step++
+                    stallPos = position
+                    lastProgressAt = now
+                    PlayerStatus.issue("止まりました（復旧 $step 段階目）：$currentName ${videoInfo()} 位置 ${position / 1000}秒 状態 ${stateName()}")
+                    when (step) {
+                        1 -> {
+                            player.seekTo(position + 500)
+                            player.playWhenReady = true
+                        }
+                        2 -> {
+                            player.prepare()
+                            player.seekTo(position + 500)
+                            player.playWhenReady = true
+                        }
+                        else -> {
+                            goto(1)
+                            return
+                        }
                     }
                 }
-                handler.postDelayed(this, 3000)
+                handler.postDelayed(this, 2000)
             }
-        }.also { handler.postDelayed(it, 3000) }
+        }.also { handler.postDelayed(it, 2000) }
     }
 
     private fun cancelTimers() {

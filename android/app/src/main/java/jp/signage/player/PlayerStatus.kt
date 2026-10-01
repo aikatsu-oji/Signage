@@ -27,4 +27,15 @@ object PlayerStatus {
     }
 
     fun clear() = zones.clear()
+
+    /** 動画の再生で起きた問題（止まった・エラー）の記録。新しい順に 8 件。原因を調べるため、管理画面の配信状況に出す */
+    private val issueList = java.util.concurrent.ConcurrentLinkedDeque<String>()
+
+    fun issue(text: String) {
+        val t = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.JAPAN).format(java.util.Date())
+        issueList.addFirst("$t $text")
+        while (issueList.size > 8) issueList.pollLast()
+    }
+
+    fun issues(): List<String> = issueList.toList()
 }

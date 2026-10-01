@@ -881,6 +881,9 @@
       lines.push(`テロップ：${d.ticker.standing ? '止めるまで流すテロップあり' : d.ticker.queued ? `待機 ${d.ticker.queued} 件` : 'なし'}`);
       if (d.disk) lines.push(`空き容量：${fmtSize(d.disk.free)}（全体 ${fmtSize(d.disk.total)}）`);
       lines.push(`稼働：${fmtUptime(d.uptimeSec)}　v${d.version}`);
+      if ((d.player.issues || []).length) {
+        lines.push(`<details class="zl"><summary>動画の問題の記録（${d.player.issues.length} 件）</summary>${d.player.issues.map((t) => `<div class="sub">${esc(t)}</div>`).join('')}</details>`);
+      }
     } else if (excluded) {
       const st = { ok: '接続中', pin: 'PIN が違います', denied: '操作できません', offline: '応答なし', checking: '確認中…' }[dev.status] || '';
       if (st) lines.push(`接続：${st}${dev.version ? `　v${dev.version}` : ''}`);
