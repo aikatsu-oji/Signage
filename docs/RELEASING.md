@@ -20,3 +20,7 @@ GitHub Actions（`.github/workflows/release.yml`）が Releases に添付しま�
 5. Releases のページに、APK・exe・SHA256SUMS・ライセンスが添付されます。
 
 注意：APK は debug 署名のままです。社外へ広く配る場合は、リリース鍵で署名してください（`docs/DISTRIBUTION.md`）。
+
+## タグを push できない環境のとき
+GitHub の Actions タブ →「Release」→「Run workflow」で、`tag`（例：`v1.9.1`）と、`binaries_ref`（APK・exe が入っているコミットの SHA）を指定して実行します。
+タグは、実行したコミットに自動で作られます。

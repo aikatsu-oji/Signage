@@ -1,9 +1,19 @@
-# タグ（v1.9.1 など）を push すると、そのタグの release/ フォルダにあるファイルを、GitHub の Releases に添付して公開する
+# GitHub の Releases に、APK・exe を添付して公開する
+#  ・タグ（v1.9.1 など）を push する
+#  ・または Actions タブから「Run workflow」で、版（tag）と、APK・exe が入っているコミットを指定する
 name: Release
 
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release のタグ（例：v1.9.1）'
+        required: true
+      binaries_ref:
+        description: 'APK・exe が入っているコミット（省略すると、実行したコミット）'
+        required: false
 
 permissions:
   contents: write
@@ -13,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.binaries_ref || github.sha }}
 
       - name: チェックサムを確認する
         run: cd release && sha256sum -c SHA256SUMS
@@ -20,7 +32,9 @@ jobs:
       - name: Releases に添付して公開する
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ github.ref_name }}
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ inputs.tag || github.ref_name }}
           body_path: release/README.md
           files: |
             release/*.apk
