@@ -136,6 +136,23 @@ class MainActivity : Activity() {
         refreshFolder()
         if (offices.isEmpty()) loadOffices()
         updateAdminInfo() // 電池の最適化の設定から戻ってきたとき
+        offerPendingUpdate()
+    }
+
+    /** 管理画面から送られた更新の確認画面を、自動で開けなかったとき、アプリを開いたこの画面から進められるようにする */
+    private fun offerPendingUpdate() {
+        val confirm = AppUpdater.pendingConfirm ?: return
+        AlertDialog.Builder(this)
+            .setTitle("アプリの更新があります")
+            .setMessage("管理画面から、新しい版のアプリが送られています。更新を進めますか？")
+            .setPositiveButton("更新する") { _, _ ->
+                AppUpdater.pendingConfirm = null
+                try { startActivity(confirm) } catch (e: Exception) {
+                    Toast.makeText(this, "確認画面を開けませんでした。管理画面からもう一度送ってください", Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNegativeButton("あとで", null)
+            .show()
     }
 
     override fun onPause() {

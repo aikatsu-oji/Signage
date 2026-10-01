@@ -21,6 +21,9 @@ object AppUpdater {
     /** idle / received / pending_user / installing / success / failed */
     @Volatile var state = State("idle", "")
 
+    /** 端末の確認画面（「更新しますか？」）。バックグラウンドからは開けないことがあるため、保持して、通知・アプリ画面から開けるようにする */
+    @Volatile var pendingConfirm: Intent? = null
+
     const val ACTION = "jp.signage.player.UPDATE_RESULT"
     const val MAX_BYTES = 200L * 1024 * 1024
 
@@ -97,19 +100,46 @@ class UpdateResultReceiver : BroadcastReceiver() {
         }
         when (val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, -1)) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                AppUpdater.state = AppUpdater.State("pending_user", "端末の画面に出た確認で「更新」「インストール」をタップしてください")
-                val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
-                try {
-                    confirm?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)?.let { context.startActivity(it) }
-                } catch (e: Exception) {
-                    AppUpdater.state = AppUpdater.State("failed", "確認画面を開けませんでした。端末でサイネージを開いてから、もう一度送ってください")
+                AppUpdater.state = AppUpdater.State("pending_user", "端末の画面に出た確認で「更新」「インストール」をタップしてください（出ないときは、端末の通知をタップするか、サイネージのアプリを開いてください）")
+                val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                AppUpdater.pendingConfirm = confirm
+                if (confirm != null) {
+                    // 端末の画面が別のアプリのときなど、確認画面を自動で開けない場合があるので、通知でも知らせる
+                    notifyConfirm(context, confirm)
+                    try { context.startActivity(confirm) } catch (e: Exception) { /* 通知か、アプリの画面から開く */ }
                 }
             }
-            PackageInstaller.STATUS_SUCCESS -> AppUpdater.state = AppUpdater.State("success", "更新しました")
+            PackageInstaller.STATUS_SUCCESS -> {
+                AppUpdater.pendingConfirm = null
+                AppUpdater.state = AppUpdater.State("success", "更新しました")
+            }
             else -> {
+                AppUpdater.pendingConfirm = null
                 val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "不明なエラー"
                 AppUpdater.state = AppUpdater.State("failed", "更新できませんでした（$status）：$msg")
             }
         }
+    }
+
+    private fun notifyConfirm(context: Context, confirm: Intent) {
+        try {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                nm.createNotificationChannel(
+                    android.app.NotificationChannel("update", "アプリの更新", android.app.NotificationManager.IMPORTANCE_HIGH),
+                )
+            }
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+            val tap = PendingIntent.getActivity(context, 7, confirm, flags)
+            val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) android.app.Notification.Builder(context, "update")
+            else @Suppress("DEPRECATION") android.app.Notification.Builder(context)
+            nm.notify(
+                7001,
+                builder.setSmallIcon(android.R.drawable.stat_sys_download_done)
+                    .setContentTitle("サイネージの更新があります")
+                    .setContentText("タップして、更新を進めてください")
+                    .setContentIntent(tap).setAutoCancel(true).build(),
+            )
+        } catch (e: Exception) { /* 通知を出せなくても、アプリの画面から開ける */ }
     }
 }
