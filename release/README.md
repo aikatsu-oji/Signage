@@ -1,5 +1,7 @@
 # リリース（配布用ファイル）
 
+ビルド済みのファイルは、GitHub の **Releases** のページからダウンロードできます（ブランチには入れていません。出し方は [docs/RELEASING.md](../docs/RELEASING.md)）。
+
 | ファイル | 内容 | バージョン |
 |---|---|---|
 | `Signage-android-1.9.1.apk` | Android / Fire TV 用アプリ | 1.9.1 |

@@ -1,0 +1,30 @@
+# タグ（v1.9.1 など）を push すると、そのタグの release/ フォルダにあるファイルを、GitHub の Releases に添付して公開する
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: チェックサムを確認する
+        run: cd release && sha256sum -c SHA256SUMS
+
+      - name: Releases に添付して公開する
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body_path: release/README.md
+          files: |
+            release/*.apk
+            release/*.exe
+            release/SHA256SUMS
+            release/LICENSE
+            release/THIRD_PARTY_NOTICES.md
