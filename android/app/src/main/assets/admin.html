@@ -56,6 +56,10 @@
   .done { color: var(--ok); } .fail { color: var(--danger); }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
   .file { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
+  .thumb { position: relative; overflow: hidden; }
+  .thumb .timg { position: absolute; inset: 0; background: center / contain no-repeat; display: flex; align-items: center; justify-content: center; }
+  .thumb .play { position: relative; }
+  .thumb.vid { position: relative; text-shadow: 0 1px 4px rgba(0,0,0,.8); color: #fff; }
   .thumb { aspect-ratio: 16 / 10; background: #0b0d12 center / contain no-repeat; display: flex; align-items: center; justify-content: center; color: #cfd6e4; font-size: 28px; cursor: pointer; }
   .meta { padding: 6px 8px; font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
   .meta .fname { word-break: break-all; }
@@ -410,6 +414,8 @@
               <label class="check"><input type="checkbox" name="videoSound"> 動画の音声を再生</label>
               <label class="check" title="動画が途中で止まる・固まる機種（業務用サイネージのボードなど）向け。Android 版のみ">
                 <input type="checkbox" name="videoCompat"> 動画の互換モード（Android のみ）</label>
+              <label class="check" title="複数の区画で動画を同時に再生すると止まる機種向け。2 つ目以降の区画の動画を、ソフトウェアデコード・音声なしで再生します。Android 版のみ">
+                <input type="checkbox" name="videoMultiSoft"> 複数の動画を同時に再生するとき、2つ目以降はソフトウェアデコード（Android のみ）</label>
             </div>
           </fieldset>
           <fieldset>
@@ -877,6 +883,9 @@
       lines.push(`テロップ：${d.ticker.standing ? '止めるまで流すテロップあり' : d.ticker.queued ? `待機 ${d.ticker.queued} 件` : 'なし'}`);
       if (d.disk) lines.push(`空き容量：${fmtSize(d.disk.free)}（全体 ${fmtSize(d.disk.total)}）`);
       lines.push(`稼働：${fmtUptime(d.uptimeSec)}　v${d.version}`);
+      if ((d.player.issues || []).length) {
+        lines.push(`<details class="zl"><summary>動画の問題の記録（${d.player.issues.length} 件）</summary>${d.player.issues.map((t) => `<div class="sub">${esc(t)}</div>`).join('')}</details>`);
+      }
     } else if (excluded) {
       const st = { ok: '接続中', pin: 'PIN が違います', denied: '操作できません', offline: '応答なし', checking: '確認中…' }[dev.status] || '';
       if (st) lines.push(`接続：${st}${dev.version ? `　v${dev.version}` : ''}`);
@@ -1313,10 +1322,11 @@
     card.className = 'file';
     card.innerHTML = `<div class="thumb"></div>
       <div class="meta"><div class="fname"></div><div class="rule"></div>
-        <div class="row"><span></span><div class="btns"><button class="cond" type="button" title="時間帯・曜日・期間で再生を絞る">条件</button><button class="danger" type="button">削除</button></div></div></div>`;
+        <div class="row"><span></span><div class="btns"><button class="rot" type="button" title="サイネージでの表示を 90 度ずつ回転（横倒しや逆さまのとき）">回転</button><button class="cond" type="button" title="時間帯・曜日・期間で再生を絞る">条件</button><button class="danger" type="button">削除</button></div></div></div>`;
     const thumb = $('.thumb', card);
-    thumb.textContent = f.video ? '▶' : '';
-    if (!f.video) { thumb.dataset.zone = z.index; thumb.dataset.name = f.name; thumb.dataset.dev = dev.key; }
+    thumb.innerHTML = `<div class="timg"></div>${f.video ? '<span class="play">▶</span>' : ''}`;
+    thumb.dataset.zone = z.index; thumb.dataset.name = f.name; thumb.dataset.dev = dev.key;
+    if (f.video) { thumb.dataset.video = '1'; thumb.dataset.size = f.size || 0; thumb.classList.add('vid'); }
     thumb.addEventListener('click', () => openFile(dev, z.index, f.name));
     $('.fname', card).textContent = f.name;
     $('.row span', card).textContent = (f.video ? '動画・' : '画像・') + fmtSize(f.size);
@@ -1330,6 +1340,29 @@
     const ruleEl = $('.rule', card);
     ruleEl.textContent = f.rule ? '🕒 ' + describeRule(f.rule) : '';
     ruleEl.classList.toggle('on', !!f.rule);
+    // 表示の回転（90 度ずつ）。サムネイルにも反映する
+    const rot = $('button.rot', card);
+    const showRot = () => {
+      const d = f.rotation || 0;
+      const timg = $('.timg', thumb);
+      // 90・270 度は縦横が入れ替わるので、枠（16:10）に収まるよう縮める
+      timg.style.transform = d ? `rotate(${d}deg)${d === 90 || d === 270 ? ' scale(0.625)' : ''}` : '';
+      rot.textContent = d ? `回転 ${d}°` : '回転';
+      rot.classList.toggle('primary', !!d);
+    };
+    rot.disabled = !z.writable;
+    rot.addEventListener('click', async () => {
+      const next = ((f.rotation || 0) + 90) % 360;
+      rot.disabled = true;
+      try {
+        await post(dev, '/api/filerotate', { zone: z.index, name: f.name, degrees: next });
+        f.rotation = next;
+        showRot();
+        toast(next ? `「${f.name}」の表示を ${next}° 回転にしました` : `「${f.name}」の回転を元に戻しました`);
+      } catch (e) { toast(e.message); }
+      rot.disabled = !z.writable;
+    });
+    showRot();
     return card;
   }
 
@@ -1422,12 +1455,89 @@
       thumbs.unobserve(el);
       const dev = devices.get(el.dataset.dev);
       if (!dev) continue;
+      if (el.dataset.video) {
+        videoThumb(dev, el.dataset.zone, el.dataset.name, Number(el.dataset.size)).then((u) => { if (u) el.firstElementChild.style.backgroundImage = `url("${u}")`; });
+        continue;
+      }
       api(dev, fileUrl(el.dataset.zone, el.dataset.name), {}, 30000)
         .then((res) => res.blob())
-        .then((b) => { const u = URL.createObjectURL(b); blobUrls.push(u); el.style.backgroundImage = `url("${u}")`; })
-        .catch(() => { el.textContent = '？'; });
+        .then((b) => { const u = URL.createObjectURL(b); blobUrls.push(u); el.firstElementChild.style.backgroundImage = `url("${u}")`; })
+        .catch(() => { el.querySelector('.timg').textContent = '？'; });
     }
   }, { rootMargin: '200px' });
+
+  // ---- 動画のサムネイル（動画の 1 コマを取り出して表示する）
+
+  const vthumbCache = new Map();   // 端末・区画・ファイル名・大きさ → 画像（取り出せなかったときは ''）
+  let vthumbQueue = Promise.resolve();
+  const VTHUMB_WHOLE = 40e6;       // これ以下の動画は、全部読み込んでから取り出す（末尾に情報がある動画にも対応）
+  const VTHUMB_HEAD = 4 * 1024 * 1024;
+
+  /** 動画の先頭付近の 1 コマを JPEG（data URL）にする */
+  function grabFrame(src) {
+    return new Promise((resolve, reject) => {
+      const v = document.createElement('video');
+      v.muted = true; v.playsInline = true; v.preload = 'auto';
+      const timer = setTimeout(() => done(new Error('timeout')), 10000);
+      let finished = false;
+      const done = (err, url) => { if (finished) return; finished = true; clearTimeout(timer); v.removeAttribute('src'); v.load(); err ? reject(err) : resolve(url); };
+      v.onerror = () => done(new Error('decode'));
+      const capture = () => {
+        try {
+          const w = 320, h = Math.max(1, Math.round(w * (v.videoHeight || 9) / (v.videoWidth || 16)));
+          const c = document.createElement('canvas'); c.width = w; c.height = h;
+          c.getContext('2d').drawImage(v, 0, 0, w, h);
+          done(null, c.toDataURL('image/jpeg', 0.7));
+        } catch (e) { done(e); }
+      };
+      v.onloadeddata = () => {
+        if (Number.isFinite(v.duration) && v.duration > 0) {
+          v.onseeked = capture;
+          v.currentTime = Math.min(1, v.duration * 0.1);
+          // 移動できない動画（録画したままの WebM など）は、いま出ている 1 コマを使う
+          setTimeout(capture, 1500);
+        } else {
+          // 長さの情報がない動画（録画したままの WebM など）は、少し再生して 1 コマを取る
+          v.play().then(() => setTimeout(capture, 200)).catch(() => capture());
+        }
+      };
+      v.src = src;
+    });
+  }
+
+  /** 端末から動画を読み込み、サムネイルにする。一度に 1 本ずつ（端末に負担をかけない）。取り出した画像は覚えておく */
+  function videoThumb(dev, zone, name, size) {
+    const key = `${dev.key}|${zone}|${name}|${size}`;
+    if (vthumbCache.has(key)) return Promise.resolve(vthumbCache.get(key));
+    const job = vthumbQueue.then(async () => {
+      if (vthumbCache.has(key)) return vthumbCache.get(key);
+      let url = '';
+      try {
+        const res = await api(dev, fileUrl(zone, name), size > VTHUMB_WHOLE ? { headers: { Range: `bytes=0-${VTHUMB_HEAD - 1}` } } : {}, 60000);
+        let blob;
+        if (size > VTHUMB_WHOLE && res.body?.getReader) {
+          // 大きい動画は先頭だけ読む（端末が Range に対応していなくても、途中で打ち切る）
+          const reader = res.body.getReader();
+          const parts = []; let got = 0;
+          while (got < VTHUMB_HEAD) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            parts.push(value); got += value.length;
+          }
+          reader.cancel().catch(() => {});
+          blob = new Blob(parts, { type: res.headers.get('Content-Type') || 'video/mp4' });
+        } else {
+          blob = await res.blob();
+        }
+        const obj = URL.createObjectURL(blob);
+        try { url = await grabFrame(obj); } finally { URL.revokeObjectURL(obj); }
+      } catch (e) { console.warn('動画のサムネイルを作れませんでした', name, e && e.message); url = ''; }
+      vthumbCache.set(key, url);
+      return url;
+    });
+    vthumbQueue = job.catch(() => {});
+    return job;
+  }
 
   async function openFile(dev, zone, name) {
     const w = window.open('', '_blank');
@@ -1864,7 +1974,7 @@
         const cell = document.createElement('div');
         cell.className = 'fitcell';
         const tag = it.video ? 'video' : 'img';
-        const media = (cls) => `<${tag} ${cls} src="${it.src}" ${it.video ? 'muted preload="metadata"' : ''} style="object-fit:${cls === 'class="bg"' ? 'cover' : v.fit === FIT_FILL ? 'cover' : 'contain'}"></${tag}>`;
+        const media = (cls) => `<${tag} ${cls} src="${it.src}${it.video ? '#t=0.1' : ''}" ${it.video ? 'muted playsinline preload="auto"' : ''} style="object-fit:${cls === 'class="bg"' ? 'cover' : v.fit === FIT_FILL ? 'cover' : 'contain'}"></${tag}>`;
         cell.innerHTML = `<div class="fp" style="aspect-ratio:${z.w} / ${z.h}">${v.fit === FIT_BLUR ? media('class="bg"') : ''}${media('')}</div>
           <div class="verdict v-${v.level}"></div><div class="fitnote"></div>`;
         $('.verdict', cell).textContent = `区画${z.i + 1}：${v.text}`;
@@ -2283,7 +2393,7 @@
 
   /** 設定ファイルに含める設定の項目（端末ごとに違うフォルダ・端末名・PIN・天気の地域は含めない） */
   const EXPORT_KEYS = ['layout', 'splitPercent', 'mainPercent', 'sidePercent', 'zoneTypes', 'imageSeconds', 'shuffle', 'recursive',
-    'videoSound', 'videoCompat', 'fitMode', 'clockEnabled', 'clockPosition', 'clockSize',
+    'videoSound', 'videoCompat', 'videoMultiSoft', 'fitMode', 'clockEnabled', 'clockPosition', 'clockSize',
     'weatherEnabled', 'weatherIntervalMin', 'weatherSeconds', 'weatherTimeSeries'];
   const EXPORT_KIND = 'signage-settings';
 

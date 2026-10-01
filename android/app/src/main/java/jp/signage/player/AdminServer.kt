@@ -349,6 +349,16 @@ object AdminServer {
                 val folder = writableFolder(prefs, body.optString("zone"))
                 FolderStore.delete(app, folder, body.getString("name"), prefs.recursive)
                 prefs.setFileRule(body.optString("zone").toIntOrNull() ?: 0, body.getString("name"), null)
+                prefs.setFileRotation(body.optString("zone").toIntOrNull() ?: 0, body.getString("name"), 0)
+                json(200, JSONObject().put("ok", true))
+            }
+            "POST /api/filerotate" -> {
+                val body = req.json()
+                writableFolder(prefs, body.optString("zone")) // 区画の確認
+                val degrees = body.optInt("degrees", 0)
+                if (degrees !in listOf(0, 90, 180, 270)) throw HttpError(400, "回転は 0・90・180・270 のどれかにしてください")
+                prefs.setFileRotation(body.optString("zone").toInt(), body.getString("name"), degrees)
+                notify(EVENT_CONTENT)
                 json(200, JSONObject().put("ok", true))
             }
             "POST /api/filerule" -> {
@@ -466,7 +476,8 @@ object AdminServer {
             .put("id", prefs.deviceId).put("name", prefs.deviceName).put("version", runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: "")
             .put("time", System.currentTimeMillis())
             .put("uptimeSec", (android.os.SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime()) / 1000)
-            .put("player", JSONObject().put("running", PlayerStatus.running).put("age", JSONObject.NULL).put("zones", zones))
+            .put("player", JSONObject().put("running", PlayerStatus.running).put("age", JSONObject.NULL).put("zones", zones)
+                .put("issues", JSONArray(PlayerStatus.issues())))
             .put("ticker", JSONObject().put("standing", Ticker.standing(app) != null).put("queued", 0))
             .put("disk", disk ?: JSONObject.NULL)
             .put("platform", "android")
@@ -602,12 +613,14 @@ object AdminServer {
                     z.put("writable", FolderStore.isWritable(app, folder))
                     val files = JSONArray()
                     val rules = prefs.fileRulesOf(i)
+                    val rotations = prefs.fileRotationsOf(i)
                     runCatching { MediaScanner.scan(app.contentResolver, folder, prefs.recursive) }
                         .onFailure { z.put("error", "フォルダを読み込めません") }
                         .getOrDefault(emptyList())
                         .forEach {
                             files.put(JSONObject().put("name", it.name).put("video", it.isVideo).put("size", it.size).apply {
                                 rules[it.name]?.let { r -> put("rule", r) }
+                                rotations[it.name]?.takeIf { r -> r != 0 }?.let { r -> put("rotation", r) }
                             })
                         }
                     z.put("files", files)
@@ -626,6 +639,7 @@ object AdminServer {
             .put("recursive", prefs.recursive)
             .put("videoSound", prefs.videoSound)
             .put("videoCompat", prefs.videoCompat)
+            .put("videoMultiSoft", prefs.videoMultiSoft)
             .put("fitMode", prefs.fitMode)
             .put("orientation", when (prefs.orientation) {
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE -> 1
@@ -684,6 +698,7 @@ object AdminServer {
         if (j.has("recursive")) prefs.recursive = j.getBoolean("recursive")
         if (j.has("videoSound")) prefs.videoSound = j.getBoolean("videoSound")
         if (j.has("videoCompat")) prefs.videoCompat = j.getBoolean("videoCompat")
+        if (j.has("videoMultiSoft")) prefs.videoMultiSoft = j.getBoolean("videoMultiSoft")
         if (j.has("fitMode")) prefs.fitMode = j.getInt("fitMode")
         if (j.has("clockEnabled")) prefs.clockEnabled = j.getBoolean("clockEnabled")
         if (j.has("clockPosition")) prefs.clockPosition = j.getInt("clockPosition").coerceIn(0, 3)

@@ -37,6 +37,11 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putInt("fitMode", v.coerceIn(0, 3)).apply()
 
     /** 動画の互換モード（動画が途中で止まる機種向けに SurfaceView で描画する） */
+    /** 複数の区画で動画を同時に再生するとき、2 つ目以降の区画はソフトウェアデコード・音声なしで再生する（ハードウェアデコーダーの取り合いで止まるのを防ぐ） */
+    var videoMultiSoft: Boolean
+        get() = sp.getBoolean("videoMultiSoft", true)
+        set(v) = sp.edit().putBoolean("videoMultiSoft", v).apply()
+
     var videoCompat: Boolean
         get() = sp.getBoolean("videoCompat", false)
         set(v) = sp.edit().putBoolean("videoCompat", v).apply()
@@ -219,6 +224,23 @@ class Prefs(context: Context) {
         dir.mkdirs()
         Uri.fromFile(dir)
     }.getOrNull()
+
+    /** 画像・動画ごとの表示の回転（キーは「区画|ファイル名」、値は 90・180・270）。回転なしは 0 */
+    private fun fileRotations(): JSONObject = runCatching { JSONObject(sp.getString("fileRotations", "{}") ?: "{}") }.getOrDefault(JSONObject())
+
+    fun fileRotation(zone: Int, name: String): Int = fileRotations().optInt("$zone|$name", 0)
+
+    fun fileRotationsOf(zone: Int): Map<String, Int> {
+        val all = fileRotations()
+        val prefix = "$zone|"
+        return all.keys().asSequence().filter { it.startsWith(prefix) }.associate { it.removePrefix(prefix) to all.optInt(it, 0) }
+    }
+
+    fun setFileRotation(zone: Int, name: String, degrees: Int) {
+        val all = fileRotations()
+        if (degrees == 90 || degrees == 180 || degrees == 270) all.put("$zone|$name", degrees) else all.remove("$zone|$name")
+        sp.edit().putString("fileRotations", all.toString()).apply()
+    }
 
     /** 画像・動画ごとの再生条件（キーは「区画|ファイル名」）。条件が無いファイルは常に再生 */
     private fun fileRules(): JSONObject = runCatching { JSONObject(sp.getString("fileRules", "{}") ?: "{}") }.getOrDefault(JSONObject())

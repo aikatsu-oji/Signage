@@ -88,6 +88,7 @@ DEFAULTS = {
     "macLock": False,  # 操作できる端末を MAC アドレスで制限するか（初期状態は制限なし）
     "allowVpn": True,  # 制限中でも VPN（Tailscale）経由は許可するか（VPN では MAC アドレスを確認できない）
     "allowedMacs": [],  # 操作を許可する端末 [{mac, name}]
+    "fileRotations": {},  # 画像・動画ごとの表示の回転（キーは「区画|ファイル名」、値は 90・180・270）
     "fileRules": {},  # 画像・動画ごとの再生条件（キーは「区画|ファイル名」）
 }
 
@@ -213,6 +214,17 @@ class Store:
 
     def file_rule(self, zone, name):
         return (self.get("fileRules") or {}).get(f"{zone}|{name}")
+
+    def file_rotation(self, zone, name):
+        return int((self.get("fileRotations") or {}).get(f"{zone}|{name}", 0))
+
+    def set_file_rotation(self, zone, name, degrees):
+        rots = dict(self.get("fileRotations") or {})
+        if degrees in (90, 180, 270):
+            rots[f"{zone}|{name}"] = degrees
+        else:
+            rots.pop(f"{zone}|{name}", None)
+        self.update({"fileRotations": rots})
 
     def set_file_rule(self, zone, name, rule):
         rules = dict(self.get("fileRules") or {})
