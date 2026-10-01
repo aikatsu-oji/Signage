@@ -26,3 +26,11 @@ GitHub の Actions タブ →「Release」→「Run workflow」で、`tag`（例
 タグは、実行したコミットに自動で作られます。
 
 タグも Actions の手動実行も使えないときは、`.github/release-request.txt` に、1 行目にタグ、2 行目に APK・exe が入っているコミットの SHA を書いて push します（ブランチ上のこのファイルの変更で、Release が作られます）。
+
+## いつもの手順（スクリプト）
+ビルドして `dist/` に APK・exe を置いたら、次を実行します。版は、ソースから自動で読み取ります。
+```
+scripts/publish-release.sh "- 変更点1
+- 変更点2"
+```
+ブランチに、ファイルを入れたコミットと、公開を依頼するコミット（`.github/release-request.txt`）を push し、Actions が Releases に載せます。
