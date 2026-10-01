@@ -37,7 +37,7 @@ mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
-VERSION = "1.8.0"
+VERSION = "1.8.1"
 
 
 def resource_dir() -> Path:
@@ -236,6 +236,7 @@ class Server:
                        "zones": (self.player_status or {}).get("zones", []) if running else []},
             "ticker": {"standing": bool(s.get("tickerStanding")), "queued": len(s.ticker_queue)},
             "disk": disk,
+            "platform": "windows",
         }
 
     def access_info(self, addr):

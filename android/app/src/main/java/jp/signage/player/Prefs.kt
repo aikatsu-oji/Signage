@@ -125,6 +125,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("adminEnabled", false)
         set(v) = sp.edit().putBoolean("adminEnabled", v).apply()
 
+    /** 管理画面から送られた APK でのアプリ更新を許可するか（初期状態は許可しない） */
+    var allowRemoteUpdate: Boolean
+        get() = sp.getBoolean("allowRemoteUpdate", false)
+        set(v) = sp.edit().putBoolean("allowRemoteUpdate", v).apply()
+
     /** 操作できる端末を MAC アドレスで制限するか（初期状態は制限なし） */
     var macLock: Boolean
         get() = sp.getBoolean("macLock", false)

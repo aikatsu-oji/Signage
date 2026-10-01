@@ -464,6 +464,19 @@ class MainActivity : Activity() {
                 Toast.makeText(this, "ブラウザがありません", Toast.LENGTH_SHORT).show()
             }
         }
+        bindSwitch(R.id.updateSwitch, prefs.allowRemoteUpdate) {
+            prefs.allowRemoteUpdate = it
+            updateAdminInfo()
+        }
+        findViewById<Button>(R.id.updateUnknown).setOnClickListener {
+            try {
+                startActivity(
+                    Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
+                )
+            } catch (e: ActivityNotFoundException) {
+                Toast.makeText(this, "設定画面を開けません。端末の設定から、このアプリに「不明なアプリのインストール」を許可してください", Toast.LENGTH_LONG).show()
+            }
+        }
         findViewById<Button>(R.id.adminPinReset).setOnClickListener { editPin() }
         findViewById<Button>(R.id.adminAccessReset).setOnClickListener {
             // 誰も操作できなくなったとき用。この端末の画面からだけ解除できる
@@ -487,6 +500,10 @@ class MainActivity : Activity() {
         val running = prefs.adminEnabled && AdminServer.isRunning
         findViewById<View>(R.id.adminPinReset).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
         findViewById<View>(R.id.adminName).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.updateSwitch).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.updateNote).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.updateUnknown).visibility =
+            if (prefs.adminEnabled && prefs.allowRemoteUpdate && !AppUpdater.canInstall(this)) View.VISIBLE else View.GONE
         findViewById<View>(R.id.adminAccessReset).visibility = if (prefs.macLock || prefs.allowedMacs.isNotEmpty()) View.VISIBLE else View.GONE
         findViewById<View>(R.id.adminOpenLocal).visibility = if (running) View.VISIBLE else View.GONE
         // 省電力の対象のままだと、再生画面を出していないときに外から接続できない端末がある
