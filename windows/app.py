@@ -194,8 +194,11 @@ class App:
         if not edge:
             webbrowser.open(url)
             return
+        # モニターごとに別のプロファイルを使う（Edge は前回のウィンドウ位置をプロファイルに覚えていて、
+        # 同じプロファイルだと「いつも同じモニター」に開いてしまうことがあるため）
+        profile = f"{EDGE_PROFILE}-m{m['index']}" if m else str(EDGE_PROFILE)
         args = [
-            edge, f"--user-data-dir={EDGE_PROFILE}", "--no-first-run", "--no-default-browser-check",
+            edge, f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check",
             "--kiosk", url, "--edge-kiosk-type=fullscreen",
             "--autoplay-policy=no-user-gesture-required",
             "--disable-features=Translate,msEdgeTranslate",
@@ -211,41 +214,62 @@ class App:
             # 開いたあとにウィンドウの位置を確かめて、選んだモニターに合わせる
             threading.Thread(target=self.place_player, args=(proc.pid, m), daemon=True).start()
 
-    def place_player(self, pid, m, timeout=15):
-        """再生画面のウィンドウが選んだモニターに出ているか確かめ、ずれていれば動かす（Windows 専用）"""
+    def profile_pids(self):
+        """このアプリ用プロファイルで動いている Edge のプロセス番号（普段使いの Edge は含めない）"""
+        profile = str(EDGE_PROFILE).replace("'", "''")
+        ps = ("Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | "
+              f"Where-Object {{ $_.CommandLine -like '*{profile}*' }} | "
+              "ForEach-Object { $_.ProcessId }")
+        try:
+            out = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True,
+                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+            return {int(x) for x in out.split() if x.isdigit()}
+        except Exception:
+            return set()
+
+    def place_player(self, pid, m, timeout=20):
+        """再生画面のウィンドウが選んだモニターに出ているか確かめ、ずれていれば動かす（Windows 専用）。
+        全画面になったあとに戻されることがあるので、数回確かめる"""
         try:
             user32 = ctypes.windll.user32
             enum_proc = ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
             deadline = time.time() + timeout
-            while time.time() < deadline:
+            checks = 0
+            while time.time() < deadline and checks < 3:
+                pids = self.profile_pids() | {pid}
                 found = []
 
                 def cb(hwnd, _):
                     if user32.IsWindowVisible(hwnd):
                         owner = wt.DWORD()
                         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
-                        if owner.value == pid:
+                        if owner.value in pids:
                             cls = ctypes.create_unicode_buffer(64)
                             user32.GetClassNameW(hwnd, cls, 64)
-                            if cls.value.startswith("Chrome_WidgetWin"):
+                            r = wt.RECT()
+                            user32.GetWindowRect(hwnd, ctypes.byref(r))
+                            if cls.value.startswith("Chrome_WidgetWin") and r.right - r.left > 300 and r.bottom - r.top > 200:
                                 found.append(hwnd)
                     return True
 
                 user32.EnumWindows(enum_proc(cb), 0)
-                if found:
-                    time.sleep(1.5)  # 全画面表示になるのを待つ
-                    for hwnd in found:
-                        r = wt.RECT()
-                        user32.GetWindowRect(hwnd, ctypes.byref(r))
-                        actual = (r.left, r.top, r.right, r.bottom)
-                        moved = needs_move(actual, m)
-                        log(f"再生画面の位置 {actual} / {monitor_label(m)} の範囲 → {'移動します' if moved else 'そのまま'}")
-                        if moved:
-                            # SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW
-                            user32.SetWindowPos(hwnd, 0, m["x"], m["y"], m["width"], m["height"], 0x0004 | 0x0010 | 0x0040)
-                    return
-                time.sleep(0.5)
-            log("再生画面のウィンドウが見つかりませんでした（位置の確認を省略）")
+                if not found:
+                    time.sleep(0.5)
+                    continue
+                time.sleep(1.5)  # 全画面表示になるのを待つ
+                checks += 1
+                for hwnd in found:
+                    r = wt.RECT()
+                    user32.GetWindowRect(hwnd, ctypes.byref(r))
+                    actual = (r.left, r.top, r.right, r.bottom)
+                    moved = needs_move(actual, m)
+                    log(f"再生画面の位置 {actual} / {monitor_label(m)} の範囲 → {'移動します' if moved else 'そのまま'}")
+                    if moved:
+                        # SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW
+                        user32.SetWindowPos(hwnd, 0, m["x"], m["y"], m["width"], m["height"], 0x0004 | 0x0010 | 0x0040)
+                time.sleep(1.5)
+            if not checks:
+                log("再生画面のウィンドウが見つかりませんでした（位置の確認を省略）")
         except Exception as e:  # noqa
             log(f"再生画面の位置の確認に失敗しました: {e}")
 
@@ -265,7 +289,11 @@ class App:
         profile = str(EDGE_PROFILE).replace("'", "''")
         ps = ("Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | "
               f"Where-Object {{ $_.CommandLine -like '*{profile}*' }} | "
-              "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
+              "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; "
+              # 完全に終了するまで待つ（残っていると、新しい Edge が古いものに引き継がれて位置が変わらない）
+              "for ($i=0; $i -lt 20; $i++) { "
+              "if (-not (Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | "
+              f"Where-Object {{ $_.CommandLine -like '*{profile}*' }})) {{ break }}; Start-Sleep -Milliseconds 250 }}")
         subprocess.run(["powershell", "-NoProfile", "-Command", ps],
                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), capture_output=True)
         if self.player_open:
