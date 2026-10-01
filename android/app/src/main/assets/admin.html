@@ -177,6 +177,7 @@
   .moncard .mh b { font-size: 15px; }
   .badge { border-radius: 999px; padding: 1px 10px; font-size: 12px; font-weight: bold; color: #fff; white-space: nowrap; }
   .badge.ok { background: var(--ok); } .badge.warn { background: #b06000; } .badge.bad { background: var(--danger); } .badge.na { background: var(--sub); }
+  .moncard.excl { opacity: .7; border-style: dashed; }
   .moncard .issues { color: var(--danger); font-weight: bold; }
   .moncard .issues.w { color: #b06000; }
   .moncard .zl { word-break: break-all; }
@@ -431,6 +432,11 @@
           <p class="sub">各端末の再生画面が動いているか、いま何を再生しているか、空き容量などを、5 秒ごとに確認します（このタブを開いている間）。</p>
           <p id="monSummary" style="font-weight:bold"></p>
           <div class="mongrid" id="monGrid"></div>
+          <div id="monExcludedBox" hidden>
+            <h3 style="font-size:14px; margin:16px 0 4px">監視対象外の端末</h3>
+            <p class="sub">夜間に電源を切る端末など、異常として数えたくない端末です。件数・タブの表示・出来事の記録には含まれません。</p>
+            <div class="mongrid" id="monExcluded"></div>
+          </div>
         </section>
         <section id="apkSec">
           <h2>アプリ（APK）の更新</h2>
@@ -794,6 +800,18 @@
     return { level: bad.length ? 'bad' : warn.length ? 'warn' : m.ok ? 'ok' : 'warn', bad, warn };
   }
 
+  /** 監視対象外の端末（このブラウザに保存。オフラインの端末も指定できる） */
+  const monExcluded = new Set(store.get('signage-mon-excluded', []));
+  const isExcluded = (dev) => monExcluded.has(dev.key) || (dev.id && monExcluded.has(dev.id));
+  function setExcluded(dev, on) {
+    for (const k of new Set([dev.key, dev.id].filter(Boolean))) on ? monExcluded.add(k) : monExcluded.delete(k);
+    store.set('signage-mon-excluded', [...monExcluded]);
+    delete dev.monLevel; // 戻したときに、状態の変化として記録しない
+    renderStatus();
+    renderDevices();
+    if (!on) pollStatus();
+  }
+
   const monLog = [];
   function logMon(text) {
     monLog.unshift(`${hhmmss(Date.now())}　${text}`);
@@ -823,47 +841,62 @@
     if (polling) return;
     polling = true;
     try {
-      await Promise.all([...devices.values()].map(pollOne));
+      await Promise.all([...devices.values()].filter((d) => !isExcluded(d)).map(pollOne));
     } finally { polling = false; }
     renderStatus();
   }
 
+  function monCard(dev, excluded) {
+    const v = excluded ? { level: 'na', bad: [], warn: [] } : verdict(dev);
+    const card = document.createElement('div');
+    card.className = 'moncard ' + v.level + (excluded ? ' excl' : '');
+    const d = !excluded && dev.mon?.ok ? dev.mon.data : null;
+    const lines = [];
+    if (d) {
+      lines.push(`再生画面：${d.player.running ? '動作中' : '停止中'}`);
+      for (const z of d.player.zones || []) {
+        const what = z.message ? `（${z.message.replace(/\n/g, ' ')}）` : z.kind === 'weather' || z.name === '天気予報' ? '天気予報' : z.name ? `[${z.video ? '動画' : '画像'}] ${z.name}${z.total ? `（${z.pos}/${z.total}）` : ''}` : '—';
+        lines.push(`<div class="zl">区画${z.zone + 1}：${esc(what)}</div>`);
+      }
+      lines.push(`テロップ：${d.ticker.standing ? '止めるまで流すテロップあり' : d.ticker.queued ? `待機 ${d.ticker.queued} 件` : 'なし'}`);
+      if (d.disk) lines.push(`空き容量：${fmtSize(d.disk.free)}（全体 ${fmtSize(d.disk.total)}）`);
+      lines.push(`稼働：${fmtUptime(d.uptimeSec)}　v${d.version}`);
+    } else if (!excluded && dev.mon?.lastOk) {
+      lines.push(`最後に確認できた時刻：${hhmmss(dev.mon.lastOk)}`);
+    }
+    const badge = excluded ? '<span class="badge na">監視対象外</span>' : `<span class="badge ${v.level}">${monLevelText[v.level]}</span>`;
+    card.innerHTML = `<div class="mh"><b></b>${badge}</div>`
+      + [...v.bad.map((t) => `<div class="issues">${esc(t)}</div>`), ...v.warn.map((t) => `<div class="issues w">${esc(t)}</div>`)].join('')
+      + lines.map((l) => l.startsWith('<') ? l : `<div>${esc(l)}</div>`).join('')
+      + `<div class="row" style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="small" data-open>設定を開く</button>`
+      + `<button type="button" class="small" data-excl>${excluded ? '監視に戻す' : '監視対象外にする'}</button></div>`;
+    $('b', card).textContent = dev.name + (dev.self ? '（この端末）' : '');
+    $('[data-open]', card).addEventListener('click', () => select(dev.key));
+    $('[data-excl]', card).addEventListener('click', () => {
+      if (!excluded && !confirm(`「${dev.name}」を監視対象外にします。応答がなくても、異常として数えなくなります。よろしいですか？`)) return;
+      setExcluded(dev, !excluded);
+    });
+    return card;
+  }
+
   function renderStatus() {
-    const list = [...devices.values()].sort((a, b) => ((b.self ? 1 : 0) - (a.self ? 1 : 0)) || String(a.name).localeCompare(String(b.name), 'ja'));
+    const all = [...devices.values()].sort((a, b) => ((b.self ? 1 : 0) - (a.self ? 1 : 0)) || String(a.name).localeCompare(String(b.name), 'ja'));
+    const list = all.filter((d) => !isExcluded(d));
+    const skipped = all.filter(isExcluded);
     const counts = { ok: 0, warn: 0, bad: 0, na: 0 };
     const grid = $('#monGrid');
     grid.replaceChildren();
     for (const dev of list) {
-      const v = verdict(dev);
-      counts[v.level]++;
-      const card = document.createElement('div');
-      card.className = 'moncard ' + v.level;
-      const d = dev.mon?.ok ? dev.mon.data : null;
-      const lines = [];
-      if (d) {
-        lines.push(`再生画面：${d.player.running ? '動作中' : '停止中'}`);
-        for (const z of d.player.zones || []) {
-          const what = z.message ? `（${z.message.replace(/\n/g, ' ')}）` : z.kind === 'weather' || z.name === '天気予報' ? '天気予報' : z.name ? `[${z.video ? '動画' : '画像'}] ${z.name}${z.total ? `（${z.pos}/${z.total}）` : ''}` : '—';
-          lines.push(`<div class="zl">区画${z.zone + 1}：${esc(what)}</div>`);
-        }
-        lines.push(`テロップ：${d.ticker.standing ? '止めるまで流すテロップあり' : d.ticker.queued ? `待機 ${d.ticker.queued} 件` : 'なし'}`);
-        if (d.disk) lines.push(`空き容量：${fmtSize(d.disk.free)}（全体 ${fmtSize(d.disk.total)}）`);
-        lines.push(`稼働：${fmtUptime(d.uptimeSec)}　v${d.version}`);
-      } else if (dev.mon?.lastOk) {
-        lines.push(`最後に確認できた時刻：${hhmmss(dev.mon.lastOk)}`);
-      }
-      card.innerHTML = `<div class="mh"><b></b><span class="badge ${v.level}">${monLevelText[v.level]}</span></div>`
-        + [...v.bad.map((t) => `<div class="issues">${esc(t)}</div>`), ...v.warn.map((t) => `<div class="issues w">${esc(t)}</div>`)].join('')
-        + lines.map((l) => l.startsWith('<') ? l : `<div>${esc(l)}</div>`).join('')
-        + '<div style="margin-top:4px"><button type="button" class="small" data-open>設定を開く</button></div>';
-      $('b', card).textContent = dev.name + (dev.self ? '（この端末）' : '');
-      $('[data-open]', card).addEventListener('click', () => select(dev.key));
-      grid.append(card);
+      counts[verdict(dev).level]++;
+      grid.append(monCard(dev, false));
     }
+    $('#monExcludedBox').hidden = !skipped.length;
+    $('#monExcluded').replaceChildren(...skipped.map((d) => monCard(d, true)));
     const total = list.length;
     $('#monSummary').textContent = total
       ? `${total} 台中 ${counts.ok} 台が正常` + (counts.warn ? `、注意 ${counts.warn} 台` : '') + (counts.bad ? `、異常 ${counts.bad} 台` : '')
-      : '端末がありません';
+        + (skipped.length ? `（監視対象外 ${skipped.length} 台）` : '')
+      : (skipped.length ? `監視する端末がありません（監視対象外 ${skipped.length} 台）` : '端末がありません');
     $('#monSummary').style.color = counts.bad ? 'var(--danger)' : counts.warn ? '#b06000' : 'var(--ok)';
     $('#monUpdated').textContent = `最終更新 ${hhmmss(Date.now())}`;
     const alert = counts.bad + counts.warn;
@@ -954,7 +987,7 @@
       cb.checked = checked.has(d.key);
       cb.addEventListener('click', (e) => e.stopPropagation());
       cb.addEventListener('change', () => { cb.checked ? checked.add(d.key) : checked.delete(d.key); saveChecked(); renderBulk(); });
-      $('.dname', li).textContent = d.name + (d.self ? '（この端末）' : '');
+      $('.dname', li).textContent = d.name + (d.self ? '（この端末）' : '') + (isExcluded(d) ? '　［監視対象外］' : '');
       const dot = $('.dot', li);
       dot.classList.add(d.status);
       $('.st', li).textContent = {
