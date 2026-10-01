@@ -56,6 +56,7 @@ LAN 内の別端末（Android のブラウザなど）から表示する場合�
 出典：[気象庁ホームページ](https://www.jma.go.jp/)
 
 ## ライセンス・セキュリティ・配布
+- [LICENSE](LICENSE) — 本ソフトウェアは MIT ライセンス
 - [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) — 利用しているライセンスと出典
 - [SECURITY.md](SECURITY.md) — 対策・既知の制限・推奨設定
 - [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md) — 署名・配布・チェックリスト

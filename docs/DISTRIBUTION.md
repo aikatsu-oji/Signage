@@ -1,9 +1,8 @@
 # 配布ガイド
 
 ## 1. ライセンス
-- 自作部分のライセンスは **未決定** です（LICENSE ファイルなし = 全権利留保。他人は利用・再配布できません）。
-  選択肢: 社内限定（LICENSE なし + 配布先を限定）/ MIT / Apache-2.0（寛容）/ GPL-3.0（改変公開を要求）。
-- いずれの場合も `THIRD_PARTY_NOTICES.md` を同梱し、LGPL（zeroconf, pystray）の再ビルド手段（`windows/build.bat`）を提供する。
+- 自作部分のライセンスは **MIT**（ルートの `LICENSE`）。
+-  `THIRD_PARTY_NOTICES.md` を同梱し、LGPL（zeroconf, pystray）の再ビルド手段（`windows/build.bat`）を提供する。
 
 ## 2. Android（APK）
 ### リリース署名（正式配布前に必須）
@@ -33,7 +32,7 @@ SHA256SUMS を同じ場所に置き、受け取り側が `sha256sum -c` で検�
 
 ## 5. 配布前チェックリスト
 - [ ] 履歴・ファイルに鍵・パスワード・個人情報がない（確認済み）
-- [ ] LICENSE を決めた / THIRD_PARTY_NOTICES.md を同梱
+- [ ] LICENSE（MIT）と THIRD_PARTY_NOTICES.md を同梱
 - [ ] Android をリリース鍵で署名（debuggable でない）
 - [ ] Windows exe を署名 or 警告の案内を用意
 - [ ] 初期 PIN の変更手順を利用者に案内
