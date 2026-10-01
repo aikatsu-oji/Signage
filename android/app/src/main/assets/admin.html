@@ -1279,7 +1279,7 @@
       if (!(v >= lo && v <= hi)) f.elements[k].value = String(Math.min(hi, Math.max(lo, Math.round((v || DEFAULT_PCT[k]) / 5) * 5)));
     }
     if (!LAYOUTS.some((l) => l.id === fval('layout'))) f.elements.layout.value = '0';
-    $('#weatherPlace').textContent = s.weatherPlace ? `（地域：${s.weatherPlace}）` : '';
+    $('#weatherPlace').textContent = `（地域：${s.weatherPlace || '未設定'}）`;
     renderWeatherRegion(dev);
     renderLayoutCard();
   }
@@ -1652,8 +1652,22 @@
     $('#wxOffice').value = st.weatherOffice || '130000';
     if ($('#wxOffice').selectedIndex < 0) $('#wxOffice').selectedIndex = 0;
     fillWxCities(st.weatherCity, st.weatherArea);
+    if (!st.weatherPlace) {
+      const c = wxCities[Number($('#wxCity').value)];
+      $('#weatherPlace').textContent = c ? `（地域：${c.name || c.areaName}　※未保存・「この端末に保存」で反映）` : '（地域：未設定）';
+    }
   }
-  $('#wxOffice').addEventListener('change', () => fillWxCities(null, null));
+  $('#wxOffice').addEventListener('change', () => { fillWxCities(null, null); previewWxPlace(); });
+  $('#wxCity').addEventListener('change', previewWxPlace);
+
+  /** 選んだ地域を見出しにすぐ出す（保存前は「未保存」と添える） */
+  function previewWxPlace() {
+    const c = wxCities[Number($('#wxCity').value)];
+    if (!c) return;
+    const name = c.name || c.areaName;
+    const saved = selected().state?.settings?.weatherPlace;
+    $('#weatherPlace').textContent = `（地域：${name}${name === saved ? '' : '　※未保存・「この端末に保存」で反映'}）`;
+  }
 
   /** 設定欄の地域（一覧を取得できているときだけ送る） */
   function wxBody() {
@@ -1678,6 +1692,7 @@
     try {
       await post(dev, '/api/settings', formSettings());
       toast(`「${dev.name}」の設定を保存し、再生画面に反映しました`);
+      await refreshDevice(dev);
       setTimeout(() => refreshDevice(dev), 1200);
     } catch (err) { toast(err.message); }
   });
