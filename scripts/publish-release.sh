@@ -8,7 +8,7 @@ NOTES="${1:?今回の変更点を引数で渡してください}"
 BRANCH="$(git branch --show-current)"
 AV="$(grep -o 'versionName = "[^"]*"' android/app/build.gradle.kts | cut -d'"' -f2)"
 WV="$(grep -o '^VERSION = "[^"]*"' windows/server.py | cut -d'"' -f2)"
-BLOB="https://github.com/aikatsu-oji/Signage/blob/${BRANCH}"
+BLOB="https://github.com/aikatsu-oji/Signage/blob/main"
 TAG="v${AV}"
 
 cp dist/signage-debug.apk "release/Signage-android-${AV}.apk"
