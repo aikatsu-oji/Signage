@@ -156,6 +156,20 @@
   textarea { font: inherit; width: 100%; min-height: 64px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); resize: vertical; }
   .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; margin: 8px 0; }
   .opts label { display: flex; flex-direction: column; font-size: 12px; color: var(--sub); gap: 2px; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; position: sticky; top: 58px; z-index: 4; background: var(--bg); padding: 4px 0; }
+  .tabs button { padding: 8px 14px; border-radius: 999px; }
+  .tabs button[aria-selected=true] { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: bold; }
+  .tabs .sub { margin-left: 6px; color: inherit; opacity: .85; }
+  .pane[hidden] { display: none; }
+  .tbar { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: 8px 0; }
+  .tbarhead { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .tbarhead strong { flex: 1; font-size: 13px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 4px 12px; font-size: 13px; }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sub); }
+  .chip .dot.ok { background: var(--ok); } .chip .dot.pin, .chip .dot.denied { background: #e6a700; } .chip .dot.offline { background: var(--danger); }
+  .chip[aria-pressed=true] { background: var(--brand-weak); border-color: var(--brand); font-weight: bold; }
+  .chip.off { opacity: .55; }
   .tplTools { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 0 6px; }
   #tplDialog { max-width: 620px; width: calc(100% - 24px); max-height: calc(100% - 24px); overflow: auto; }
   .tplRow { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
@@ -163,7 +177,7 @@
   .recent { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0; font-size: 12px; color: var(--sub); }
   .recent button { font-size: 12px; padding: 2px 8px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #tickerCount { font-size: 12px; color: var(--sub); text-align: right; }
-  #jump { max-width: 1280px; margin: 0 auto; padding: 0 16px 8px; display: flex; gap: 6px; overflow-x: auto; }
+  #jump { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 12px; }
   #jump button { font-size: 12px; padding: 3px 10px; white-space: nowrap; }
   .templates { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
   .templates button { font-size: 12px; padding: 3px 8px; }
@@ -198,15 +212,6 @@
       <label class="check sub"><input type="checkbox" id="autoReload" checked> 変更後すぐ再生に反映</label>
       <button id="refreshBtn">一覧を更新</button>
     </div>
-    <nav id="jump" aria-label="ページ内の移動">
-      <button type="button" data-to="tickerSec">テロップ</button>
-      <button type="button" data-to="voiceSec">マイク</button>
-      <button type="button" data-to="zones">画像・動画</button>
-      <button type="button" data-to="layoutSec">画面分割</button>
-      <button type="button" data-to="scheduleSec">予約テロップ</button>
-      <button type="button" data-to="settingsSec">設定</button>
-      <button type="button" data-to="accessSec">入れる端末</button>
-    </nav>
   </header>
   <div class="layout">
     <aside>
@@ -215,7 +220,7 @@
           <h2>端末一覧</h2>
           <button class="small" id="addDeviceBtn" title="自動で見つからない端末を IP アドレスで追加">＋ 追加</button>
         </div>
-        <p class="sub">同じネットワークのサイネージ端末が自動で表示されます。クリックで操作する端末を切り替え、チェックした端末はまとめて操作できます。</p>
+        <p class="sub">同じネットワークのサイネージ端末が自動で表示されます。<b>チェック</b>＝テロップ・マイクなどを送る端末。<b>名前をクリック</b>＝その端末の設定を開きます。</p>
         <label class="check sub"><input type="checkbox" id="checkAll"> すべて選択</label>
         <ul class="devices" id="devices"></ul>
         <div class="bulk" id="bulk" hidden>
@@ -233,56 +238,23 @@
           <ol class="log" id="bulkLog"></ol>
         </div>
       </section>
+    </aside>
 
-      <section id="accessSec">
-        <details>
-          <summary><h2>管理画面に入れる端末</h2><span class="sub" id="accessSummary"></span></summary>
-          <p class="sub">この管理画面を開いて操作できるスマホ・PC を、MAC アドレスで制限します。ここで決めた内容は、見つかっているサイネージ端末すべてに反映されます（端末ごとの設定ではありません）。初期状態は制限なし。PIN は引き続き必要です。</p>
-          <p class="sub" id="accessNoSupport" hidden></p>
-          <div id="accessMain">
-            <p>いま操作している端末：<b id="accessYouMac"></b> <span class="sub" id="accessYouIp"></span></p>
-            <div class="dlgrow" style="margin:6px 0">
-              <input type="text" id="accessYouName" placeholder="名前（例：店長のスマホ）" maxlength="30" style="flex:1; min-width:120px">
-              <button type="button" class="small" id="accessAddYou">この端末を追加</button>
-            </div>
-            <div class="dlgrow" style="margin:6px 0">
-              <input type="text" id="accessMac" placeholder="MAC アドレス（AA:BB:CC:DD:EE:FF）" maxlength="17" style="flex:1; min-width:150px">
-              <input type="text" id="accessMacName" placeholder="名前" maxlength="30" style="width:110px">
-              <button type="button" class="small" id="accessAddMac">追加</button>
-            </div>
-            <ul class="log" id="accessList" style="margin:8px 0"></ul>
-            <div style="display:flex; flex-direction:column; gap:6px; margin:8px 0">
-              <label class="check"><input type="checkbox" id="accessEnabled"> 登録した端末だけ入れるようにする</label>
-              <label class="check"><input type="checkbox" id="accessVpn"> VPN（Tailscale）経由は許可する</label>
-            </div>
-            <div class="warn" id="accessMismatch" hidden>
-              <span id="accessMismatchText"></span>
-              <button type="button" class="small" id="accessSync">全端末にそろえる</button>
-            </div>
-            <p class="sub" id="accessSkipped" hidden></p>
-            <p class="sub">・スマホは Wi-Fi の「プライベート アドレス（ランダム MAC）」を使うことがあります。「この端末を追加」なら、実際に使われている MAC アドレスを登録できます。<br>
-            ・VPN 経由・ルーターを挟んだ先の端末は MAC アドレスを確認できません。<br>
-            ・入れなくなったときは、サイネージを動かしている端末側で解除できます（Windows：タスクトレイ／設定画面、Android：端末の設定画面）。</p>
-          </div>
-        </details>
-      </section>
-
-      <section id="voiceSec">
-        <h2>マイクで声を届ける</h2>
-        <p class="sub" id="voiceTarget"></p>
-        <div class="warn" id="voiceWarn" hidden></div>
-        <div class="dlgrow" style="margin:8px 0">
-          <button class="primary" type="button" id="voiceTalk">🎤 押している間、話す</button>
-          <meter id="voiceLevel" min="0" max="1" value="0" style="width:90px"></meter>
-          <button type="button" id="voiceTest" title="声を出さずに、放送先の端末までテスト音が届くか確かめます">テスト音を送る</button>
-        </div>
-        <ul id="voiceResult" class="voiceResult"></ul>
-        <label class="check sub"><input type="checkbox" id="voiceLatch"> ボタンを押さなくても話し続ける（もう一度押すと止まる）</label>
-        <p class="sub" id="voiceStatus">話すと、選んだ端末のスピーカーからすぐ流れます（遅れは 1 秒前後）。放送中は端末の動画の音が小さくなります。ハウリングを防ぐため、ヘッドセットの使用をおすすめします。</p>
-      </section>
-
+    <main>
+      <div class="tabs" id="tabs" role="tablist">
+        <button type="button" role="tab" data-tab="send">📣 送る（テロップ・マイク）</button>
+        <button type="button" role="tab" data-tab="dev">⚙ 端末の設定<span class="sub" id="tabDevName"></span></button>
+        <button type="button" role="tab" data-tab="access">🔒 入れる端末</button>
+      </div>
+      <div class="pane" id="pane-send">
       <section id="tickerSec">
         <h2>テロップを流す</h2>
+        <div class="tbar">
+          <div class="tbarhead"><strong>送信先</strong>
+            <button type="button" class="small" data-tb="all">全部</button>
+            <button type="button" class="small" data-tb="none">解除</button></div>
+          <div class="chips" id="tickerChips"></div>
+        </div>
         <p class="sub" id="tickerTarget"></p>
         <div class="templates" id="templates"></div>
         <textarea id="tickerText" placeholder="例：10番でお待ちのお客様、カウンターまでお越しください（Ctrl + Enter で流す）"></textarea>
@@ -295,9 +267,34 @@
         </div>
         <p class="sub" id="tickerStatus"></p>
       </section>
-    </aside>
 
-    <main>
+      <section id="voiceSec">
+        <h2>マイクで声を届ける</h2>
+        <div class="tbar">
+          <div class="tbarhead"><strong>送信先</strong>
+            <button type="button" class="small" data-tb="all">全部</button>
+            <button type="button" class="small" data-tb="none">解除</button></div>
+          <div class="chips" id="voiceChips"></div>
+        </div>
+        <p class="sub" id="voiceTarget"></p>
+        <div class="warn" id="voiceWarn" hidden></div>
+        <div class="dlgrow" style="margin:8px 0">
+          <button class="primary" type="button" id="voiceTalk">🎤 押している間、話す</button>
+          <meter id="voiceLevel" min="0" max="1" value="0" style="width:90px"></meter>
+          <button type="button" id="voiceTest" title="声を出さずに、放送先の端末までテスト音が届くか確かめます">テスト音を送る</button>
+        </div>
+        <ul id="voiceResult" class="voiceResult"></ul>
+        <label class="check sub"><input type="checkbox" id="voiceLatch"> ボタンを押さなくても話し続ける（もう一度押すと止まる）</label>
+        <p class="sub" id="voiceStatus">話すと、選んだ端末のスピーカーからすぐ流れます（遅れは 1 秒前後）。放送中は端末の動画の音が小さくなります。ハウリングを防ぐため、ヘッドセットの使用をおすすめします。</p>
+      </section>
+      </div>
+      <div class="pane" id="pane-dev" hidden>
+      <nav id="jump" aria-label="この端末の設定の項目">
+        <button type="button" data-to="zones">画像・動画</button>
+        <button type="button" data-to="layoutSec">画面分割</button>
+        <button type="button" data-to="scheduleSec">予約テロップ</button>
+        <button type="button" data-to="settingsSec">設定</button>
+      </nav>
       <section id="deviceHead">
         <div class="head">
           <div>
@@ -412,6 +409,41 @@
           <button class="primary">この端末に保存</button>
         </form>
       </section>
+      </div>
+      <div class="pane" id="pane-access" hidden>
+      <section id="accessSec">
+        <details>
+          <summary><h2>管理画面に入れる端末</h2><span class="sub" id="accessSummary"></span></summary>
+          <p class="sub">この管理画面を開いて操作できるスマホ・PC を、MAC アドレスで制限します。ここで決めた内容は、見つかっているサイネージ端末すべてに反映されます（端末ごとの設定ではありません）。初期状態は制限なし。PIN は引き続き必要です。</p>
+          <p class="sub" id="accessNoSupport" hidden></p>
+          <div id="accessMain">
+            <p>いま操作している端末：<b id="accessYouMac"></b> <span class="sub" id="accessYouIp"></span></p>
+            <div class="dlgrow" style="margin:6px 0">
+              <input type="text" id="accessYouName" placeholder="名前（例：店長のスマホ）" maxlength="30" style="flex:1; min-width:120px">
+              <button type="button" class="small" id="accessAddYou">この端末を追加</button>
+            </div>
+            <div class="dlgrow" style="margin:6px 0">
+              <input type="text" id="accessMac" placeholder="MAC アドレス（AA:BB:CC:DD:EE:FF）" maxlength="17" style="flex:1; min-width:150px">
+              <input type="text" id="accessMacName" placeholder="名前" maxlength="30" style="width:110px">
+              <button type="button" class="small" id="accessAddMac">追加</button>
+            </div>
+            <ul class="log" id="accessList" style="margin:8px 0"></ul>
+            <div style="display:flex; flex-direction:column; gap:6px; margin:8px 0">
+              <label class="check"><input type="checkbox" id="accessEnabled"> 登録した端末だけ入れるようにする</label>
+              <label class="check"><input type="checkbox" id="accessVpn"> VPN（Tailscale）経由は許可する</label>
+            </div>
+            <div class="warn" id="accessMismatch" hidden>
+              <span id="accessMismatchText"></span>
+              <button type="button" class="small" id="accessSync">全端末にそろえる</button>
+            </div>
+            <p class="sub" id="accessSkipped" hidden></p>
+            <p class="sub">・スマホは Wi-Fi の「プライベート アドレス（ランダム MAC）」を使うことがあります。「この端末を追加」なら、実際に使われている MAC アドレスを登録できます。<br>
+            ・VPN 経由・ルーターを挟んだ先の端末は MAC アドレスを確認できません。<br>
+            ・入れなくなったときは、サイネージを動かしている端末側で解除できます（Windows：タスクトレイ／設定画面、Android：端末の設定画面）。</p>
+          </div>
+        </details>
+      </section>
+      </div>
     </main>
   </div>
 </div>
@@ -560,6 +592,7 @@
   const self = { key: null, url: '', pin: '', self: true };
 
   async function start() {
+    showTab(store.get('signage-tab', 'send'));
     self.pin = defaultPin;
     try {
       self.state = await api(self, '/api/state');
@@ -636,6 +669,60 @@
 
   const selected = () => devices.get(selectedKey) || self;
 
+  // ------------------------------------------------------------ タブ・送信先の選択（テロップ・マイク共通）
+
+  const TABS = ['send', 'dev', 'access'];
+  function showTab(name) {
+    if (!TABS.includes(name)) name = 'send';
+    for (const t of TABS) $('#pane-' + t).hidden = t !== name;
+    for (const b of $('#tabs').children) b.setAttribute('aria-selected', String(b.dataset.tab === name));
+    store.set('signage-tab', name);
+  }
+  $('#tabs').addEventListener('click', (e) => { const t = e.target.closest('button')?.dataset.tab; if (t) showTab(t); });
+
+  /** 送信先の説明。何もチェックしていないときは、設定を開いている端末に送ることをはっきり書く */
+  function targetSummary(list, verb) {
+    if (!list.length) return `${verb}先の端末がありません`;
+    if (checked.size) return `${list.length} 台に${verb}します：${list.map((d) => d.name).join('、')}`;
+    return `何も選んでいないため、設定を開いている端末（${list[0].name}）だけに${verb}します。複数の端末に送るときは、上の送信先をタップして選んでください。`;
+  }
+
+  /** 送信先の選択ボタン。端末一覧のチェックと同じ内容を、その場で切り替えられる */
+  function renderTargetBars() {
+    for (const id of ['ticker', 'voice']) {
+      const box = $('#' + id + 'Chips');
+      if (!box) continue;
+      box.replaceChildren();
+      const list = [...devices.values()].sort((a, b) => ((b.self ? 1 : 0) - (a.self ? 1 : 0)) || String(a.name).localeCompare(String(b.name), 'ja'));
+      for (const d of list) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        const on = checked.has(d.key);
+        b.className = 'chip' + (d.status === 'ok' ? '' : ' off');
+        b.setAttribute('aria-pressed', String(on));
+        b.title = { ok: '接続中', pin: 'PIN が違います', denied: 'この端末からは操作できません', offline: '応答なし', checking: '確認中…' }[d.status] || '';
+        b.innerHTML = '<span class="dot"></span><span class="n"></span>';
+        b.firstChild.classList.add(d.status);
+        b.lastChild.textContent = (on ? '✓ ' : '') + d.name + (d.self ? '（この端末）' : '');
+        b.addEventListener('click', () => {
+          on ? checked.delete(d.key) : checked.add(d.key);
+          saveChecked();
+          renderDevices();
+        });
+        box.append(b);
+      }
+    }
+  }
+  for (const bar of document.querySelectorAll('.tbar')) {
+    bar.addEventListener('click', (e) => {
+      const act = e.target.dataset?.tb;
+      if (!act) return;
+      for (const d of devices.values()) act === 'all' ? checked.add(d.key) : checked.delete(d.key);
+      saveChecked();
+      renderDevices();
+    });
+  }
+
   // ------------------------------------------------------------ 端末一覧
 
   function renderDevices() {
@@ -662,6 +749,7 @@
     }
     $('#checkAll').checked = list.length > 0 && list.every((d) => checked.has(d.key));
     renderBulk();
+    renderTargetBars();
     renderAccess();
   }
 
@@ -676,6 +764,7 @@
   async function select(key) {
     selectedKey = key;
     store.set('signage-selected', key);
+    showTab('dev');
     renderDevices();
     const dev = selected();
     if (dev.status !== 'ok') await check(dev);
@@ -718,6 +807,7 @@
   // ------------------------------------------------------------ 選択中の端末の詳細
 
   function renderDetail() {
+    $('#tabDevName').textContent = selected().name ? `：${selected().name}` : '';
     const dev = selected();
     $('#devTitle').textContent = dev.name + (dev.self ? '（この端末）' : '');
     $('#devSub').textContent = dev.self ? location.host : (dev.url || '').replace(/^http:\/\//, '');
@@ -1647,7 +1737,7 @@
 
   function renderVoiceTarget() {
     const list = voiceTargets();
-    $('#voiceTarget').textContent = list.length ? `放送先：${list.map((d) => d.name).join('、')}（${list.length} 台）　※複数の端末に送るときは端末一覧でチェック` : '放送先の端末がありません';
+    $('#voiceTarget').textContent = targetSummary(list, '放送');
     const warn = $('#voiceWarn');
     // ブラウザは、https のページか localhost で開いたページでしかマイクを使わせない
     const ok = window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
@@ -2210,9 +2300,7 @@
 
   function renderTickerTarget() {
     const list = tickerTargets();
-    $('#tickerTarget').textContent = list.length > 1
-      ? `送り先：チェックした ${list.length} 台（${list.map((d) => d.name).join('、')}）`
-      : `送り先：${list[0]?.name || ''}（複数台に送るときは端末一覧でチェック）`;
+    $('#tickerTarget').textContent = targetSummary(list, '送信');
   }
 
   async function sendToTickerTargets(label, fn) {
@@ -2246,7 +2334,7 @@
     if (!el || el.hidden) { if (id) toast('この項目は、端末に接続すると表示されます'); return; }
     const d = el.querySelector('details');
     if (d) d.open = true;
-    const top = el.getBoundingClientRect().top + window.scrollY - ($('header').offsetHeight + 8);
+    const top = el.getBoundingClientRect().top + window.scrollY - ($('header').offsetHeight + $('#tabs').offsetHeight + 12);
     window.scrollTo({ top, behavior: 'smooth' });
   });
 
