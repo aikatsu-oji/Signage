@@ -24,3 +24,5 @@ GitHub Actions（`.github/workflows/release.yml`）が Releases に添付しま�
 ## タグを push できない環境のとき
 GitHub の Actions タブ →「Release」→「Run workflow」で、`tag`（例：`v1.9.1`）と、`binaries_ref`（APK・exe が入っているコミットの SHA）を指定して実行します。
 タグは、実行したコミットに自動で作られます。
+
+タグも Actions の手動実行も使えないときは、`.github/release-request.txt` に、1 行目にタグ、2 行目に APK・exe が入っているコミットの SHA を書いて push します（ブランチ上のこのファイルの変更で、Release が作られます）。
