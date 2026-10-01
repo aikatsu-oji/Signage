@@ -964,6 +964,9 @@
       if (u.phase === 'pending_user') say(`${u.message}`, 'warn');
       else if (u.phase === 'failed') return say(u.message || '更新できませんでした', 'ng');
       else if (u.phase === 'success') return say('更新しました', 'ok');
+      else if (u.phase === 'installing' && Date.now() - t0 > 45000) {
+        say('端末から結果が返ってきません。端末の通知（「サイネージの更新があります」）か、端末のサイネージのアプリを確認してください。それでも進まないときは、APK を端末に直接入れてください', 'warn');
+      }
     }
     say('完了を確認できませんでした。端末の画面を確認してください', 'warn');
   }

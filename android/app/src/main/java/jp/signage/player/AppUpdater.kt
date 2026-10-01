@@ -68,6 +68,8 @@ object AppUpdater {
         }
         try {
             val pi = ctx.packageManager.packageInstaller
+            // 前回の失敗で残った、結果待ちのインストールを片付ける
+            pi.mySessions.forEach { runCatching { pi.abandonSession(it.sessionId) } }
             val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
                 setAppPackageName(ctx.packageName)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
@@ -81,7 +83,7 @@ object AppUpdater {
                     }
                 }
                 val flags = PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
-                val pending = PendingIntent.getBroadcast(ctx, id, Intent(ACTION).setPackage(ctx.packageName), flags)
+                val pending = PendingIntent.getBroadcast(ctx, id, Intent(ctx, UpdateResultReceiver::class.java).setAction(ACTION), flags)
                 state = State("installing", "インストール中…")
                 session.commit(pending.intentSender)
             }
