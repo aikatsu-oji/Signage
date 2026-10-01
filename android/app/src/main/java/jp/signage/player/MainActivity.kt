@@ -91,6 +91,7 @@ class MainActivity : Activity() {
         bindSwitch(R.id.recursiveSwitch, prefs.recursive) { prefs.recursive = it; refreshFolder() }
         bindSwitch(R.id.soundSwitch, prefs.videoSound) { prefs.videoSound = it }
         bindSwitch(R.id.videoCompatSwitch, prefs.videoCompat) { prefs.videoCompat = it }
+        bindSwitch(R.id.videoMultiSoftSwitch, prefs.videoMultiSoft) { prefs.videoMultiSoft = it }
         bindSwitch(R.id.autoStartSwitch, prefs.autoStart) {
             prefs.autoStart = it
             if (it) ensureOverlayPermission()

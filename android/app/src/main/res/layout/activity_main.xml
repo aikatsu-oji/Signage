@@ -202,6 +202,11 @@
             android:text="動画の互換モード（動画が途中で止まる・固まる機種向け）" />
 
         <Switch
+            android:id="@+id/videoMultiSoftSwitch"
+            style="@style/Option"
+            android:text="複数の区画で動画を同時に再生するとき、2つ目以降はソフトウェアデコード・音声なしにする（動画が止まるとき向け）" />
+
+        <Switch
             android:id="@+id/autoStartSwitch"
             style="@style/Option"
             android:text="自動再生（アプリ起動時・端末の電源ON時）" />

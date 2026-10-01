@@ -639,6 +639,7 @@ object AdminServer {
             .put("recursive", prefs.recursive)
             .put("videoSound", prefs.videoSound)
             .put("videoCompat", prefs.videoCompat)
+            .put("videoMultiSoft", prefs.videoMultiSoft)
             .put("fitMode", prefs.fitMode)
             .put("orientation", when (prefs.orientation) {
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE -> 1
@@ -697,6 +698,7 @@ object AdminServer {
         if (j.has("recursive")) prefs.recursive = j.getBoolean("recursive")
         if (j.has("videoSound")) prefs.videoSound = j.getBoolean("videoSound")
         if (j.has("videoCompat")) prefs.videoCompat = j.getBoolean("videoCompat")
+        if (j.has("videoMultiSoft")) prefs.videoMultiSoft = j.getBoolean("videoMultiSoft")
         if (j.has("fitMode")) prefs.fitMode = j.getInt("fitMode")
         if (j.has("clockEnabled")) prefs.clockEnabled = j.getBoolean("clockEnabled")
         if (j.has("clockPosition")) prefs.clockPosition = j.getInt("clockPosition").coerceIn(0, 3)

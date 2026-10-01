@@ -37,6 +37,11 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putInt("fitMode", v.coerceIn(0, 3)).apply()
 
     /** 動画の互換モード（動画が途中で止まる機種向けに SurfaceView で描画する） */
+    /** 複数の区画で動画を同時に再生するとき、2 つ目以降の区画はソフトウェアデコード・音声なしで再生する（ハードウェアデコーダーの取り合いで止まるのを防ぐ） */
+    var videoMultiSoft: Boolean
+        get() = sp.getBoolean("videoMultiSoft", true)
+        set(v) = sp.edit().putBoolean("videoMultiSoft", v).apply()
+
     var videoCompat: Boolean
         get() = sp.getBoolean("videoCompat", false)
         set(v) = sp.edit().putBoolean("videoCompat", v).apply()

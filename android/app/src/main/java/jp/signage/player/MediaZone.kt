@@ -16,6 +16,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.TextView
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -23,6 +24,7 @@ import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import java.util.concurrent.Executors
@@ -68,9 +70,25 @@ class MediaZone(
     private val timeSeriesView = TimeSeriesView(activity).apply { visibility = View.INVISIBLE }
     private val layers: List<View> = listOf(playerView, imageA.root, imageB.root, weatherView, timeSeriesView)
     // 端末の動画デコーダーが使えないときは、別のデコーダーに切り替えて再生する
+    /**
+     * 複数の区画で動画を同時に再生すると、端末のハードウェアデコーダーが足りなくなって止まることがある。
+     * 2 つ目以降の動画の区画（メインでない区画）は、ソフトウェアデコーダーを先に使う
+     */
+    private val softFirst = !isMain && prefs.videoMultiSoft
+
     private val player = ExoPlayer.Builder(
-        activity, DefaultRenderersFactory(activity).setEnableDecoderFallback(true)
+        activity,
+        DefaultRenderersFactory(activity).setEnableDecoderFallback(true).apply {
+            if (softFirst) {
+                setMediaCodecSelector { mime, secure, tunneling ->
+                    MediaCodecSelector.DEFAULT.getDecoderInfos(mime, secure, tunneling).sortedBy { if (it.softwareOnly) 0 else 1 }
+                }
+            }
+        },
     ).build()
+
+    /** 音声のトラックを無効にしているか（音を出さない区画は、音声のデコーダーも使わない） */
+    private var audioDisabled = false
 
     /** 動画が固まったことを見つけるための記録 */
     private var lastPosition = -1L
@@ -273,6 +291,13 @@ class MediaZone(
     private fun applyVolume() {
         val base = if (isMain && prefs.videoSound) 1f else 0f
         player.volume = if (ducked) base * 0.15f else base
+        // 音を出さない区画は、音声のデコーダーを使わない（動画を複数同時に再生するときの負担を減らす）
+        val noAudio = base == 0f
+        if (noAudio != audioDisabled) {
+            audioDisabled = noAudio
+            player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, noAudio).build()
+        }
     }
 
     /** いま再生している画像・動画の回転（0・90・180・270） */
