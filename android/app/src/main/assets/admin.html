@@ -56,6 +56,9 @@
   .done { color: var(--ok); } .fail { color: var(--danger); }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
   .file { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
+  .thumb { position: relative; overflow: hidden; }
+  .thumb .timg { position: absolute; inset: 0; background: center / contain no-repeat; display: flex; align-items: center; justify-content: center; }
+  .thumb .play { position: relative; }
   .thumb.vid { position: relative; text-shadow: 0 1px 4px rgba(0,0,0,.8); color: #fff; }
   .thumb { aspect-ratio: 16 / 10; background: #0b0d12 center / contain no-repeat; display: flex; align-items: center; justify-content: center; color: #cfd6e4; font-size: 28px; cursor: pointer; }
   .meta { padding: 6px 8px; font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
@@ -1314,9 +1317,9 @@
     card.className = 'file';
     card.innerHTML = `<div class="thumb"></div>
       <div class="meta"><div class="fname"></div><div class="rule"></div>
-        <div class="row"><span></span><div class="btns"><button class="cond" type="button" title="時間帯・曜日・期間で再生を絞る">条件</button><button class="danger" type="button">削除</button></div></div></div>`;
+        <div class="row"><span></span><div class="btns"><button class="rot" type="button" title="サイネージでの表示を 90 度ずつ回転（横倒しや逆さまのとき）">回転</button><button class="cond" type="button" title="時間帯・曜日・期間で再生を絞る">条件</button><button class="danger" type="button">削除</button></div></div></div>`;
     const thumb = $('.thumb', card);
-    thumb.textContent = f.video ? '▶' : '';
+    thumb.innerHTML = `<div class="timg"></div>${f.video ? '<span class="play">▶</span>' : ''}`;
     thumb.dataset.zone = z.index; thumb.dataset.name = f.name; thumb.dataset.dev = dev.key;
     if (f.video) { thumb.dataset.video = '1'; thumb.dataset.size = f.size || 0; thumb.classList.add('vid'); }
     thumb.addEventListener('click', () => openFile(dev, z.index, f.name));
@@ -1332,6 +1335,29 @@
     const ruleEl = $('.rule', card);
     ruleEl.textContent = f.rule ? '🕒 ' + describeRule(f.rule) : '';
     ruleEl.classList.toggle('on', !!f.rule);
+    // 表示の回転（90 度ずつ）。サムネイルにも反映する
+    const rot = $('button.rot', card);
+    const showRot = () => {
+      const d = f.rotation || 0;
+      const timg = $('.timg', thumb);
+      // 90・270 度は縦横が入れ替わるので、枠（16:10）に収まるよう縮める
+      timg.style.transform = d ? `rotate(${d}deg)${d === 90 || d === 270 ? ' scale(0.625)' : ''}` : '';
+      rot.textContent = d ? `回転 ${d}°` : '回転';
+      rot.classList.toggle('primary', !!d);
+    };
+    rot.disabled = !z.writable;
+    rot.addEventListener('click', async () => {
+      const next = ((f.rotation || 0) + 90) % 360;
+      rot.disabled = true;
+      try {
+        await post(dev, '/api/filerotate', { zone: z.index, name: f.name, degrees: next });
+        f.rotation = next;
+        showRot();
+        toast(next ? `「${f.name}」の表示を ${next}° 回転にしました` : `「${f.name}」の回転を元に戻しました`);
+      } catch (e) { toast(e.message); }
+      rot.disabled = !z.writable;
+    });
+    showRot();
     return card;
   }
 
@@ -1425,13 +1451,13 @@
       const dev = devices.get(el.dataset.dev);
       if (!dev) continue;
       if (el.dataset.video) {
-        videoThumb(dev, el.dataset.zone, el.dataset.name, Number(el.dataset.size)).then((u) => { if (u) el.style.backgroundImage = `url("${u}")`; });
+        videoThumb(dev, el.dataset.zone, el.dataset.name, Number(el.dataset.size)).then((u) => { if (u) el.firstElementChild.style.backgroundImage = `url("${u}")`; });
         continue;
       }
       api(dev, fileUrl(el.dataset.zone, el.dataset.name), {}, 30000)
         .then((res) => res.blob())
-        .then((b) => { const u = URL.createObjectURL(b); blobUrls.push(u); el.style.backgroundImage = `url("${u}")`; })
-        .catch(() => { el.textContent = '？'; });
+        .then((b) => { const u = URL.createObjectURL(b); blobUrls.push(u); el.firstElementChild.style.backgroundImage = `url("${u}")`; })
+        .catch(() => { el.querySelector('.timg').textContent = '？'; });
     }
   }, { rootMargin: '200px' });
 

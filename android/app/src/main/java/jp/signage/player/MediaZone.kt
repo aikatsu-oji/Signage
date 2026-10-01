@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.FrameLayout
@@ -104,6 +105,10 @@ class MediaZone(
         view.addView(weatherView, 1, FrameLayout.LayoutParams(-1, -1))
         view.addView(timeSeriesView, 1, FrameLayout.LayoutParams(-1, -1))
         playerView.player = player
+        // 区画の大きさが変わったら（向きが変わったときなど）、回転の大きさを合わせ直す
+        view.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or2, ob ->
+            if (rotation != 0 && (r - l != or2 - ol || b - t != ob - ot)) applyRotation(rotation)
+        }
         player.addListener(object : Player.Listener {
             override fun onRenderedFirstFrame() {
                 if (!currentIsVideo) return
@@ -270,7 +275,31 @@ class MediaZone(
         player.volume = if (ducked) base * 0.15f else base
     }
 
+    /** いま再生している画像・動画の回転（0・90・180・270） */
+    private var rotation = 0
+
+    /**
+     * 画像・動画のレイヤーを回転する。90・270 度は、区画の縦横を入れ替えた大きさにして中央で回す
+     * （回したあとの見た目が区画にちょうど収まり、表示方法の判定も入れ替えた大きさで行われる）。
+     * ※ 動画の互換モード（SurfaceView）では、画面の回転は効かない
+     */
+    private fun applyRotation(deg: Int) {
+        rotation = deg
+        val zw = view.width
+        val zh = view.height
+        for (l in listOf<View>(playerView, imageA.root, imageB.root)) {
+            val lp = l.layoutParams as FrameLayout.LayoutParams
+            val side = (deg == 90 || deg == 270) && zw > 0 && zh > 0
+            lp.width = if (side) zh else FrameLayout.LayoutParams.MATCH_PARENT
+            lp.height = if (side) zw else FrameLayout.LayoutParams.MATCH_PARENT
+            lp.gravity = if (side) Gravity.CENTER else Gravity.NO_GRAVITY
+            l.layoutParams = lp
+            l.rotation = if (zw > 0 && zh > 0) deg.toFloat() else 0f
+        }
+    }
+
     private fun play(item: MediaEntry, my: Int) {
+        applyRotation(prefs.fileRotation(zoneIndex, item.name))
         showMessage(null)
         currentIsVideo = item.isVideo
         PlayerStatus.media(zoneIndex, item.name, item.isVideo, index + 1, playlist.size)

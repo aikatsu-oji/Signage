@@ -37,7 +37,7 @@ mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
-VERSION = "1.8.6"
+VERSION = "1.8.7"
 
 
 def resource_dir() -> Path:
@@ -179,6 +179,9 @@ class Server:
                             rule = s.file_rule(i, f["name"])
                             if rule:
                                 e["rule"] = rule
+                            rot = s.file_rotation(i, f["name"])
+                            if rot:
+                                e["rotation"] = rot
                             z["files"].append(e)
                     except OSError:
                         z["files"] = []
@@ -527,6 +530,19 @@ class Server:
                     except FileNotFoundError as e:
                         raise HttpError(404, str(e))
                     s.set_file_rule(j.get("zone"), j.get("name", ""), None)
+                    s.set_file_rotation(j.get("zone"), j.get("name", ""), 0)
+                    self.json({"ok": True})
+                elif key == "POST /api/filerotate":
+                    j = self.body_json()
+                    self.folder_of(j.get("zone"), writable=True)  # 区画の確認
+                    try:
+                        deg = int(j.get("degrees", 0))
+                    except (TypeError, ValueError):
+                        raise HttpError(400, "回転は 0・90・180・270 のどれかにしてください")
+                    if deg not in (0, 90, 180, 270):
+                        raise HttpError(400, "回転は 0・90・180・270 のどれかにしてください")
+                    s.set_file_rotation(int(j["zone"]), str(j.get("name", "")), deg)
+                    s.notify("content")
                     self.json({"ok": True})
                 elif key == "POST /api/filerule":
                     j = self.body_json()
@@ -643,6 +659,7 @@ class Server:
                         "video": it["video"],
                         "url": f"/media/{zone}/{quote(it['name'])}?v={int(it['path'].stat().st_mtime)}",
                         "rule": s.file_rule(zone, it["name"]),
+                        "rotation": s.file_rotation(zone, it["name"]),
                     } for it in items])
                 if key == "GET /local/weather":
                     return self.json(weather.pages(s))

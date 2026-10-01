@@ -261,6 +261,16 @@
     return 1 - Math.min(c / a, a / c) <= 0.2 ? FILL : FIT_BLUR;
   }
 
+  /** 表示を回転する。90・270 度は、区画の縦横を入れ替えた大きさにして中央で回す（回したあとの見た目が区画にちょうど収まる） */
+  function applyRot(elm, deg, rw, rh, extra = '') {
+    const st = elm.style;
+    st.inset = ''; st.left = ''; st.top = ''; st.width = ''; st.height = ''; st.transform = '';
+    if (!deg) return;
+    if (deg === 180) { st.transform = `rotate(180deg) ${extra}`; return; }
+    st.inset = 'auto'; st.left = '50%'; st.top = '50%'; st.width = rh + 'px'; st.height = rw + 'px';
+    st.transform = `translate(-50%, -50%) rotate(${deg}deg) ${extra}`;
+  }
+
   function imageLayer() {
     const d = el('div', 'layer imglayer');
     d.bg = el('img', 'bg'); d.fg = el('img', 'fg');
@@ -289,8 +299,11 @@
       this.timer = null; this.remain = 0; this.startedAt = 0;
       this.video.addEventListener('ended', () => { if (this.current?.video) this.goto(1); });
       this.video.addEventListener('loadedmetadata', () => {
-        const fit = decideFit(cfg.fitMode ?? 3, this.video.videoWidth, this.video.videoHeight, this.root.clientWidth, this.root.clientHeight);
+        const rot = this.current?.rotation || 0, side = rot === 90 || rot === 270;
+        const rw = this.root.clientWidth, rh = this.root.clientHeight;
+        const fit = decideFit(cfg.fitMode ?? 3, this.video.videoWidth, this.video.videoHeight, side ? rh : rw, side ? rw : rh);
         this.video.style.objectFit = fit === FILL ? 'cover' : 'contain';
+        applyRot(this.video, rot, rw, rh);
       });
       this.video.addEventListener('error', () => { if (this.current?.video) this.goto(1); });
       this.video.addEventListener('playing', () => { if (this.current?.video) { clearTimeout(this.watchdog); this.reveal(this.video); } });
@@ -394,7 +407,11 @@
           if (my !== this.token) return;
           clearTimeout(this.watchdog);
           // 表示方法：画面いっぱい（はみ出しを切り取り）／全体＋ぼかし背景／全体
-          const fit = decideFit(cfg.fitMode ?? 3, img.naturalWidth, img.naturalHeight, this.root.clientWidth, this.root.clientHeight);
+          const rot = item.rotation || 0, side = rot === 90 || rot === 270;
+          const rw = this.root.clientWidth, rh = this.root.clientHeight;
+          const fit = decideFit(cfg.fitMode ?? 3, img.naturalWidth, img.naturalHeight, side ? rh : rw, side ? rw : rh);
+          applyRot(target.fg, rot, rw, rh);
+          applyRot(target.bg, rot, rw, rh, 'scale(1.15)');
           target.fg.src = img.src;
           target.fg.style.objectFit = fit === FILL ? 'cover' : 'contain';
           target.bg.hidden = fit !== FIT_BLUR;

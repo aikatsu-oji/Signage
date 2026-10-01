@@ -349,6 +349,16 @@ object AdminServer {
                 val folder = writableFolder(prefs, body.optString("zone"))
                 FolderStore.delete(app, folder, body.getString("name"), prefs.recursive)
                 prefs.setFileRule(body.optString("zone").toIntOrNull() ?: 0, body.getString("name"), null)
+                prefs.setFileRotation(body.optString("zone").toIntOrNull() ?: 0, body.getString("name"), 0)
+                json(200, JSONObject().put("ok", true))
+            }
+            "POST /api/filerotate" -> {
+                val body = req.json()
+                writableFolder(prefs, body.optString("zone")) // 区画の確認
+                val degrees = body.optInt("degrees", 0)
+                if (degrees !in listOf(0, 90, 180, 270)) throw HttpError(400, "回転は 0・90・180・270 のどれかにしてください")
+                prefs.setFileRotation(body.optString("zone").toInt(), body.getString("name"), degrees)
+                notify(EVENT_CONTENT)
                 json(200, JSONObject().put("ok", true))
             }
             "POST /api/filerule" -> {
@@ -602,12 +612,14 @@ object AdminServer {
                     z.put("writable", FolderStore.isWritable(app, folder))
                     val files = JSONArray()
                     val rules = prefs.fileRulesOf(i)
+                    val rotations = prefs.fileRotationsOf(i)
                     runCatching { MediaScanner.scan(app.contentResolver, folder, prefs.recursive) }
                         .onFailure { z.put("error", "フォルダを読み込めません") }
                         .getOrDefault(emptyList())
                         .forEach {
                             files.put(JSONObject().put("name", it.name).put("video", it.isVideo).put("size", it.size).apply {
                                 rules[it.name]?.let { r -> put("rule", r) }
+                                rotations[it.name]?.takeIf { r -> r != 0 }?.let { r -> put("rotation", r) }
                             })
                         }
                     z.put("files", files)
