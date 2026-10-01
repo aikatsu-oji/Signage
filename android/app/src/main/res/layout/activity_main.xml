@@ -20,6 +20,41 @@
 
         <TextView
             style="@style/Label"
+            android:text="画面の向き" />
+
+        <RadioGroup
+            android:id="@+id/orientationGroup"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/orientAuto"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="自動" />
+
+            <RadioButton
+                android:id="@+id/orientLandscape"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="横" />
+
+            <RadioButton
+                android:id="@+id/orientPortrait"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="縦" />
+
+            <RadioButton
+                android:id="@+id/orientPortraitReverse"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="縦（逆）" />
+        </RadioGroup>
+
+        <TextView
+            style="@style/Label"
             android:text="画面分割" />
 
         <RadioGroup
@@ -142,34 +177,6 @@
             android:inputType="number"
             android:maxLength="4" />
 
-        <TextView
-            style="@style/Label"
-            android:text="画面の向き" />
-
-        <RadioGroup
-            android:id="@+id/orientationGroup"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <RadioButton
-                android:id="@+id/orientAuto"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="自動" />
-
-            <RadioButton
-                android:id="@+id/orientLandscape"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="横" />
-
-            <RadioButton
-                android:id="@+id/orientPortrait"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="縦" />
-        </RadioGroup>
 
         <TextView
             style="@style/Label"

@@ -104,13 +104,14 @@ class MainActivity : Activity() {
         // テレビのリモコン操作向け：選択中の項目を枠で表示し、先頭から始める
         val scroll = findViewById<ScrollView>(R.id.settingsScroll)
         RemoteFocus.install(this, scroll)
-        RemoteFocus.focusFirst(scroll, findViewById(R.id.layoutSingle))
+        RemoteFocus.focusFirst(scroll, findViewById(R.id.orientAuto))
 
         val group = findViewById<RadioGroup>(R.id.orientationGroup)
         group.check(
             when (prefs.orientation) {
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE -> R.id.orientLandscape
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT -> R.id.orientPortrait
+                ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT -> R.id.orientPortraitReverse
                 else -> R.id.orientAuto
             }
         )
@@ -118,6 +119,7 @@ class MainActivity : Activity() {
             prefs.orientation = when (id) {
                 R.id.orientLandscape -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                 R.id.orientPortrait -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                R.id.orientPortraitReverse -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
                 else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             }
         }

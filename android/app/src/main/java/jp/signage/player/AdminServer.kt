@@ -129,7 +129,13 @@ object AdminServer {
             (app.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager)
                 .defaultDisplay.getRealMetrics(dm)
         }
-        return JSONObject().put("width", dm.widthPixels).put("height", dm.heightPixels)
+        // 縦向きを選んでいて画面が横長のとき（Fire TV など）は、再生画面を回して表示するので縦横を入れ替えて返す
+        val orient = Prefs(app).orientation
+        val portrait = orient == android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT ||
+            orient == android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
+        val swap = portrait && dm.widthPixels > dm.heightPixels
+        return JSONObject().put("width", if (swap) dm.heightPixels else dm.widthPixels)
+            .put("height", if (swap) dm.widthPixels else dm.heightPixels)
     }
 
     /** この端末の LAN 内の IPv4 アドレス（管理画面の URL 表示用） */
@@ -643,7 +649,7 @@ object AdminServer {
             .put("fitMode", prefs.fitMode)
             .put("orientation", when (prefs.orientation) {
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE -> 1
-                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT -> 2
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT, ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT -> 2
                 else -> 0
             })
             .put("clockEnabled", prefs.clockEnabled)

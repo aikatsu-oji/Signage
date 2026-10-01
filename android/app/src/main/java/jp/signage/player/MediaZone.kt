@@ -60,7 +60,8 @@ class MediaZone(
     override val view: FrameLayout =
         // 動画の互換モードでは、専用ボードでも安定しやすい SurfaceView で描画する
         LayoutInflater.from(activity).inflate(
-            if (prefs.videoCompat) R.layout.zone_media_surface else R.layout.zone_media, null
+            // 縦向きで画面を回して表示するときは、回転が効く TextureView を使う
+            if (prefs.videoCompat && !PlayerActivity.needsSoftRotation(activity, prefs)) R.layout.zone_media_surface else R.layout.zone_media, null
         ) as FrameLayout
     private val playerView: PlayerView = view.findViewById(R.id.playerView)
     private val imageA = ImageLayer(view.findViewById(R.id.imageA))
