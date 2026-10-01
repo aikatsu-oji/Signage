@@ -275,8 +275,12 @@ class App:
 
     def reopen_player_on_monitor(self):
         """表示するモニターを変えたとき、再生画面が開いていれば、新しいモニターで開き直す"""
-        if self.player_open:
-            self.open_player()
+        log(f"表示するモニターの切り替え要求：設定={self.store.get('monitor')}、再生画面は{'開いています' if self.player_open else '開いていません'}")
+        try:
+            if self.player_open:
+                self.open_player()
+        except Exception as e:  # noqa
+            log(f"再生画面をモニターを変えて開き直せませんでした: {e!r}")
 
     def set_monitor(self, index):
         """トレイのメニューから、表示するモニターを切り替える"""
