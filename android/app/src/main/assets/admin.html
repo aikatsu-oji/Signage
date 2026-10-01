@@ -339,6 +339,11 @@
             <div class="seg" id="orientSeg" role="radiogroup" aria-label="画面の向き"></div>
             <span class="sub" id="orientNote"></span>
           </div>
+          <div class="orientRow" id="rotateRow" hidden>
+            <span class="ol">画面を回す（Fire TV 用）</span>
+            <div class="seg" id="rotateSeg" role="radiogroup" aria-label="画面を回す"></div>
+            <span class="sub" id="rotateNote"></span>
+          </div>
           <div class="layoutBody">
             <div class="tiles" id="layoutTiles" role="radiogroup" aria-label="分割方法"></div>
             <div class="lpwrap">
@@ -1639,12 +1644,20 @@
 
   /** 画面の向き（0=自動 / 1=横 / 2=縦）。保存前の変更中の値。Windows では確認用の表示（向きは Windows 側で決まる） */
   let layoutOrientation = 0;
+  /** 画面を回す（Fire TV 専用。0=回さない / 1=右に90° / 2=左に90°）。保存前の変更中の値 */
+  let layoutRotate = 0;
 
   /** 計算に使う画面の大きさ。向きを「横／縦」に選んでいれば、端末が報告した大きさをその向きに合わせて入れ替える */
   function screenDims(dev) {
     const sc = dev.state?.screen;
     const known = !!sc;
-    const W0 = sc?.width || 1920, H0 = sc?.height || 1080;
+    let W0 = sc?.width || 1920, H0 = sc?.height || 1080;
+    // Fire TV の「画面を回す」：端末が報告する大きさは、保存済みの設定で回している場合は縦横が入れ替わっている。変更中の設定に合わせて直す
+    const stt = dev.state?.settings;
+    if (stt?.screenRotateSupported) {
+      if (Number(stt.screenRotate ?? 0) !== 0) [W0, H0] = [H0, W0];
+      if (layoutRotate !== 0) [W0, H0] = [H0, W0];
+    }
     const big = Math.max(W0, H0), small = Math.min(W0, H0);
     const portrait = layoutOrientation === 2 ? true : layoutOrientation === 1 ? false : H0 > W0;
     return { w: portrait ? small : big, h: portrait ? big : small, portrait, known, actualPortrait: H0 > W0, actualW: W0, actualH: H0 };
@@ -1658,6 +1671,7 @@
     const f = layoutForm();
     for (const i of [0, 1, 2]) layoutZoneTypes[i] = String(s.zoneTypes[i] ?? 0);
     layoutOrientation = Number(s.orientation ?? 0);
+    layoutRotate = Number(s.screenRotate ?? 0);
     for (const el of f.elements) {
       if (!el.name) continue;
       const v = s[el.name];
@@ -1682,7 +1696,8 @@
     const dirty = fval('layout') !== st.layout || fval('splitPercent') !== st.splitPercent
       || fval('mainPercent') !== st.mainPercent || fval('sidePercent') !== st.sidePercent
       || [0, 1, 2].some((i) => Number(layoutZoneTypes[i]) !== (st.zoneTypes[i] ?? 0))
-      || layoutOrientation !== Number(st.orientation ?? 0);
+      || layoutOrientation !== Number(st.orientation ?? 0)
+      || layoutRotate !== Number(st.screenRotate ?? 0);
     $('#layoutDirty').hidden = !dirty;
   }
 
@@ -1753,6 +1768,22 @@
       note = layoutOrientation === 0 ? `${now}。端末の向きに従います。` : `保存すると、再生画面を${layoutOrientation === 2 ? '縦' : '横'}向きに固定します（${now}）。`;
     }
     $('#orientNote').textContent = note;
+    // 画面を回す（Fire TV のみ。対応していない端末では表示しない）
+    const supported = !!dev.state?.settings?.screenRotateSupported;
+    $('#rotateRow').hidden = !supported;
+    if (supported) {
+      const ROT = [[0, '回さない'], [1, '右に90°'], [2, '左に90°']];
+      $('#rotateSeg').innerHTML = ROT.map(([v, t]) => `<button type="button" role="radio" aria-checked="${layoutRotate === v}" data-v="${v}">${t}</button>`).join('');
+      $('#rotateSeg').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+        layoutRotate = Number(b.dataset.v);
+        renderLayoutCard();
+        refreshZones();
+        updateLayoutDirty();
+      }));
+      $('#rotateNote').textContent = layoutRotate === 0
+        ? 'テレビを縦に置くときに使います。'
+        : `保存すると、再生画面を${layoutRotate === 1 ? '右（時計回り）' : '左（反時計回り）'}に90°回して表示します。設定画面は回りません。`;
+    }
   }
 
   function renderLayoutCard() {
@@ -2051,6 +2082,7 @@
       layout: fval('layout'), splitPercent: fval('splitPercent'), mainPercent: fval('mainPercent'), sidePercent: fval('sidePercent'),
       zoneTypes: [0, 1, 2].map((i) => Number(layoutZoneTypes[i])),
       orientation: layoutOrientation,
+      ...(dev.state?.settings?.screenRotateSupported ? { screenRotate: layoutRotate } : {}),
     };
     try {
       await post(dev, '/api/settings', body);

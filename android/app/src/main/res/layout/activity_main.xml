@@ -45,13 +45,43 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="縦" />
+        </RadioGroup>
+
+        <TextView
+            android:id="@+id/rotateLabel"
+            style="@style/Label"
+            android:text="画面を回す（Fire TV 用）" />
+
+        <RadioGroup
+            android:id="@+id/rotateGroup"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
 
             <RadioButton
-                android:id="@+id/orientPortraitReverse"
+                android:id="@+id/rotateNone"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="縦（逆）" />
+                android:text="回さない" />
+
+            <RadioButton
+                android:id="@+id/rotateRight"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="右に90°" />
+
+            <RadioButton
+                android:id="@+id/rotateLeft"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="左に90°" />
         </RadioGroup>
+
+        <TextView
+            android:id="@+id/rotateNote"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="テレビを縦に置くときに使います。設定画面は回りません。" />
 
         <TextView
             style="@style/Label"

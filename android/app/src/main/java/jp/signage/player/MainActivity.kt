@@ -111,7 +111,6 @@ class MainActivity : Activity() {
             when (prefs.orientation) {
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE -> R.id.orientLandscape
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT -> R.id.orientPortrait
-                ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT -> R.id.orientPortraitReverse
                 else -> R.id.orientAuto
             }
         )
@@ -119,9 +118,22 @@ class MainActivity : Activity() {
             prefs.orientation = when (id) {
                 R.id.orientLandscape -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                 R.id.orientPortrait -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-                R.id.orientPortraitReverse -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
                 else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             }
+        }
+
+        // 画面を回す（Fire TV 専用）
+        val rotateLabel = findViewById<View>(R.id.rotateLabel)
+        val rotateGroup = findViewById<RadioGroup>(R.id.rotateGroup)
+        if (PlayerActivity.isFireTv(this)) {
+            rotateGroup.check(when (prefs.screenRotate) { 1 -> R.id.rotateRight; 2 -> R.id.rotateLeft; else -> R.id.rotateNone })
+            rotateGroup.setOnCheckedChangeListener { _, id ->
+                prefs.screenRotate = when (id) { R.id.rotateRight -> 1; R.id.rotateLeft -> 2; else -> 0 }
+            }
+        } else {
+            rotateLabel.visibility = View.GONE
+            rotateGroup.visibility = View.GONE
+            findViewById<View>(R.id.rotateNote).visibility = View.GONE
         }
 
         // 自動再生が有効なら、ランチャーから起動したときはそのまま再生画面へ

@@ -42,12 +42,10 @@ class PlayerActivity : Activity() {
             Build.MANUFACTURER.equals("Amazon", ignoreCase = true) &&
                 ctx.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
 
-        /** Fire TV で縦向きを選んでいるとき（画面が横長のままなので、再生画面そのものを回して表示する） */
+        /** 「画面を回す」が有効なとき（Fire TV 専用。画面は横長のままなので、再生画面そのものを回して表示する） */
         @Suppress("DEPRECATION")
         fun needsSoftRotation(ctx: android.content.Context, prefs: Prefs): Boolean {
-            val want = prefs.orientation
-            if (want != ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT && want != ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT) return false
-            if (!isFireTv(ctx)) return false
+            if (prefs.screenRotate == 0 || !isFireTv(ctx)) return false
             val dm = android.util.DisplayMetrics()
             (ctx.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay.getRealMetrics(dm)
             return dm.widthPixels > dm.heightPixels
@@ -92,8 +90,8 @@ class PlayerActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_player)
         prefs = Prefs(this)
-        // Fire TV は向きの指定を受け付けず、細い窓になってしまうので、指定せずに再生画面を回して表示する
-        requestedOrientation = if (isFireTv(this)) ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED else prefs.orientation
+        // 「画面を回す」が有効なときは、向きの指定（Fire TV では細い窓になる）をせず、再生画面を回して表示する
+        requestedOrientation = if (needsSoftRotation(this, prefs)) ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED else prefs.orientation
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -171,7 +169,7 @@ class PlayerActivity : Activity() {
     @Suppress("DEPRECATION")
     private fun applySoftRotation() {
         if (!needsSoftRotation(this, prefs)) return
-        val reverse = prefs.orientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
+        val reverse = prefs.screenRotate == 2
         val dm = android.util.DisplayMetrics()
         windowManager.defaultDisplay.getRealMetrics(dm)
         val w = dm.widthPixels
