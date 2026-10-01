@@ -216,6 +216,39 @@
         </div>
       </section>
 
+      <section id="accessSec">
+        <details>
+          <summary><h2>管理画面に入れる端末</h2><span class="sub" id="accessSummary"></span></summary>
+          <p class="sub">この管理画面を開いて操作できるスマホ・PC を、MAC アドレスで制限します。ここで決めた内容は、見つかっているサイネージ端末すべてに反映されます（端末ごとの設定ではありません）。初期状態は制限なし。PIN は引き続き必要です。</p>
+          <p class="sub" id="accessNoSupport" hidden></p>
+          <div id="accessMain">
+            <p>いま操作している端末：<b id="accessYouMac"></b> <span class="sub" id="accessYouIp"></span></p>
+            <div class="dlgrow" style="margin:6px 0">
+              <input type="text" id="accessYouName" placeholder="名前（例：店長のスマホ）" maxlength="30" style="flex:1; min-width:120px">
+              <button type="button" class="small" id="accessAddYou">この端末を追加</button>
+            </div>
+            <div class="dlgrow" style="margin:6px 0">
+              <input type="text" id="accessMac" placeholder="MAC アドレス（AA:BB:CC:DD:EE:FF）" maxlength="17" style="flex:1; min-width:150px">
+              <input type="text" id="accessMacName" placeholder="名前" maxlength="30" style="width:110px">
+              <button type="button" class="small" id="accessAddMac">追加</button>
+            </div>
+            <ul class="log" id="accessList" style="margin:8px 0"></ul>
+            <div style="display:flex; flex-direction:column; gap:6px; margin:8px 0">
+              <label class="check"><input type="checkbox" id="accessEnabled"> 登録した端末だけ入れるようにする</label>
+              <label class="check"><input type="checkbox" id="accessVpn"> VPN（Tailscale）経由は許可する</label>
+            </div>
+            <div class="warn" id="accessMismatch" hidden>
+              <span id="accessMismatchText"></span>
+              <button type="button" class="small" id="accessSync">全端末にそろえる</button>
+            </div>
+            <p class="sub" id="accessSkipped" hidden></p>
+            <p class="sub">・スマホは Wi-Fi の「プライベート アドレス（ランダム MAC）」を使うことがあります。「この端末を追加」なら、実際に使われている MAC アドレスを登録できます。<br>
+            ・VPN 経由・ルーターを挟んだ先の端末は MAC アドレスを確認できません。<br>
+            ・入れなくなったときは、サイネージを動かしている端末側で解除できます（Windows：タスクトレイ／設定画面、Android：端末の設定画面）。</p>
+          </div>
+        </details>
+      </section>
+
       <section id="voiceSec">
         <h2>マイクで声を届ける</h2>
         <p class="sub" id="voiceTarget"></p>
@@ -310,36 +343,6 @@
           <div class="opts" id="schedOpts"></div>
           <button class="primary" id="schedAdd">予約を追加</button>
         </fieldset>
-      </section>
-
-      <section id="accessSec" hidden>
-        <details>
-          <summary><h2>操作できる端末</h2><span class="sub" id="accessSummary"></span></summary>
-          <p class="sub">この端末の管理画面を操作できるスマホ・PC を、MAC アドレスで制限します。初期状態は制限なし（PIN だけで操作できます）。PIN は引き続き必要です。</p>
-          <div id="accessBody">
-            <p class="sub" id="accessNoSupport" hidden></p>
-            <div id="accessMain">
-              <p>いま操作している端末：<b id="accessYouMac"></b> <span class="sub" id="accessYouIp"></span></p>
-              <div class="dlgrow" style="margin:6px 0">
-                <input type="text" id="accessYouName" placeholder="名前（例：店長のスマホ）" maxlength="30" style="flex:1; min-width:140px">
-                <button type="button" class="small" id="accessAddYou">この端末を追加</button>
-              </div>
-              <div class="dlgrow" style="margin:6px 0">
-                <input type="text" id="accessMac" placeholder="MAC アドレス（例：AA:BB:CC:DD:EE:FF）" maxlength="17" style="flex:1; min-width:180px">
-                <input type="text" id="accessMacName" placeholder="名前" maxlength="30" style="width:140px">
-                <button type="button" class="small" id="accessAddMac">追加</button>
-              </div>
-              <ul class="log" id="accessList" style="margin:8px 0"></ul>
-              <div style="display:flex; flex-direction:column; gap:6px; margin:8px 0">
-                <label class="check"><input type="checkbox" id="accessEnabled"> 登録した端末だけ操作できるようにする</label>
-                <label class="check"><input type="checkbox" id="accessVpn"> VPN（Tailscale）経由の操作は許可する</label>
-              </div>
-              <p class="sub">・スマホは Wi-Fi の「プライベート アドレス（ランダム MAC）」を使うことがあります。「この端末を追加」なら、実際に使われている MAC アドレスを登録できます（Wi-Fi ごとに変わる場合があります）。<br>
-              ・VPN 経由・ルーターを挟んだ先の端末は MAC アドレスを確認できません。<br>
-              ・誰も操作できなくなったときは、サイネージを動かしている端末側で解除できます（Windows：タスクトレイの「操作できる端末の制限を解除」／設定画面、Android：端末の設定画面）。</p>
-            </div>
-          </div>
-        </details>
       </section>
 
       <section id="settingsSec">
@@ -622,6 +625,7 @@
     }
     $('#checkAll').checked = list.length > 0 && list.every((d) => checked.has(d.key));
     renderBulk();
+    renderAccess();
   }
 
   function saveChecked() { store.set('signage-checked', [...checked]); }
@@ -688,7 +692,6 @@
     $('#exportBtn').disabled = !ok;
     $('#settingsSec').hidden = !ok;
     $('#scheduleSec').hidden = !ok;
-    $('#accessSec').hidden = !ok;
     renderTickerTarget();
     if (typeof renderVoiceTarget === 'function') renderVoiceTarget();
     blobUrls.splice(0).forEach(URL.revokeObjectURL);
@@ -713,31 +716,30 @@
     renderSettings(dev);
     renderZones(dev);
     renderSchedules(dev);
-    renderAccess(dev);
   }
 
-  // ------------------------------------------------------------ 操作できる端末（MAC アドレスの制限）
+  // ------------------------------------------------------------ 管理画面に入れる端末（MAC アドレスの制限・全端末共通）
 
-  function renderAccess(dev) {
-    const a = dev.state?.access;
+  /** 制限に対応している端末（MAC アドレスを確認できる端末） */
+  const accessDevices = () => [...devices.values()].filter((d) => d.status === 'ok' && d.state?.access?.canResolve);
+  /** 基準にする端末（このページの端末が対応していればそれ、なければ最初の対応端末） */
+  const accessBase = () => (self.state?.access?.canResolve ? self : accessDevices()[0]);
+  const accessKey = (a) => JSON.stringify([!!a.enabled, !!a.allowVpn, a.devices.map((d) => d.mac + '|' + d.name).sort()]);
+
+  function renderAccess() {
     const sec = $('#accessSec');
-    sec.hidden = false;
+    if (!sec || !self.state) return;
+    const base = accessBase();
     $('#accessNoSupport').hidden = true;
     $('#accessMain').hidden = false;
-    if (!a) {
-      $('#accessSummary').textContent = '';
+    if (!base) {
+      $('#accessSummary').textContent = '（使えません）';
       $('#accessNoSupport').hidden = false;
-      $('#accessNoSupport').textContent = 'この端末のアプリは、操作できる端末の制限に対応していません。端末のアプリを更新してください。';
+      $('#accessNoSupport').textContent = '見つかっている端末が、どれも MAC アドレスの制限に対応していません（Android 10 以降は、接続してきた端末の MAC アドレスを確認できません。Windows 版のサイネージで使えます）。';
       $('#accessMain').hidden = true;
       return;
     }
-    if (!a.canResolve) {
-      $('#accessSummary').textContent = '（この端末では使えません）';
-      $('#accessNoSupport').hidden = false;
-      $('#accessNoSupport').textContent = 'この端末（Android 10 以降）は、接続してきた端末の MAC アドレスを確認できないため、制限は使えません。Windows 版のサイネージでご利用ください。';
-      $('#accessMain').hidden = true;
-      return;
-    }
+    const a = base.state.access;
     $('#accessSummary').textContent = a.enabled ? `（制限中・${a.devices.length} 台を許可）` : '（制限なし）';
     const you = a.you || {};
     $('#accessYouMac').textContent = you.local ? 'この端末自身（常に許可）' : you.vpn ? 'VPN 経由（MAC アドレスなし）' : (you.mac || '確認できません');
@@ -756,42 +758,66 @@
       const li = document.createElement('li');
       li.style.cssText = 'display:flex; gap:8px; align-items:center; justify-content:space-between';
       const span = document.createElement('span');
-      span.textContent = d.name ? `${d.name}　${d.mac}` : d.mac;
-      if (you.mac === d.mac) span.textContent += '　（いま操作中）';
+      span.textContent = (d.name ? `${d.name}　${d.mac}` : d.mac) + (you.mac === d.mac ? '　（いま操作中）' : '');
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'small danger'; b.textContent = '削除';
       b.addEventListener('click', () => saveAccess({ devices: a.devices.filter((x) => x.mac !== d.mac) }));
       li.append(span, b);
       list.append(li);
     }
+    // 端末ごとに内容が違う（あとから増えた端末など）ときは、そろえるよう知らせる
+    const targets = accessDevices();
+    const differ = targets.filter((d) => accessKey(d.state.access) !== accessKey(a));
+    $('#accessMismatch').hidden = !differ.length;
+    $('#accessMismatchText').textContent = differ.length ? `設定が違う端末があります：${differ.map((d) => d.name).join('、')}　` : '';
+    const skipped = [...devices.values()].filter((d) => d.status === 'ok' && d.state && !d.state.access?.canResolve);
+    $('#accessSkipped').hidden = !skipped.length;
+    $('#accessSkipped').textContent = skipped.length
+      ? `次の端末は MAC アドレスを確認できない（または古い版の）ため、制限されません：${skipped.map((d) => d.name).join('、')}` : '';
   }
 
+  /** 変更を、制限に対応しているすべての端末に反映する（基準の端末で先に確かめ、締め出しを防ぐ） */
   async function saveAccess(patch) {
-    const dev = selected();
+    const base = accessBase();
+    if (!base) return;
+    const cur = base.state.access;
+    const body = {
+      enabled: cur.enabled, allowVpn: cur.allowVpn, devices: cur.devices, ...patch,
+    };
     try {
-      dev.state.access = await post(dev, '/api/access', patch);
-      renderAccess(dev);
-      toast('保存しました');
+      base.state.access = await post(base, '/api/access', body);
     } catch (e) {
       toast(e.message);
-      renderAccess(dev);
+      renderAccess();
+      return;
     }
+    const fixed = base.state.access;
+    const fails = [];
+    await Promise.all(accessDevices().filter((d) => d !== base).map(async (d) => {
+      try {
+        d.state.access = await post(d, '/api/access', { enabled: fixed.enabled, allowVpn: fixed.allowVpn, devices: fixed.devices });
+      } catch (e) { fails.push(`${d.name}（${e.message}）`); }
+    }));
+    renderAccess();
+    toast(fails.length ? `一部の端末に反映できませんでした：${fails.join('、')}` : '全端末に反映しました');
   }
 
-  $('#accessAddYou').addEventListener('click', () => {
-    const a = selected().state.access;
-    saveAccess({ devices: [...a.devices, { mac: a.you.mac, name: $('#accessYouName').value.trim() }] })
-      .then(() => { $('#accessYouName').value = ''; });
+  $('#accessAddYou').addEventListener('click', async () => {
+    const a = accessBase().state.access;
+    await saveAccess({ devices: [...a.devices, { mac: a.you.mac, name: $('#accessYouName').value.trim() }] });
+    $('#accessYouName').value = '';
   });
-  $('#accessAddMac').addEventListener('click', () => {
-    const a = selected().state.access;
+  $('#accessAddMac').addEventListener('click', async () => {
+    const a = accessBase().state.access;
     const mac = $('#accessMac').value.trim();
     if (!mac) return;
-    saveAccess({ devices: [...a.devices, { mac, name: $('#accessMacName').value.trim() }] })
-      .then(() => { if (!selected().state.access.devices.some((d) => d.mac.replace(/:/g, '') === mac.toLowerCase().replace(/[^0-9a-f]/g, ''))) return; $('#accessMac').value = ''; $('#accessMacName').value = ''; });
+    await saveAccess({ devices: [...a.devices, { mac, name: $('#accessMacName').value.trim() }] });
+    const norm = mac.toLowerCase().replace(/[^0-9a-f]/g, '');
+    if (accessBase().state.access.devices.some((d) => d.mac.replace(/:/g, '') === norm)) { $('#accessMac').value = ''; $('#accessMacName').value = ''; }
   });
   $('#accessEnabled').addEventListener('change', (e) => saveAccess({ enabled: e.target.checked }));
   $('#accessVpn').addEventListener('change', (e) => saveAccess({ allowVpn: e.target.checked }));
+  $('#accessSync').addEventListener('click', () => saveAccess({}));
 
   async function askPin(dev) {
     const p = prompt(`「${dev.name}」の PIN（6桁）を入力してください`);
