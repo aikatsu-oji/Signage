@@ -2,6 +2,7 @@ package jp.signage.player
 
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
@@ -36,6 +37,20 @@ import kotlin.math.abs
  */
 class PlayerActivity : Activity() {
     companion object {
+        /** Fire TV（Amazon のテレビ端末）かどうか。画面を回す処理はこの端末だけが対象 */
+        fun isFireTv(ctx: android.content.Context): Boolean =
+            Build.MANUFACTURER.equals("Amazon", ignoreCase = true) &&
+                ctx.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
+
+        /** 「画面を回す」が有効なとき（Fire TV 専用。画面は横長のままなので、再生画面そのものを回して表示する） */
+        @Suppress("DEPRECATION")
+        fun needsSoftRotation(ctx: android.content.Context, prefs: Prefs): Boolean {
+            if (prefs.screenRotate == 0 || !isFireTv(ctx)) return false
+            val dm = android.util.DisplayMetrics()
+            (ctx.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay.getRealMetrics(dm)
+            return dm.widthPixels > dm.heightPixels
+        }
+
         /** 起動直後に天気予報を表示する（設定画面のプレビュー用） */
         const val EXTRA_WEATHER_NOW = "weatherNow"
     }
@@ -75,7 +90,8 @@ class PlayerActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_player)
         prefs = Prefs(this)
-        requestedOrientation = prefs.orientation
+        // 「画面を回す」が有効なときは、向きの指定（Fire TV では細い窓になる）をせず、再生画面を回して表示する
+        requestedOrientation = if (needsSoftRotation(this, prefs)) ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED else prefs.orientation
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -116,6 +132,7 @@ class PlayerActivity : Activity() {
         zones = createZones()
         mainZone = zones.filterIsInstance<MediaZone>().firstOrNull()
         mainZone?.forceWeather = intent.getBooleanExtra(EXTRA_WEATHER_NOW, false)
+        applySoftRotation()
         arrangeZones()
     }
 
@@ -146,11 +163,38 @@ class PlayerActivity : Activity() {
     /**
      * 区画を画面に並べる。メイン＋サイドは、横長の画面では右側に、縦長の画面では下側にサイドを置く。
      */
+    /** 縦向きを選んだのに画面が横長のまま（Fire TV など、OS が向きの指定を無視する端末）のときは、再生画面そのものを 90 度回して表示する */
+    private var softRotated = false
+
+    @Suppress("DEPRECATION")
+    private fun applySoftRotation() {
+        if (!needsSoftRotation(this, prefs)) return
+        val reverse = prefs.screenRotate == 2
+        val dm = android.util.DisplayMetrics()
+        windowManager.defaultDisplay.getRealMetrics(dm)
+        val w = dm.widthPixels
+        val h = dm.heightPixels
+        val root = findViewById<FrameLayout>(R.id.root)
+        root.layoutParams = FrameLayout.LayoutParams(h, w)
+        // 動画（TextureView）の中身も一緒に回るよう、いったん別の面に描いてから回す
+        root.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        root.pivotX = 0f
+        root.pivotY = 0f
+        if (reverse) {
+            root.rotation = -90f
+            root.translationY = h.toFloat()
+        } else {
+            root.rotation = 90f
+            root.translationX = w.toFloat()
+        }
+        softRotated = true
+    }
+
     private fun arrangeZones() {
         zones.forEach { (it.view.parent as? ViewGroup)?.removeView(it.view) }
         zonesFrame.removeAllViews()
         val gap = (resources.displayMetrics.density * 2).toInt()
-        val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val landscape = !softRotated && resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
         fun box(vertical: Boolean) = LinearLayout(this).apply { orientation = if (vertical) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL }
         fun LinearLayout.add(v: View, weight: Float) {

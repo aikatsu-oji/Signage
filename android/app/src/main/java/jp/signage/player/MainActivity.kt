@@ -104,7 +104,7 @@ class MainActivity : Activity() {
         // テレビのリモコン操作向け：選択中の項目を枠で表示し、先頭から始める
         val scroll = findViewById<ScrollView>(R.id.settingsScroll)
         RemoteFocus.install(this, scroll)
-        RemoteFocus.focusFirst(scroll, findViewById(R.id.layoutSingle))
+        RemoteFocus.focusFirst(scroll, findViewById(R.id.orientAuto))
 
         val group = findViewById<RadioGroup>(R.id.orientationGroup)
         group.check(
@@ -120,6 +120,20 @@ class MainActivity : Activity() {
                 R.id.orientPortrait -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
                 else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             }
+        }
+
+        // 画面を回す（Fire TV 専用）
+        val rotateLabel = findViewById<View>(R.id.rotateLabel)
+        val rotateGroup = findViewById<RadioGroup>(R.id.rotateGroup)
+        if (PlayerActivity.isFireTv(this)) {
+            rotateGroup.check(when (prefs.screenRotate) { 1 -> R.id.rotateRight; 2 -> R.id.rotateLeft; else -> R.id.rotateNone })
+            rotateGroup.setOnCheckedChangeListener { _, id ->
+                prefs.screenRotate = when (id) { R.id.rotateRight -> 1; R.id.rotateLeft -> 2; else -> 0 }
+            }
+        } else {
+            rotateLabel.visibility = View.GONE
+            rotateGroup.visibility = View.GONE
+            findViewById<View>(R.id.rotateNote).visibility = View.GONE
         }
 
         // 自動再生が有効なら、ランチャーから起動したときはそのまま再生画面へ

@@ -129,7 +129,10 @@ object AdminServer {
             (app.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager)
                 .defaultDisplay.getRealMetrics(dm)
         }
-        return JSONObject().put("width", dm.widthPixels).put("height", dm.heightPixels)
+        // 「画面を回す」が有効なとき（Fire TV）は、再生画面を回して表示するので縦横を入れ替えて返す
+        val swap = PlayerActivity.needsSoftRotation(app, Prefs(app))
+        return JSONObject().put("width", if (swap) dm.heightPixels else dm.widthPixels)
+            .put("height", if (swap) dm.widthPixels else dm.heightPixels)
     }
 
     /** この端末の LAN 内の IPv4 アドレス（管理画面の URL 表示用） */
@@ -641,6 +644,8 @@ object AdminServer {
             .put("videoCompat", prefs.videoCompat)
             .put("videoMultiSoft", prefs.videoMultiSoft)
             .put("fitMode", prefs.fitMode)
+            .put("screenRotate", prefs.screenRotate)
+            .put("screenRotateSupported", PlayerActivity.isFireTv(app))
             .put("orientation", when (prefs.orientation) {
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE -> 1
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT -> 2
@@ -675,6 +680,7 @@ object AdminServer {
     }
 
     private fun applySettings(prefs: Prefs, j: JSONObject) {
+        if (j.has("screenRotate") && PlayerActivity.isFireTv(app)) prefs.screenRotate = j.getInt("screenRotate")
         if (j.has("layout")) prefs.layout = j.getInt("layout").coerceIn(0, 3)
         // 画面の向き（0=端末の向きに従う / 1=横向きに固定 / 2=縦向きに固定）
         if (j.has("orientation")) {
