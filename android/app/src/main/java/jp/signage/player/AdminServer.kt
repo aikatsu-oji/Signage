@@ -321,6 +321,7 @@ object AdminServer {
 
         return when ("${req.method} ${req.path}") {
             "GET /api/state" -> json(200, state(prefs).put("access", accessInfo(prefs, from)))
+            "GET /api/status" -> json(200, status(prefs))
             "GET /api/weather/offices" -> {
                 val arr = org.json.JSONArray()
                 Weather.offices(app).forEach { o ->
@@ -444,6 +445,29 @@ object AdminServer {
             }
             else -> throw HttpError(404, "見つかりません")
         }
+    }
+
+    /** 配信状況（管理画面のモニタリング用） */
+    private fun status(prefs: Prefs): JSONObject {
+        val zones = JSONArray()
+        if (PlayerStatus.running) {
+            PlayerStatus.zones.toSortedMap().forEach { (i, z) ->
+                zones.put(JSONObject().put("zone", i).put("kind", z.kind).put("name", z.name).put("video", z.video)
+                    .put("pos", z.pos).put("total", z.total).put("paused", false).put("message", z.message))
+            }
+        }
+        val disk = runCatching {
+            val dir = app.getExternalFilesDir(null) ?: app.filesDir
+            val st = android.os.StatFs(dir.path)
+            JSONObject().put("free", st.availableBytes).put("total", st.totalBytes)
+        }.getOrNull()
+        return JSONObject()
+            .put("id", prefs.deviceId).put("name", prefs.deviceName).put("version", runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: "")
+            .put("time", System.currentTimeMillis())
+            .put("uptimeSec", (android.os.SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime()) / 1000)
+            .put("player", JSONObject().put("running", PlayerStatus.running).put("age", JSONObject.NULL).put("zones", zones))
+            .put("ticker", JSONObject().put("standing", Ticker.standing(app) != null).put("queued", 0))
+            .put("disk", disk ?: JSONObject.NULL)
     }
 
     private fun accessInfo(prefs: Prefs, from: InetAddress): JSONObject {

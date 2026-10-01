@@ -721,6 +721,24 @@
   });
   document.body.classList.add('idle');
 
+  // ------------------------------------------------------------ 配信状況の報告（管理画面のモニタリング用）
+
+  function reportStatus() {
+    const list = zones.map((z, i) => {
+      if (z instanceof MediaZone) {
+        return {
+          zone: i, kind: 'media', name: z.showingWeather ? '天気予報' : (z.current?.name || ''), video: !!z.current?.video,
+          pos: z.current ? z.index_ + 1 : 0, total: z.playlist.length, paused: !!z.paused,
+          message: z.msg && !z.msg.hidden ? z.msg.textContent : '',
+        };
+      }
+      return { zone: i, kind: 'weather', name: '天気予報', video: false, pos: 0, total: 0, paused: false, message: '' };
+    });
+    fetch('/local/player-status', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ zones: list }),
+    }).catch(() => {});
+  }
+
   // ------------------------------------------------------------ 起動
 
   async function start() {
@@ -734,6 +752,8 @@
       else { zones.push(new MediaZone(i, main)); main = false; }
     }
     mainZone = zones.find((z) => z instanceof MediaZone) || null;
+    reportStatus();
+    setInterval(reportStatus, 5000);
     arrange();
     zones.forEach((z) => z.start());
     clockLoop();

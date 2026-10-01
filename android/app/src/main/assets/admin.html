@@ -170,6 +170,16 @@
   .chip .dot.ok { background: var(--ok); } .chip .dot.pin, .chip .dot.denied { background: #e6a700; } .chip .dot.offline { background: var(--danger); }
   .chip[aria-pressed=true] { background: var(--brand-weak); border-color: var(--brand); font-weight: bold; }
   .chip.off { opacity: .55; }
+  .mongrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; margin-top: 8px; }
+  .moncard { border: 2px solid var(--line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+  .moncard.ok { border-color: var(--ok); } .moncard.warn { border-color: #e6a700; } .moncard.bad { border-color: var(--danger); }
+  .moncard .mh { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .moncard .mh b { font-size: 15px; }
+  .badge { border-radius: 999px; padding: 1px 10px; font-size: 12px; font-weight: bold; color: #fff; white-space: nowrap; }
+  .badge.ok { background: var(--ok); } .badge.warn { background: #b06000; } .badge.bad { background: var(--danger); } .badge.na { background: var(--sub); }
+  .moncard .issues { color: var(--danger); font-weight: bold; }
+  .moncard .issues.w { color: #b06000; }
+  .moncard .zl { word-break: break-all; }
   .tplTools { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 0 6px; }
   #tplDialog { max-width: 620px; width: calc(100% - 24px); max-height: calc(100% - 24px); overflow: auto; }
   .tplRow { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
@@ -244,6 +254,7 @@
       <div class="tabs" id="tabs" role="tablist">
         <button type="button" role="tab" data-tab="send">📣 送る（テロップ・マイク）</button>
         <button type="button" role="tab" data-tab="dev">⚙ 端末の設定<span class="sub" id="tabDevName"></span></button>
+        <button type="button" role="tab" data-tab="status">📊 配信状況<span class="sub" id="tabStatusBadge"></span></button>
         <button type="button" role="tab" data-tab="access">🔒 入れる端末</button>
       </div>
       <div class="pane" id="pane-send">
@@ -409,6 +420,21 @@
           <button class="primary">この端末に保存</button>
         </form>
       </section>
+      </div>
+      <div class="pane" id="pane-status" hidden>
+        <section>
+          <div class="head">
+            <h2>配信状況</h2>
+            <div class="row"><span class="sub" id="monUpdated"></span><button class="small" id="monRefresh">今すぐ更新</button></div>
+          </div>
+          <p class="sub">各端末の再生画面が動いているか、いま何を再生しているか、空き容量などを、5 秒ごとに確認します（このタブを開いている間）。</p>
+          <p id="monSummary" style="font-weight:bold"></p>
+          <div class="mongrid" id="monGrid"></div>
+        </section>
+        <section>
+          <h2>最近の出来事</h2>
+          <ol class="log" id="monLog" style="max-height:220px; overflow:auto; padding-left:20px"><li class="sub">まだありません</li></ol>
+        </section>
       </div>
       <div class="pane" id="pane-access" hidden>
       <section id="accessSec">
@@ -671,12 +697,13 @@
 
   // ------------------------------------------------------------ タブ・送信先の選択（テロップ・マイク共通）
 
-  const TABS = ['send', 'dev', 'access'];
+  const TABS = ['send', 'dev', 'status', 'access'];
   function showTab(name) {
     if (!TABS.includes(name)) name = 'send';
     for (const t of TABS) $('#pane-' + t).hidden = t !== name;
     for (const b of $('#tabs').children) b.setAttribute('aria-selected', String(b.dataset.tab === name));
     store.set('signage-tab', name);
+    if (name === 'status' && typeof pollStatus === 'function') pollStatus();
   }
   $('#tabs').addEventListener('click', (e) => { const t = e.target.closest('button')?.dataset.tab; if (t) showTab(t); });
 
@@ -722,6 +749,122 @@
       renderDevices();
     });
   }
+
+  // ------------------------------------------------------------ 配信状況のモニタリング
+
+  const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtUptime = (sec) => sec >= 86400 ? `${Math.floor(sec / 86400)}日${Math.floor(sec % 86400 / 3600)}時間`
+    : sec >= 3600 ? `${Math.floor(sec / 3600)}時間${Math.floor(sec % 3600 / 60)}分` : `${Math.max(1, Math.floor(sec / 60))}分`;
+  const hhmmss = (t) => new Date(t).toLocaleTimeString('ja-JP', { hour12: false });
+  const monLevelText = { ok: '正常', warn: '注意', bad: '異常', na: '確認中' };
+
+  /** 端末の状況から、正常・注意・異常を決める */
+  function verdict(dev) {
+    const m = dev.mon;
+    const bad = [], warn = [];
+    if (!m) return { level: 'na', bad, warn };
+    if (!m.ok) {
+      if (m.http === 401 || m.http === 429) warn.push('PIN が違うため、状況を取得できません');
+      else if (m.http === 403) warn.push(m.error || 'この端末からは操作できません');
+      else if (m.http === 404) warn.push('この端末のアプリが、配信状況の確認に未対応です（アプリを更新してください）');
+      else bad.push(`応答がありません${m.lastOk ? `（最後に確認できた時刻 ${hhmmss(m.lastOk)}）` : ''}`);
+    } else {
+      const d = m.data;
+      if (!d.player.running) bad.push('再生画面が動いていません');
+      for (const z of d.player.zones || []) if (z.message) warn.push(`区画${z.zone + 1}：${z.message.replace(/\n/g, ' ')}`);
+      if (d.disk) {
+        if (d.disk.free < 200e6) bad.push(`空き容量がほとんどありません（${fmtSize(d.disk.free)}）`);
+        else if (d.disk.free < 1e9) warn.push(`空き容量が少なくなっています（${fmtSize(d.disk.free)}）`);
+      }
+    }
+    return { level: bad.length ? 'bad' : warn.length ? 'warn' : m.ok ? 'ok' : 'warn', bad, warn };
+  }
+
+  const monLog = [];
+  function logMon(text) {
+    monLog.unshift(`${hhmmss(Date.now())}　${text}`);
+    monLog.length = Math.min(monLog.length, 40);
+    const ol = $('#monLog');
+    ol.replaceChildren(...monLog.map((t) => { const li = document.createElement('li'); li.textContent = t; return li; }));
+  }
+
+  async function pollOne(dev) {
+    const prev = dev.mon;
+    try {
+      const data = await api(dev, '/api/status', {}, 4000);
+      dev.mon = { ok: true, data, at: Date.now(), lastOk: Date.now() };
+    } catch (e) {
+      dev.mon = { ok: false, error: e.message, http: e.status, at: Date.now(), lastOk: prev?.lastOk || 0 };
+    }
+    const v = verdict(dev);
+    if (dev.monLevel && dev.monLevel !== v.level) {
+      const why = [...v.bad, ...v.warn][0] || '';
+      logMon(`${dev.name}：${monLevelText[dev.monLevel]} → ${monLevelText[v.level]}${why ? `（${why}）` : ''}`);
+    }
+    dev.monLevel = v.level;
+  }
+
+  let polling = false;
+  async function pollStatus() {
+    if (polling) return;
+    polling = true;
+    try {
+      await Promise.all([...devices.values()].map(pollOne));
+    } finally { polling = false; }
+    renderStatus();
+  }
+
+  function renderStatus() {
+    const list = [...devices.values()].sort((a, b) => ((b.self ? 1 : 0) - (a.self ? 1 : 0)) || String(a.name).localeCompare(String(b.name), 'ja'));
+    const counts = { ok: 0, warn: 0, bad: 0, na: 0 };
+    const grid = $('#monGrid');
+    grid.replaceChildren();
+    for (const dev of list) {
+      const v = verdict(dev);
+      counts[v.level]++;
+      const card = document.createElement('div');
+      card.className = 'moncard ' + v.level;
+      const d = dev.mon?.ok ? dev.mon.data : null;
+      const lines = [];
+      if (d) {
+        lines.push(`再生画面：${d.player.running ? '動作中' : '停止中'}`);
+        for (const z of d.player.zones || []) {
+          const what = z.message ? `（${z.message.replace(/\n/g, ' ')}）` : z.kind === 'weather' || z.name === '天気予報' ? '天気予報' : z.name ? `[${z.video ? '動画' : '画像'}] ${z.name}${z.total ? `（${z.pos}/${z.total}）` : ''}` : '—';
+          lines.push(`<div class="zl">区画${z.zone + 1}：${esc(what)}</div>`);
+        }
+        lines.push(`テロップ：${d.ticker.standing ? '止めるまで流すテロップあり' : d.ticker.queued ? `待機 ${d.ticker.queued} 件` : 'なし'}`);
+        if (d.disk) lines.push(`空き容量：${fmtSize(d.disk.free)}（全体 ${fmtSize(d.disk.total)}）`);
+        lines.push(`稼働：${fmtUptime(d.uptimeSec)}　v${d.version}`);
+      } else if (dev.mon?.lastOk) {
+        lines.push(`最後に確認できた時刻：${hhmmss(dev.mon.lastOk)}`);
+      }
+      card.innerHTML = `<div class="mh"><b></b><span class="badge ${v.level}">${monLevelText[v.level]}</span></div>`
+        + [...v.bad.map((t) => `<div class="issues">${esc(t)}</div>`), ...v.warn.map((t) => `<div class="issues w">${esc(t)}</div>`)].join('')
+        + lines.map((l) => l.startsWith('<') ? l : `<div>${esc(l)}</div>`).join('')
+        + '<div style="margin-top:4px"><button type="button" class="small" data-open>設定を開く</button></div>';
+      $('b', card).textContent = dev.name + (dev.self ? '（この端末）' : '');
+      $('[data-open]', card).addEventListener('click', () => select(dev.key));
+      grid.append(card);
+    }
+    const total = list.length;
+    $('#monSummary').textContent = total
+      ? `${total} 台中 ${counts.ok} 台が正常` + (counts.warn ? `、注意 ${counts.warn} 台` : '') + (counts.bad ? `、異常 ${counts.bad} 台` : '')
+      : '端末がありません';
+    $('#monSummary').style.color = counts.bad ? 'var(--danger)' : counts.warn ? '#b06000' : 'var(--ok)';
+    $('#monUpdated').textContent = `最終更新 ${hhmmss(Date.now())}`;
+    const alert = counts.bad + counts.warn;
+    $('#tabStatusBadge').textContent = alert ? ` ⚠${alert}` : '';
+    document.title = counts.bad ? `⚠ ${counts.bad}台に異常 - サイネージ管理` : 'サイネージ管理';
+  }
+
+  $('#monRefresh').addEventListener('click', pollStatus);
+  let monTick = 0;
+  setInterval(() => {
+    if (document.visibilityState !== 'visible' || !self.state) return;
+    // 状況タブを見ているときは 5 秒ごと、ほかのタブでは 30 秒ごと（異常の件数をタブに出すため）
+    monTick++;
+    if (!$('#pane-status').hidden || monTick % 6 === 0) pollStatus();
+  }, 5000);
 
   // ------------------------------------------------------------ 端末一覧
 

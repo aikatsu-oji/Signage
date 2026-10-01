@@ -16,6 +16,7 @@ import os
 import queue
 import random
 import re
+import shutil
 import socket
 import threading
 import time
@@ -36,7 +37,7 @@ mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
-VERSION = "1.7.1"
+VERSION = "1.8.0"
 
 
 def resource_dir() -> Path:
@@ -129,6 +130,9 @@ class Server:
         self.locked_until = 0
         self.peers = None  # Peers（端末の検出）
         self.event_queues = []
+        self.started = time.time()
+        self.player_status = None  # 再生画面が定期的に知らせる、いま再生中の内容
+        self.player_beat = 0.0
         store.listeners.append(self._broadcast)
 
     # ------------------------------------------------------------ 起動
@@ -210,6 +214,29 @@ class Server:
         except Exception:
             pass
         return {"width": 1920, "height": 1080}
+
+    PLAYER_ALIVE_SECONDS = 15
+
+    def status(self):
+        """配信状況（管理画面のモニタリング用）。再生画面が動いているか、何を再生中か、空き容量など"""
+        s = self.store
+        now = time.time()
+        running = self.player_status is not None and now - self.player_beat < self.PLAYER_ALIVE_SECONDS
+        disk = None
+        try:
+            folder = s.zone_folder(0)
+            u = shutil.disk_usage(str(folder) if folder else str(st.APP_DIR))
+            disk = {"free": u.free, "total": u.total}
+        except Exception:
+            pass
+        return {
+            "id": s.device_id, "name": s.device_name, "version": VERSION, "time": int(now * 1000),
+            "uptimeSec": int(now - self.started),
+            "player": {"running": running, "age": round(now - self.player_beat, 1) if self.player_status else None,
+                       "zones": (self.player_status or {}).get("zones", []) if running else []},
+            "ticker": {"standing": bool(s.get("tickerStanding")), "queued": len(s.ticker_queue)},
+            "disk": disk,
+        }
 
     def access_info(self, addr):
         s = self.store
@@ -460,6 +487,8 @@ class Server:
                     d = server.state()
                     d["access"] = server.access_info(self.client_address[0])
                     self.json(d)
+                elif key == "GET /api/status":
+                    self.json(server.status())
                 elif key == "GET /api/weather/offices":
                     self.json(weather.offices())
                 elif key == "POST /api/access":
@@ -636,6 +665,19 @@ class Server:
                     return self.json(d)
                 if key == "GET /local/offices":
                     return self.json(weather.offices())
+                if key == "POST /local/player-status":
+                    j = self.body_json()
+                    zones = j.get("zones") if isinstance(j, dict) else None
+                    clean = []
+                    for z in (zones if isinstance(zones, list) else [])[:3]:
+                        if isinstance(z, dict):
+                            clean.append({"zone": int(z.get("zone", 0)), "kind": str(z.get("kind", ""))[:10],
+                                          "name": str(z.get("name") or "")[:120], "video": bool(z.get("video")),
+                                          "pos": int(z.get("pos") or 0), "total": int(z.get("total") or 0),
+                                          "paused": bool(z.get("paused")), "message": str(z.get("message") or "")[:200]})
+                    server.player_status = {"zones": clean}
+                    server.player_beat = time.time()
+                    return self.json({"ok": True})
                 if key == "POST /local/access-reset":
                     server.reset_access()
                     return self.json({"ok": True})

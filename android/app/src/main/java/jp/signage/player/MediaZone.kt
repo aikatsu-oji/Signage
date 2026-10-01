@@ -273,6 +273,7 @@ class MediaZone(
     private fun play(item: MediaEntry, my: Int) {
         showMessage(null)
         currentIsVideo = item.isVideo
+        PlayerStatus.media(zoneIndex, item.name, item.isVideo, index + 1, playlist.size)
         onChanged()
         // 読み込みが終わらないファイルで止まらないように保険
         watchdog = Runnable { if (my == token) goto(1) }.also { handler.postDelayed(it, 20_000) }
@@ -326,6 +327,7 @@ class MediaZone(
         lastWeatherAt = System.currentTimeMillis()
         showingWeather = true
         currentIsVideo = false
+        PlayerStatus.media(zoneIndex, "天気予報", false, 0, 0)
         player.pause()
         showMessage(null)
         watchdog = Runnable { if (my == token) goto(1) }.also { handler.postDelayed(it, 20_000) }
@@ -548,6 +550,7 @@ class MediaZone(
     }
 
     private fun showMessage(text: String?) {
+        if (text != null) PlayerStatus.message(zoneIndex, text)
         messageView.text = text
         messageView.visibility = if (text == null) View.GONE else View.VISIBLE
         if (text != null) messageView.bringToFront()

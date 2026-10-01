@@ -197,6 +197,8 @@ class PlayerActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
+        PlayerStatus.running = true
+        PlayerStatus.runningSince = System.currentTimeMillis()
         clockTick.run()
         zones.forEach { it.start() }
         AdminServer.addListener(adminListener)
@@ -207,6 +209,8 @@ class PlayerActivity : Activity() {
 
     override fun onStop() {
         super.onStop()
+        PlayerStatus.running = false
+        PlayerStatus.clear()
         AdminServer.removeListener(adminListener)
         Ticker.removeListener(tickerListener)
         handler.removeCallbacks(clockTick)
