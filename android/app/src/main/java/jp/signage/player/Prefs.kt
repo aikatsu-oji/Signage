@@ -120,6 +120,21 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putInt("clockPosition", v).apply()
 
     /** 時計の大きさ (0: 小, 1: 中, 2: 大) */
+    /** アプリの時計・再生条件・予約テロップに使うタイムゾーン（IANA 名。空なら端末の設定） */
+    var timeZone: String
+        get() = sp.getString("timeZone", "") ?: ""
+        set(v) = sp.edit().putString("timeZone", v).apply()
+
+    /** アプリの時刻の補正（秒。端末の時計がずれているとき） */
+    var timeOffsetSec: Int
+        get() = sp.getInt("timeOffsetSec", 0)
+        set(v) = sp.edit().putInt("timeOffsetSec", v.coerceIn(-43200, 43200)).apply()
+
+    /** 時計の表示形式（0=24 時間 / 1=12 時間（午前・午後）） */
+    var timeFormat: Int
+        get() = sp.getInt("timeFormat", 0)
+        set(v) = sp.edit().putInt("timeFormat", v.coerceIn(0, 1)).apply()
+
     var clockSize: Int
         get() = sp.getInt("clockSize", 1)
         set(v) = sp.edit().putInt("clockSize", v.coerceIn(0, 2)).apply()

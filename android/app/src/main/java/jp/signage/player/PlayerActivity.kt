@@ -73,8 +73,8 @@ class PlayerActivity : Activity() {
     private val clockTick = object : Runnable {
         override fun run() {
             updateClock()
-            Ticker.checkSchedules(this@PlayerActivity) // 予約したテロップの時刻か確認
-            handler.postDelayed(this, 60_000 - System.currentTimeMillis() % 60_000 + 50) // 分が変わった直後に更新
+            Ticker.checkSchedules(this@PlayerActivity, AppTime.localDateTime(prefs)) // 予約したテロップの時刻か確認
+            handler.postDelayed(this, 60_000 - AppTime.nowMillis(prefs) % 60_000 + 50) // 分が変わった直後に更新
         }
     }
     private val hideInfo = Runnable { infoView.visibility = View.GONE }
@@ -364,9 +364,9 @@ class PlayerActivity : Activity() {
     /** 日付を小さく、時刻を大きく */
     private fun updateClock() {
         if (!prefs.clockEnabled) return
-        val t = LocalDateTime.now()
+        val t = AppTime.localDateTime(prefs)
         val date = "${t.monthValue}/${t.dayOfMonth}(${t.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.JAPANESE)})"
-        val s = SpannableStringBuilder(date).append("\n").append("${t.hour}:%02d".format(t.minute))
+        val s = SpannableStringBuilder(date).append("\n").append(AppTime.hm(t, prefs.timeFormat))
         s.setSpan(RelativeSizeSpan(0.45f), 0, date.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         clockView.text = s
     }

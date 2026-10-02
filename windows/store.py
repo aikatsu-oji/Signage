@@ -69,6 +69,9 @@ DEFAULTS = {
     "clockEnabled": False,
     "clockPosition": 0,
     "clockSize": 1,
+    "timeZone": "",  # アプリの時計・再生条件・予約テロップに使うタイムゾーン（IANA 名。空なら、この PC の設定）
+    "timeOffsetSec": 0,  # アプリの時刻の補正（秒。この PC の時計が、ずれているとき）
+    "timeFormat": 0,  # 時計の表示形式（0=24時間 / 1=12時間（午前・午後））
     "weatherEnabled": False,
     "weatherIntervalMin": 10,
     "weatherSeconds": 15,
@@ -384,8 +387,21 @@ class Store:
         schedules.sort(key=lambda s: s["time"])
         self.update({"tickerSchedules": schedules})
 
+    def app_now(self):
+        """アプリの時刻（この PC の設定とは別に決めたタイムゾーン・補正を反映した、その土地の壁時計の時刻。タイムゾーンの情報は持たない）"""
+        from datetime import timedelta, timezone
+        t = datetime.now(timezone.utc) + timedelta(seconds=int(self.get("timeOffsetSec") or 0))
+        name = self.get("timeZone") or ""
+        if name:
+            try:
+                from zoneinfo import ZoneInfo
+                return t.astimezone(ZoneInfo(name)).replace(tzinfo=None)
+            except Exception:
+                pass  # タイムゾーンの名前が不正・データが無いときは、この PC の時刻
+        return t.astimezone().replace(tzinfo=None)
+
     def check_schedules(self, now=None):
-        now = now or datetime.now()
+        now = now or self.app_now()
         hm = now.strftime("%H:%M")
         bit = 1 << now.weekday()  # 月曜=0
         stamp = now.strftime("%Y-%m-%d ") + hm

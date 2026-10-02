@@ -710,6 +710,10 @@ object AdminServer {
             .put("clockEnabled", prefs.clockEnabled)
             .put("clockPosition", prefs.clockPosition)
             .put("clockSize", prefs.clockSize)
+            .put("timeZone", prefs.timeZone)
+            .put("timeOffsetSec", prefs.timeOffsetSec)
+            .put("timeFormat", prefs.timeFormat)
+            .put("appTime", AppTime.localDateTime(prefs).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
             .put("weatherEnabled", prefs.weatherEnabled)
             .put("weatherIntervalMin", prefs.weatherIntervalMin)
             .put("weatherSeconds", prefs.weatherSeconds)
@@ -778,6 +782,13 @@ object AdminServer {
         if (j.has("clockEnabled")) prefs.clockEnabled = j.getBoolean("clockEnabled")
         if (j.has("clockPosition")) prefs.clockPosition = j.getInt("clockPosition").coerceIn(0, 3)
         if (j.has("clockSize")) prefs.clockSize = j.getInt("clockSize")
+        if (j.has("timeZone")) {
+            val name = j.optString("timeZone", "").trim()
+            if (name.isNotEmpty() && runCatching { java.time.ZoneId.of(name) }.isFailure) throw HttpError(400, "タイムゾーンの名前が正しくありません")
+            prefs.timeZone = name
+        }
+        if (j.has("timeOffsetSec")) prefs.timeOffsetSec = j.getInt("timeOffsetSec")
+        if (j.has("timeFormat")) prefs.timeFormat = j.getInt("timeFormat")
         if (j.has("weatherEnabled")) prefs.weatherEnabled = j.getBoolean("weatherEnabled")
         if (j.has("weatherIntervalMin")) prefs.weatherIntervalMin = j.getInt("weatherIntervalMin")
         if (j.has("weatherSeconds")) prefs.weatherSeconds = j.getInt("weatherSeconds")

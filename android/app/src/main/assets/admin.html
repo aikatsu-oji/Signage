@@ -432,7 +432,22 @@
                 <select name="clockPosition"><option value="0">右上</option><option value="1">右下</option><option value="2">左上</option><option value="3">左下</option></select></label>
               <label class="field"><span>大きさ</span>
                 <select name="clockSize"><option value="0">小</option><option value="1">中</option><option value="2">大</option></select></label>
+              <label class="field"><span>時刻の形式</span>
+                <select name="timeFormat"><option value="0">24 時間（15:30）</option><option value="1">12 時間（午後3:30）</option></select></label>
+              <label class="field"><span>タイムゾーン（時計・再生条件・予約テロップ）</span>
+                <select name="timeZone">
+                  <option value="">この端末の設定に合わせる</option>
+                  <option value="Asia/Tokyo">日本（東京）</option><option value="Asia/Seoul">韓国（ソウル）</option><option value="Asia/Shanghai">中国（上海）</option>
+                  <option value="Asia/Taipei">台湾（台北）</option><option value="Asia/Hong_Kong">香港</option><option value="Asia/Singapore">シンガポール</option>
+                  <option value="Asia/Bangkok">タイ（バンコク）</option><option value="Asia/Dubai">UAE（ドバイ）</option><option value="Europe/London">イギリス（ロンドン）</option>
+                  <option value="Europe/Paris">フランス（パリ）</option><option value="America/New_York">アメリカ東部（ニューヨーク）</option><option value="America/Chicago">アメリカ中部（シカゴ）</option>
+                  <option value="America/Denver">アメリカ山岳部（デンバー）</option><option value="America/Los_Angeles">アメリカ西部（ロサンゼルス）</option><option value="Pacific/Honolulu">ハワイ</option>
+                  <option value="Australia/Sydney">オーストラリア（シドニー）</option><option value="UTC">UTC</option>
+                </select></label>
+              <label class="field"><span>時刻のずれの補正（分。端末の時計が遅れているときは＋）</span>
+                <input type="number" id="timeOffsetMin" min="-720" max="720" step="1" value="0"></label>
             </div>
+            <p class="sub">アプリの時計の表示と、ファイルの再生条件（時間帯・曜日・期間）、予約テロップの時刻は、<b>この端末のシステムの設定とは別に</b>、ここで決めた形式・タイムゾーン・補正で動きます。<span id="appTimeNote"></span></p>
           </fieldset>
           <fieldset>
             <legend>天気予報 <span class="sub" id="weatherPlace"></span></legend>
@@ -1805,6 +1820,8 @@
       if (!(v >= lo && v <= hi)) f.elements[k].value = String(Math.min(hi, Math.max(lo, Math.round(v || DEFAULT_PCT[k]))));
     }
     if (!LAYOUTS.some((l) => l.id === fval('layout'))) f.elements.layout.value = '0';
+    $('#timeOffsetMin').value = Math.round((s.timeOffsetSec || 0) / 60);
+    $('#appTimeNote').textContent = s.appTime ? `　いま、アプリは ${s.appTime.replace('-', '/').replace('-', '/')} と考えています（保存済みの設定）。` : '';
     $('#weatherPlace').textContent = `（地域：${s.weatherPlace || '未設定'}）`;
     renderWeatherRegion(dev);
     renderLayoutCard();
@@ -2290,8 +2307,9 @@
     const body = { zoneTypes: [0, 1, 2].map((i) => Number(layoutZoneTypes[i])) };
     for (const el of f.elements) {
       if (!el.name) continue;
-      body[el.name] = el.type === 'checkbox' ? el.checked : Number(el.value);
+      body[el.name] = el.type === 'checkbox' ? el.checked : el.name === 'timeZone' ? el.value : Number(el.value);
     }
+    body.timeOffsetSec = Math.round(Number($('#timeOffsetMin').value) || 0) * 60;
     return { ...body, ...wxBody() };
   }
 
@@ -2547,7 +2565,7 @@
 
   /** 設定ファイルに含める設定の項目（端末ごとに違うフォルダ・端末名・PIN・天気の地域は含めない） */
   const EXPORT_KEYS = ['layout', 'splitPercent', 'mainPercent', 'sidePercent', 'zoneTypes', 'imageSeconds', 'shuffle', 'recursive',
-    'videoSound', 'videoCompat', 'videoMultiSoft', 'fitMode', 'clockEnabled', 'clockPosition', 'clockSize',
+    'videoSound', 'videoCompat', 'videoMultiSoft', 'fitMode', 'clockEnabled', 'clockPosition', 'clockSize', 'timeZone', 'timeFormat',
     'weatherEnabled', 'weatherIntervalMin', 'weatherSeconds', 'weatherTimeSeries'];
   const EXPORT_KIND = 'signage-settings';
 

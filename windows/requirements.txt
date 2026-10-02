@@ -3,3 +3,4 @@ pystray
 pillow
 pyinstaller
 cryptography
+tzdata

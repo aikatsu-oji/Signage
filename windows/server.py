@@ -42,7 +42,7 @@ mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
 LOCAL_PORT = 18080  # HTTPS のとき、この PC 自身が使う HTTP のポート
-VERSION = "1.8.15"
+VERSION = "1.8.16"
 
 
 def resource_dir() -> Path:
@@ -234,9 +234,10 @@ class Server:
         settings = {k: s.get(k) for k in (
             "layout", "splitPercent", "mainPercent", "sidePercent", "imageSeconds", "shuffle", "recursive", "videoSound",
             "fitMode", "orientation",
-            "clockEnabled", "clockPosition", "clockSize", "weatherEnabled", "weatherIntervalMin",
+            "clockEnabled", "clockPosition", "clockSize", "timeZone", "timeOffsetSec", "timeFormat", "weatherEnabled", "weatherIntervalMin",
             "weatherSeconds", "weatherTimeSeries",
             "weatherOffice", "weatherArea", "weatherAreaName", "weatherCity", "weatherCityName")}
+        settings["appTime"] = s.app_now().strftime("%Y-%m-%d %H:%M:%S")  # 管理画面での確認用（アプリが、いま何時と考えているか）
         settings["zoneTypes"] = [s.zone_type(i) for i in range(st.MAX_ZONES)]
         settings["zoneUrls"] = [s.zone_url(i) for i in range(st.MAX_ZONES)]
         settings["zoneRefreshMin"] = [s.zone_refresh(i) for i in range(st.MAX_ZONES)]
@@ -368,7 +369,16 @@ class Server:
             for i, v in enumerate(j["zoneRefreshMin"][:st.MAX_ZONES]):
                 mins[i] = clamp(v, 1, 1440)
             u["zoneRefreshMin"] = mins
-        for k, lo, hi in (("imageSeconds", 1, 3600), ("clockPosition", 0, 3), ("clockSize", 0, 2), ("fitMode", 0, 3), ("orientation", 0, 2),
+        if "timeZone" in j:
+            name = str(j["timeZone"] or "").strip()
+            if name:
+                try:
+                    from zoneinfo import ZoneInfo
+                    ZoneInfo(name)
+                except Exception:
+                    raise HttpError(400, "タイムゾーンの名前が正しくありません")
+            u["timeZone"] = name
+        for k, lo, hi in (("imageSeconds", 1, 3600), ("clockPosition", 0, 3), ("clockSize", 0, 2), ("timeOffsetSec", -43200, 43200), ("timeFormat", 0, 1), ("fitMode", 0, 3), ("orientation", 0, 2),
                           ("weatherIntervalMin", 1, 1440), ("weatherSeconds", 3, 600)):
             if k in j: u[k] = clamp(j[k], lo, hi)
         for k in ("shuffle", "recursive", "videoSound", "clockEnabled", "weatherEnabled", "weatherTimeSeries"):

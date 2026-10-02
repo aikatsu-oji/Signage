@@ -272,7 +272,7 @@ class MediaZone(
 
     /** start から dir 方向へ、いま再生してよい最初のファイルの位置。範囲内に無ければ null */
     private fun nextActive(start: Int, dir: Int): Int? {
-        val now = java.util.Calendar.getInstance()
+        val now = AppTime.calendar(prefs)
         var i = start
         while (i in playlist.indices) {
             if (FileRule.isActive(prefs.fileRule(zoneIndex, playlist[i].name), now)) return i
