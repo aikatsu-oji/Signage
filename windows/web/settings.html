@@ -90,8 +90,12 @@
 (() => {
   const $ = (s) => document.querySelector(s);
   const toast = (m) => { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 3000); };
+  // 設定画面の合言葉（タスクトレイから開いたときの URL に付く）。再読み込みしても使えるよう、このタブにだけ覚えておく
+  let TOKEN = new URLSearchParams(location.search).get('t') || '';
+  try { if (TOKEN) sessionStorage.setItem('lt', TOKEN); else TOKEN = sessionStorage.getItem('lt') || ''; } catch (e) {}
+  if (location.search) history.replaceState(null, '', location.pathname);
   const post = async (url, body) => {
-    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Local-Token': TOKEN }, body: JSON.stringify(body || {}) });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || r.statusText);
     return j;
@@ -100,7 +104,7 @@
   let offices = [];
 
   async function load() {
-    s = await (await fetch('/local/settings', { cache: 'no-store' })).json();
+    s = await (await fetch('/local/settings', { cache: 'no-store', headers: { 'X-Local-Token': TOKEN } })).json();
     $('#ver').textContent = `バージョン ${s.version}`;
     $('#monitor').innerHTML = s.monitors.map((m) => `<option value="${m.index}">モニター${m.index + 1}（${m.width}×${m.height}${m.primary ? '・メイン' : ''}）</option>`).join('')
       || '<option value="0">モニター1</option>';
