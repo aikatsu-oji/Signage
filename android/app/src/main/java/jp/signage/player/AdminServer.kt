@@ -340,6 +340,10 @@ object AdminServer {
         }
         if (!req.path.startsWith("/api/")) throw HttpError(404, "見つかりません")
         val prefs = Prefs(app)
+        // グループコードが未設定の端末は、この端末自身からしか操作できない
+        if (prefs.groupCode.isEmpty() && !MacAccess.isLoopback(from)) {
+            throw HttpError(403, "グループコードが未設定のため、この端末自身からしか操作できません。この端末の設定画面で、グループコードを決めてください")
+        }
         // 操作できる端末の制限（MAC アドレス）。この端末が MAC アドレスを調べられないときは、締め出さないよう制限しない
         if (prefs.macLock && MacAccess.canResolve()) {
             val why = MacAccess.gate(true, prefs.allowedMacs, prefs.allowVpn, from, MacAccess.lookup(from))

@@ -42,7 +42,7 @@ mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
 LOCAL_PORT = 18080  # HTTPS のとき、この PC 自身が使う HTTP のポート
-VERSION = "1.8.13"
+VERSION = "1.8.14"
 
 
 def resource_dir() -> Path:
@@ -534,8 +534,10 @@ class Server:
                         pass
 
             def check_access(self, client):
-                """操作できる端末の制限（MAC アドレス）。制限が OFF の初期状態では何もしない"""
+                """グループコードが未設定の端末は、この PC 自身からしか操作できない。そのうえで、操作できる端末の制限（MAC アドレス）"""
                 s = server.store
+                if not (s.get("groupCode") or "") and not devices.is_loopback(client):
+                    raise HttpError(403, "グループコードが未設定のため、この PC 自身からしか操作できません。この PC の設定画面で、グループコードを決めてください")
                 if not s.get("macLock"):
                     return
                 devs = s.get("allowedMacs") or []

@@ -487,7 +487,7 @@
       <div class="pane" id="pane-access" hidden>
       <section id="groupSec">
         <h2>グループ（組織）コード <span class="sub" id="groupSummary"></span></h2>
-        <p class="sub">同じコードを持つ端末・管理画面だけが、サイネージを操作できます（PIN に加えて必要）。同じネットワークにある<b>別のグループのサイネージは、端末一覧に出なくなります</b>。英数字と - _ の 8〜32 文字。通信を暗号化（HTTPS）しないと、コードは LAN 内で盗み見られる可能性があります。</p>
+        <p class="sub">同じコードを持つ端末・管理画面だけが、サイネージを操作できます（PIN に加えて必要）。<b>グループコードが未設定のサイネージは、その端末自身からしか操作できません</b>（最初に、各端末の設定画面でコードを決めてください。決めたあとは、ここから全端末にまとめて設定・変更できます）。同じネットワークにある<b>別のグループのサイネージは、端末一覧に出なくなります</b>。英数字と - _ の 8〜32 文字。通信を暗号化（HTTPS）しないと、コードは LAN 内で盗み見られる可能性があります。</p>
         <div class="dlgrow" style="margin:8px 0">
           <input type="text" id="groupInput" maxlength="32" placeholder="新しいグループコード" autocomplete="off" style="flex:1; min-width:180px">
           <button type="button" class="primary small" id="groupApply">見つかっている全端末に設定</button>
@@ -1052,6 +1052,7 @@
   async function applyGroup(code) {
     const list = [...devices.values()].filter((d) => d.status === 'ok' && d.state?.group);
     if (!list.length) { toast('設定できる端末がありません'); return; }
+    const blocked = [...devices.values()].filter((d) => d.status === 'denied').map((d) => d.name);
     const log = $('#groupLog'); log.replaceChildren();
     const line = (t, cls = '') => { const li = document.createElement('li'); li.textContent = t; li.className = cls; log.append(li); return li; };
     let okCount = 0;
@@ -1061,6 +1062,7 @@
       try { await post(dev, '/api/group', { code }); li.textContent = `${dev.name}：設定しました`; li.className = 'ok'; okCount++; }
       catch (e) { li.textContent = `${dev.name}：${e.message}`; li.className = 'ng'; }
     }
+    if (blocked.length) line(`未設定のため、ここからは設定できない端末：${blocked.join('、')}（その端末の設定画面で、コードを決めてください）`, 'warn');
     if (okCount) { groupCode = code; saveGroup(); }
     toast(`${okCount} / ${list.length} 台に設定しました`);
     // 一覧は、新しいグループで見つけ直される（少し時間がかかる）
