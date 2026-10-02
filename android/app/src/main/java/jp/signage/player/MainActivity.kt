@@ -506,6 +506,7 @@ class MainActivity : Activity() {
                 Toast.makeText(this, "ブラウザがありません", Toast.LENGTH_SHORT).show()
             }
         }
+        findViewById<Button>(R.id.groupButton).setOnClickListener { editGroupCode() }
         bindSwitch(R.id.httpsSwitch, prefs.https) {
             prefs.https = it
             AdminServer.restart(this)
@@ -547,6 +548,8 @@ class MainActivity : Activity() {
         val running = prefs.adminEnabled && AdminServer.isRunning
         findViewById<View>(R.id.adminPinReset).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
         findViewById<View>(R.id.adminName).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.groupButton).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
+        findViewById<Button>(R.id.groupButton).text = if (prefs.groupCode.isEmpty()) "グループコードを設定" else "グループコードを変更・解除"
         findViewById<View>(R.id.httpsSwitch).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
         findViewById<View>(R.id.httpsNote).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
         findViewById<View>(R.id.updateSwitch).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
@@ -575,6 +578,7 @@ class MainActivity : Activity() {
                         },
                     )
                     append("\n端末名：${prefs.deviceName}")
+                    append("\nグループ：" + if (prefs.groupCode.isEmpty()) "未設定（PIN だけで操作できます）" else "設定済み（コードを知る端末だけ操作できます）")
                     if (prefs.macLock) append("\n操作できる端末：MAC アドレスで制限中（${prefs.allowedMacs.size} 台）")
                     append("\n\n同じネットワークのほかのサイネージ端末も、管理画面の「端末一覧」に自動で表示されます。")
                     append("\n\n同じネットワーク内の端末からのみ操作できます。")
@@ -583,6 +587,32 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+    /** グループ（組織）コードを決める・解除する。同じコードを持つ端末・管理画面だけが操作できる */
+    private fun editGroupCode() {
+        val input = EditText(this).apply {
+            hint = if (prefs.groupCode.isEmpty()) "英数字と - _ の 8〜32 文字" else "新しいコード（空にすると解除）"
+            setSingleLine()
+            filters = arrayOf(android.text.InputFilter.LengthFilter(32))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("グループ（組織）コード")
+            .setMessage("同じコードを持つ端末・管理画面だけが操作できます（PIN に加えて必要）。グループの全端末に、同じコードを設定してください。空にすると解除します。")
+            .setView(input)
+            .setPositiveButton("決定") { _, _ ->
+                val code = input.text.toString().trim()
+                if (code.isNotEmpty() && !GroupCode.valid(code)) {
+                    Toast.makeText(this, "英数字と - _ だけの 8〜32 文字にしてください", Toast.LENGTH_LONG).show()
+                } else {
+                    prefs.groupCode = code
+                    AdminServer.restart(this) // 見つけ合いの識別子を変える
+                    updateAdminInfo()
+                    Toast.makeText(this, if (code.isEmpty()) "グループコードを解除しました" else "グループコードを設定しました", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("キャンセル", null)
+            .show()
     }
 
     /** PIN を自分で決める（複数台を同じ PIN にそろえると、管理画面で一度に操作しやすい） */

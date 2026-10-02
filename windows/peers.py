@@ -7,6 +7,7 @@ import socket
 import threading
 import time
 
+import group
 from zeroconf import IPVersion, ServiceBrowser, ServiceInfo, ServiceStateChange, Zeroconf
 
 SERVICE_TYPE = "_signage._tcp.local."
@@ -45,7 +46,7 @@ class Peers:
             f"{name}.{SERVICE_TYPE}",
             addresses=addrs,
             port=self.port,
-            properties={"id": s.device_id, "name": s.device_name, "ver": self.version, "https": "1" if self.https() else "0"},
+            properties={"id": s.device_id, "name": s.device_name, "ver": self.version, "https": "1" if self.https() else "0", "grp": group.ident(s.get("groupCode") or "")},
             server=f"signage-{s.device_id[:8]}.local.",
         )
         try:
@@ -76,6 +77,9 @@ class Peers:
             except Exception:
                 pass
             self.zc = None
+        with self.lock:
+            self.peers.clear()
+            self.names.clear()
 
     def _on_change(self, zeroconf, service_type, name, state_change):
         if state_change is ServiceStateChange.Removed:
@@ -93,6 +97,9 @@ class Peers:
         props = {k.decode(): (v.decode() if isinstance(v, bytes) else "") for k, v in (info.properties or {}).items()}
         pid = props.get("id")
         if not pid or pid == self.store.device_id:
+            return
+        # 別のグループ（組織）の端末は、一覧に出さない
+        if props.get("grp", "") != group.ident(self.store.get("groupCode") or ""):
             return
         addrs = info.parsed_addresses(IPVersion.V4Only)
         if not addrs:

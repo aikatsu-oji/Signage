@@ -86,6 +86,7 @@ DEFAULTS = {
     "autoStart": False,
     "tickerStanding": None,
     "tickerSchedules": [],
+    "groupCode": "",  # グループ（組織）コード。空ならグループなし
     "https": False,  # LAN 向けの通信を HTTPS（自己署名の証明書）にするか。変えたあとは、アプリの再起動が必要
     "macLock": False,  # 操作できる端末を MAC アドレスで制限するか（初期状態は制限なし）
     "allowVpn": True,  # 制限中でも VPN（Tailscale）経由は許可するか（VPN では MAC アドレスを確認できない）

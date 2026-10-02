@@ -297,7 +297,7 @@ object AdminServer {
         val headers = mutableMapOf(
             "Access-Control-Allow-Origin" to origin,
             "Vary" to "Origin",
-            "Access-Control-Allow-Headers" to "X-Pin, Content-Type",
+            "Access-Control-Allow-Headers" to "X-Pin, X-Group-Code, Content-Type",
             "Access-Control-Allow-Methods" to "GET, POST, PUT, OPTIONS",
             "Access-Control-Max-Age" to "600",
         )
@@ -340,15 +340,19 @@ object AdminServer {
         }
         if (!req.path.startsWith("/api/")) throw HttpError(404, "見つかりません")
         val prefs = Prefs(app)
+        // グループコードが未設定の端末は、この端末自身からしか操作できない
+        if (prefs.groupCode.isEmpty() && !MacAccess.isLoopback(from)) {
+            throw HttpError(403, "グループコードが未設定のため、この端末自身からしか操作できません。この端末の設定画面で、グループコードを決めてください")
+        }
         // 操作できる端末の制限（MAC アドレス）。この端末が MAC アドレスを調べられないときは、締め出さないよう制限しない
         if (prefs.macLock && MacAccess.canResolve()) {
             val why = MacAccess.gate(true, prefs.allowedMacs, prefs.allowVpn, from, MacAccess.lookup(from))
             if (why.isNotEmpty()) throw HttpError(403, why)
         }
-        checkPin(req.headers["x-pin"])
+        checkPin(req.headers["x-pin"], req.headers["x-group-code"])
 
         return when ("${req.method} ${req.path}") {
-            "GET /api/state" -> json(200, state(prefs).put("access", accessInfo(prefs, from)).put("tls", tlsInfo(prefs)))
+            "GET /api/state" -> json(200, state(prefs).put("access", accessInfo(prefs, from)).put("tls", tlsInfo(prefs)).put("group", groupInfo(prefs)))
             "GET /api/status" -> json(200, status(prefs))
             "PUT /api/apk" -> receiveApk(prefs, req)
             "GET /api/weather/offices" -> {
@@ -362,6 +366,13 @@ object AdminServer {
                 }
                 val bytes = arr.toString().toByteArray(Charsets.UTF_8)
                 Response(200, "application/json; charset=utf-8", bytes.size.toLong()) { it.write(bytes) }
+            }
+            "POST /api/group" -> {
+                val code = req.json().optString("code", "").trim()
+                if (code.isNotEmpty() && !GroupCode.valid(code)) throw HttpError(400, "グループコードは、英数字と - _ だけの 8〜32 文字にしてください")
+                prefs.groupCode = code
+                Peers.start(app, port) // 見つけ合いの識別子を変えて、一覧を新しいグループで作り直す
+                json(200, groupInfo(prefs))
             }
             "POST /api/access" -> json(200, applyAccess(prefs, req.json(), from))
             "PUT /api/upload" -> {
@@ -486,6 +497,9 @@ object AdminServer {
         }
     }
 
+    private fun groupInfo(prefs: Prefs) =
+        JSONObject().put("enabled", prefs.groupCode.isNotEmpty()).put("id", GroupCode.ident(prefs.groupCode))
+
     private fun tlsInfo(prefs: Prefs) = JSONObject()
         .put("enabled", prefs.https).put("active", tlsActive).put("error", tlsError)
         .put("fingerprint", if (tlsActive) TlsSupport.fingerprint() else "")
@@ -594,12 +608,16 @@ object AdminServer {
     }
 
     @Synchronized
-    private fun checkPin(pin: String?) {
+    private fun checkPin(pin: String?, groupCode: String?) {
         val now = System.currentTimeMillis()
-        if (now < lockedUntil) throw HttpError(429, "PIN を続けて間違えたため、しばらく操作できません")
-        val expected = Prefs(app).adminPin
-        val ok = pin != null && MessageDigest.isEqual(pin.toByteArray(), expected.toByteArray())
-        if (ok) {
+        if (now < lockedUntil) throw HttpError(429, "PIN またはグループコードを続けて間違えたため、しばらく操作できません")
+        val prefs = Prefs(app)
+        // グループコード（設定している端末だけ）と PIN を確かめる。どちらを間違えても、失敗の回数に数える
+        val expectedGroup = prefs.groupCode
+        val groupOk = expectedGroup.isEmpty() ||
+            (groupCode != null && MessageDigest.isEqual(groupCode.toByteArray(), expectedGroup.toByteArray()))
+        val pinOk = pin != null && MessageDigest.isEqual(pin.toByteArray(), prefs.adminPin.toByteArray())
+        if (groupOk && pinOk) {
             failures = 0
             return
         }
@@ -608,7 +626,8 @@ object AdminServer {
             failures = 0
             lockedUntil = now + 60_000
         }
-        throw HttpError(401, "PIN が違います")
+        // グループコードを先に判定する（コードを知らない相手に、PIN が合っているかを教えない）
+        throw HttpError(401, if (groupOk) "PIN が違います" else "グループコードが違います")
     }
 
     private fun zoneIndex(prefs: Prefs, raw: String?): Int {

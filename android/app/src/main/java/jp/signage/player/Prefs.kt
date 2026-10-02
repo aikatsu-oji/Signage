@@ -140,6 +140,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("allowRemoteUpdate", false)
         set(v) = sp.edit().putBoolean("allowRemoteUpdate", v).apply()
 
+    /** グループ（組織）コード。空ならグループなし */
+    var groupCode: String
+        get() = sp.getString("groupCode", "") ?: ""
+        set(v) = sp.edit().putString("groupCode", v).apply()
+
     /** 管理画面の通信を HTTPS（自己署名の証明書）にするか。変えたあと、サーバーを起動し直す */
     var https: Boolean
         get() = sp.getBoolean("https", false)
