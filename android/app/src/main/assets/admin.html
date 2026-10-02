@@ -882,7 +882,7 @@
     if (d) {
       lines.push(`再生画面：${d.player.running ? '動作中' : '停止中'}`);
       for (const z of d.player.zones || []) {
-        const what = z.message ? `（${z.message.replace(/\n/g, ' ')}）` : z.kind === 'weather' || z.name === '天気予報' ? '天気予報' : z.name ? `[${z.video ? '動画' : '画像'}] ${z.name}${z.total ? `（${z.pos}/${z.total}）` : ''}` : '—';
+        const what = z.message ? `（${z.message.replace(/\n/g, ' ')}）` : z.kind === 'weather' || z.name === '天気予報' ? '天気予報' : z.kind === 'web' || z.kind === 'rss' ? z.name : z.name ? `[${z.video ? '動画' : '画像'}] ${z.name}${z.total ? `（${z.pos}/${z.total}）` : ''}` : '—';
         lines.push(`<div class="zl">区画${z.zone + 1}：${esc(what)}</div>`);
       }
       lines.push(`テロップ：${d.ticker.standing ? '止めるまで流すテロップあり' : d.ticker.queued ? `待機 ${d.ticker.queued} 件` : 'なし'}`);
@@ -1268,13 +1268,44 @@
         $('h2', stub).textContent = label;
         $('p', stub).textContent = pendingType === 0
           ? 'フォルダの画像・動画を表示する区画に変更中です。「画面分割を保存」を押すと、この区画のフォルダの内容が表示されます。'
-          : '天気予報を表示する区画に変更中です。「画面分割を保存」を押すと反映されます（地域：' + (dev.state.settings.weatherPlace || '未設定') + '）。';
+          : pendingType === 1
+            ? '天気予報を表示する区画に変更中です。「画面分割を保存」を押すと反映されます（地域：' + (dev.state.settings.weatherPlace || '未設定') + '）。'
+            : `「${ZONE_TYPE_NAMES[pendingType]}」を表示する区画に変更中です。「画面分割を保存」を押すと、この区画の URL を設定できるようになります。`;
         stub.classList.add('pending');
         root.append(stub);
         continue;
       }
       const z = saved;
       const sec = document.createElement('section');
+      if (z.type === 2 || z.type === 3) {
+        const isRss = z.type === 3;
+        sec.innerHTML = `<h2></h2>
+          <p class="sub">${isRss ? 'ニュースの見出し（RSS / Atom）を、数件ずつ切り替えて表示します。この端末がインターネットから取得します。' : '指定した Web ページを表示します。ページ側が埋め込みを禁止している場合（銀行・SNS など）は、表示されません。'}</p>
+          <div class="dlgrow" style="margin:8px 0">
+            <input type="url" class="zurl" placeholder="${isRss ? 'RSS の URL（例：https://www3.nhk.or.jp/rss/news/cat0.xml）' : 'ページの URL（例：https://example.com/）'}" maxlength="500" style="flex:1; min-width:220px">
+            <label class="check sub">読み直す間隔 <input type="number" class="zmin" min="1" max="1440" style="width:70px"> 分</label>
+            <button type="button" class="primary small zsave">保存</button>
+          </div>
+          <p class="sub zmsg"></p>`;
+        $('h2', sec).textContent = `${z.label}　${ZONE_TYPE_NAMES[z.type]}`;
+        $('.zurl', sec).value = z.url || '';
+        $('.zmin', sec).value = z.refreshMin || 10;
+        $('.zsave', sec).addEventListener('click', async () => {
+          // ほかの区画に設定済みの URL は、そのまま残す
+          const all = [0, 1, 2].map((i) => dev.state.settings.zoneUrls?.[i] ?? '');
+          const mins = [0, 1, 2].map((i) => dev.state.settings.zoneRefreshMin?.[i] ?? 10);
+          all[z.index] = $('.zurl', sec).value.trim();
+          mins[z.index] = Number($('.zmin', sec).value) || 10;
+          try {
+            await post(dev, '/api/settings', { zoneUrls: all, zoneRefreshMin: mins });
+            $('.zmsg', sec).textContent = all[z.index] ? '保存しました（再生画面に反映されます）' : 'URL を空にしました';
+            toast('保存しました');
+            setTimeout(() => refreshDevice(dev), 800);
+          } catch (e) { $('.zmsg', sec).textContent = e.message; toast(e.message); }
+        });
+        root.append(sec);
+        continue;
+      }
       if (z.type !== 0) {
         sec.innerHTML = `<h2></h2><p class="sub">天気予報を表示中（地域：<span></span>）</p>`;
         $('h2', sec).textContent = z.label;
@@ -1627,7 +1658,8 @@
 
   // ------------------------------------------------------------ 設定
 
-  const ZONE_TYPES = [['0', 'フォルダの画像・動画'], ['1', '天気予報']];
+  const ZONE_TYPES = [['0', 'フォルダの画像・動画'], ['1', '天気予報'], ['2', 'Web ページ'], ['3', 'ニュース（RSS）']];
+  const ZONE_TYPE_NAMES = { 0: 'フォルダの画像・動画', 1: '天気予報', 2: 'Web ページ', 3: 'ニュース（RSS）' };
   // 分割の比率（％）の範囲と刻み。ドラッグ・矢印キーで 5% ずつ動かす
   const LIMITS = { splitPercent: [10, 90], mainPercent: [20, 90], sidePercent: [10, 90] };
   const DEFAULT_PCT = { splitPercent: 50, mainPercent: 70, sidePercent: 50 };

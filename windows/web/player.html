@@ -527,6 +527,88 @@
     }
   }
 
+  // ------------------------------------------------------------ Web ページの区画
+
+  /** 指定した URL のページを表示し、設定した間隔で読み直す。ページ側が埋め込みを禁止している場合（X-Frame-Options など）は表示されない */
+  class WebZone {
+    constructor(index) {
+      this.index = index;
+      this.root = el('div', 'zone');
+      this.root.style.background = '#fff';
+      this.frame = el('iframe');
+      this.frame.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff';
+      this.frame.setAttribute('referrerpolicy', 'no-referrer');
+      this.frame.setAttribute('allow', 'autoplay; fullscreen');
+      this.msg = el('div', 'msg'); this.msg.hidden = true;
+      this.root.append(this.frame, this.msg);
+      this.kind = 'web';
+    }
+    get url() { return (cfg.zoneUrls && cfg.zoneUrls[this.index]) || ''; }
+    start() {
+      clearInterval(this.timer);
+      if (!this.url) { this.msg.hidden = false; this.msg.textContent = 'Web ページの URL が設定されていません\n管理画面の「画面分割」で、区画に URL を設定してください'; return; }
+      this.msg.hidden = true;
+      this.frame.src = this.url;
+      const min = Math.max(1, (cfg.zoneRefreshMin && cfg.zoneRefreshMin[this.index]) || 10);
+      this.timer = setInterval(() => { this.frame.src = this.url; }, min * 60000);
+    }
+    reloadContent() {}
+    relayout() {}
+  }
+
+  // ------------------------------------------------------------ RSS（ニュースの見出し）の区画
+
+  /** RSS / Atom の見出しを、数件ずつ切り替えて表示する。この PC が取得して渡す */
+  class RssZone {
+    constructor(index) {
+      this.index = index;
+      this.root = el('div', 'zone');
+      this.root.style.cssText += ';background:#10151f;color:#fff;display:flex;flex-direction:column;justify-content:center;padding:4%;box-sizing:border-box';
+      this.head = el('div'); this.head.style.cssText = 'font-size:clamp(14px,2.4vmin,32px);opacity:.7;margin-bottom:2%';
+      this.list = el('div'); this.list.style.cssText = 'font-size:clamp(18px,4vmin,56px);line-height:1.5;font-weight:bold';
+      this.msg = el('div', 'msg'); this.msg.hidden = true;
+      this.root.append(this.head, this.list, this.msg);
+      this.kind = 'rss'; this.token = 0; this.items = []; this.page = 0;
+    }
+    start() { this.token++; this.load(this.token); }
+    reloadContent() {}
+    relayout() {}
+
+    async load(my) {
+      clearTimeout(this.pageTimer);
+      let data = null;
+      try { data = await getJson(`/local/rss?zone=${this.index}`); } catch (e) { this.err = e.message; }
+      if (my !== this.token) return;
+      const min = Math.max(1, (cfg.zoneRefreshMin && cfg.zoneRefreshMin[this.index]) || 10);
+      if (!data || !data.items?.length) {
+        this.msg.hidden = false;
+        this.msg.textContent = 'ニュースを取得できません\n' + (!(cfg.zoneUrls && cfg.zoneUrls[this.index]) ? 'RSS の URL が設定されていません' : '1分後に再試行します');
+        setTimeout(() => { if (my === this.token) this.load(my); }, 60000);
+        return;
+      }
+      this.msg.hidden = true;
+      this.items = data.items; this.page = 0;
+      this.loadedAt = Date.now();
+      this.refreshAt = Date.now() + min * 60000;
+      this.show(my);
+    }
+
+    show(my) {
+      if (my !== this.token) return;
+      const per = this.root.clientHeight > this.root.clientWidth ? 5 : 4;
+      const start = this.page * per;
+      const chunk = this.items.slice(start, start + per);
+      this.head.textContent = `ニュース（${Math.min(start + per, this.items.length)} / ${this.items.length}）`;
+      this.list.replaceChildren(...chunk.map((it) => { const d = el('div'); d.style.cssText = 'margin:.4em 0'; d.textContent = '・' + it.title; return d; }));
+      this.page = (start + per < this.items.length) ? this.page + 1 : 0;
+      const last = this.page === 0;
+      this.pageTimer = setTimeout(() => {
+        if (my !== this.token) return;
+        if (last && Date.now() >= this.refreshAt) this.load(my); else this.show(my);
+      }, 10000);
+    }
+  }
+
   // ------------------------------------------------------------ 区画の配置
 
   function arrange() {
@@ -749,7 +831,7 @@
           message: z.msg && !z.msg.hidden ? z.msg.textContent : '',
         };
       }
-      return { zone: i, kind: 'weather', name: '天気予報', video: false, pos: 0, total: 0, paused: false, message: '' };
+      return { zone: i, kind: z.kind || 'weather', name: z.kind === 'web' ? 'Web ページ' : z.kind === 'rss' ? 'ニュース（RSS）' : '天気予報', video: false, pos: 0, total: 0, paused: false, message: '' };
     });
     fetch('/local/player-status', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ zones: list }),
@@ -766,6 +848,8 @@
     let main = true;
     for (let i = 0; i < cfg.zoneCount; i++) {
       if (cfg.zoneTypes[i] === 1) zones.push(new WeatherZone());
+      else if (cfg.zoneTypes[i] === 2) zones.push(new WebZone(i));
+      else if (cfg.zoneTypes[i] === 3) zones.push(new RssZone(i));
       else { zones.push(new MediaZone(i, main)); main = false; }
     }
     mainZone = zones.find((z) => z instanceof MediaZone) || null;

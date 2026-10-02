@@ -27,6 +27,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import devices
 import guard
+import rss
 import store as st
 import weather
 
@@ -37,7 +38,7 @@ mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
-VERSION = "1.8.10"
+VERSION = "1.8.11"
 
 
 def resource_dir() -> Path:
@@ -167,6 +168,9 @@ class Server:
         zones = []
         for i in range(st.zone_count(layout)):
             z = {"index": i, "label": f"区画{i + 1}（{names[i] if i < len(names) else ''}）", "type": s.zone_type(i)}
+            if z["type"] in (st.ZONE_WEB, st.ZONE_RSS):
+                z["url"] = s.zone_url(i)
+                z["refreshMin"] = s.zone_refresh(i)
             if z["type"] == st.ZONE_FOLDER:
                 folder = s.zone_folder(i)
                 z["folder"] = str(folder) if folder else ""
@@ -194,6 +198,8 @@ class Server:
             "weatherSeconds", "weatherTimeSeries",
             "weatherOffice", "weatherArea", "weatherAreaName", "weatherCity", "weatherCityName")}
         settings["zoneTypes"] = [s.zone_type(i) for i in range(st.MAX_ZONES)]
+        settings["zoneUrls"] = [s.zone_url(i) for i in range(st.MAX_ZONES)]
+        settings["zoneRefreshMin"] = [s.zone_refresh(i) for i in range(st.MAX_ZONES)]
         settings["weatherPlace"] = s.get("weatherCityName") or s.get("weatherAreaName") or ""
         return {
             "ticker": {"standing": s.get("tickerStanding"), "schedules": s.get("tickerSchedules") or []},
@@ -281,9 +287,24 @@ class Server:
         if isinstance(j.get("zoneTypes"), list):
             types = list(self.store.get("zoneTypes"))
             for i, t in enumerate(j["zoneTypes"][:st.MAX_ZONES]):
-                if t in (st.ZONE_FOLDER, st.ZONE_WEATHER):
+                if t in st.ZONE_TYPES:
                     types[i] = t
             u["zoneTypes"] = types
+        if isinstance(j.get("zoneUrls"), list):
+            urls = list(self.store.get("zoneUrls") or [""] * st.MAX_ZONES)
+            for i, v in enumerate(j["zoneUrls"][:st.MAX_ZONES]):
+                v = str(v or "").strip()
+                if v:
+                    why = rss.check_url(v)
+                    if why:
+                        raise HttpError(400, f"区画{i + 1}：{why}")
+                urls[i] = v
+            u["zoneUrls"] = urls
+        if isinstance(j.get("zoneRefreshMin"), list):
+            mins = list(self.store.get("zoneRefreshMin") or [10] * st.MAX_ZONES)
+            for i, v in enumerate(j["zoneRefreshMin"][:st.MAX_ZONES]):
+                mins[i] = clamp(v, 1, 1440)
+            u["zoneRefreshMin"] = mins
         for k, lo, hi in (("imageSeconds", 1, 3600), ("clockPosition", 0, 3), ("clockSize", 0, 2), ("fitMode", 0, 3), ("orientation", 0, 2),
                           ("weatherIntervalMin", 1, 1440), ("weatherSeconds", 3, 600)):
             if k in j: u[k] = clamp(j[k], lo, hi)
@@ -661,6 +682,17 @@ class Server:
                         "rule": s.file_rule(zone, it["name"]),
                         "rotation": s.file_rotation(zone, it["name"]),
                     } for it in items])
+                if key == "GET /local/rss":
+                    try:
+                        zone = int(query.get("zone", "-1"))
+                    except ValueError:
+                        zone = -1
+                    if not (0 <= zone < st.zone_count(s.get("layout"))) or s.zone_type(zone) != st.ZONE_RSS:
+                        raise HttpError(400, "RSS の区画ではありません")
+                    try:
+                        return self.json({"items": rss.fetch(s.zone_url(zone))})
+                    except ValueError as e:
+                        raise HttpError(502, str(e))
                 if key == "GET /local/weather":
                     return self.json(weather.pages(s))
                 if key == "GET /local/ticker":

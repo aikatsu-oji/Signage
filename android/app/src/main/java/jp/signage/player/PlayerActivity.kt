@@ -141,6 +141,8 @@ class PlayerActivity : Activity() {
         return (0 until Prefs.zoneCount(prefs.layout)).map { i ->
             when (prefs.zoneType(i)) {
                 Prefs.ZONE_WEATHER -> WeatherZone(this, prefs)
+                Prefs.ZONE_WEB -> WebZone(this, prefs, i)
+                Prefs.ZONE_RSS -> RssZone(this, prefs, i)
                 else -> {
                     val isMain = !mainAssigned
                     mainAssigned = true
