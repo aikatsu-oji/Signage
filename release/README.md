@@ -1,14 +1,14 @@
-# サイネージ Android 1.9.22 / Windows 1.8.20
+# サイネージ Android 1.9.23 / Windows 1.8.21
 
 | ファイル | 内容 | バージョン |
 |---|---|---|
-| `Signage-android-1.9.22.apk` | Android / Fire TV 用アプリ | 1.9.22 |
-| `Signage-windows-1.8.20.exe` | Windows 用アプリ（インストール不要・単体で動作） | 1.8.20 |
+| `Signage-android-1.9.23.apk` | Android / Fire TV 用アプリ | 1.9.23 |
+| `Signage-windows-1.8.21.exe` | Windows 用アプリ（インストール不要・単体で動作） | 1.8.21 |
 | `SHA256SUMS` | ファイルの改ざん・破損を確かめるチェックサム | |
 | `LICENSE` / `THIRD_PARTY_NOTICES.md` | 本ソフトウェア（MIT）と、利用している部品のライセンス | |
 
 ## 今回の変更
-- HTTPS 対応を取りやめ（Fire Stick で落ちるため）。通信は HTTP のみに戻しました。設定画面の HTTPS スイッチ・証明書関連を削除
+- 端末の自動検出を強化（mDNS に加えて UDP ブロードキャストで知らせ合う。Fire TV など mDNS が通らない端末も一覧に出ます）。mDNS の登録・探索に失敗したら再試行
 
 ## 確認方法
 ```

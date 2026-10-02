@@ -5,7 +5,12 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.os.Handler
 import android.os.Looper
+import org.json.JSONObject
+import java.net.DatagramPacket
+import java.net.DatagramSocket
 import java.net.Inet4Address
+import java.net.InetAddress
+import java.net.NetworkInterface
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -14,6 +19,10 @@ import java.util.concurrent.ConcurrentHashMap
  */
 object Peers {
     private const val SERVICE_TYPE = "_signage._tcp."
+    /** mDNS が使えない機種（Fire TV など）でも見つけられるよう、UDP のブロードキャストでも知らせ合う */
+    const val BEACON_PORT = 48080
+    private const val BEACON_INTERVAL_MS = 5_000L
+    private const val BEACON_EXPIRE_MS = 20_000L
 
     data class Peer(
         val id: String,
@@ -22,6 +31,8 @@ object Peers {
         val port: Int,
         val version: String,
         val lastSeen: Long,
+        /** UDP の知らせ（ビーコン）で見つけた端末。しばらく聞こえなくなったら一覧から消す */
+        val beacon: Boolean = false,
     ) {
         val url get() = "http://$host:$port"
     }
@@ -47,7 +58,13 @@ object Peers {
     private val resolveQueue = ArrayDeque<NsdServiceInfo>()
     private var resolving = false
 
-    fun list(): List<Peer> = peers.values.sortedBy { it.name }
+    fun list(): List<Peer> {
+        val now = System.currentTimeMillis()
+        return peers.values.filter { !it.beacon || now - it.lastSeen < BEACON_EXPIRE_MS }.sortedBy { it.name }
+    }
+
+    @Volatile private var beaconSocket: DatagramSocket? = null
+    private var multicastLock: android.net.wifi.WifiManager.MulticastLock? = null
 
     @Synchronized
     fun start(context: Context, port: Int) {
@@ -56,6 +73,7 @@ object Peers {
         val prefs = Prefs(app)
         selfId = prefs.deviceId
         selfGroup = GroupCode.ident(prefs.groupCode)
+        startBeacon(app, port, prefs)
         val manager = app.getSystemService(NsdManager::class.java) ?: return
         nsd = manager
 
@@ -72,7 +90,10 @@ object Peers {
         }
         registration = object : NsdManager.RegistrationListener {
             override fun onServiceRegistered(info: NsdServiceInfo) {}
-            override fun onRegistrationFailed(info: NsdServiceInfo, errorCode: Int) {}
+            override fun onRegistrationFailed(info: NsdServiceInfo, errorCode: Int) {
+                // 起動直後などで失敗することがあるので、少し待ってやり直す（UDP の知らせは、これと別に動く）
+                main.postDelayed({ if (nsd === manager && registration === this) runCatching { manager.registerService(info, NsdManager.PROTOCOL_DNS_SD, this) } }, 5_000)
+            }
             override fun onServiceUnregistered(info: NsdServiceInfo) {}
             override fun onUnregistrationFailed(info: NsdServiceInfo, errorCode: Int) {}
         }.also { runCatching { manager.registerService(info, NsdManager.PROTOCOL_DNS_SD, it) } }
@@ -80,7 +101,9 @@ object Peers {
         discovery = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String) {}
             override fun onDiscoveryStopped(serviceType: String) {}
-            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {}
+            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+                main.postDelayed({ if (nsd === manager && discovery === this) runCatching { manager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, this) } }, 5_000)
+            }
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
             override fun onServiceFound(info: NsdServiceInfo) = enqueueResolve(info)
             override fun onServiceLost(info: NsdServiceInfo) {
@@ -91,6 +114,7 @@ object Peers {
 
     @Synchronized
     fun stop() {
+        stopBeacon()
         val manager = nsd ?: return
         registration?.let { runCatching { manager.unregisterService(it) } }
         discovery?.let { runCatching { manager.stopServiceDiscovery(it) } }
@@ -131,6 +155,88 @@ object Peers {
                 }
             })
         }.onFailure { main.post { resolveNext() } }
+    }
+
+    // ---- UDP ブロードキャスト（mDNS の代わり） ----
+
+    private fun startBeacon(app: Context, port: Int, prefs: Prefs) {
+        stopBeacon()
+        runCatching {
+            val wifi = app.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+            multicastLock = wifi?.createMulticastLock("signage-beacon")?.apply { setReferenceCounted(false); acquire() }
+        }
+        val version = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: ""
+        val sock = runCatching {
+            DatagramSocket(null).apply { reuseAddress = true; broadcast = true; bind(java.net.InetSocketAddress(BEACON_PORT)) }
+        }.getOrNull() ?: return
+        beaconSocket = sock
+        // 受信
+        Thread({
+            val buf = ByteArray(1024)
+            while (beaconSocket === sock && !sock.isClosed) {
+                try {
+                    val pkt = DatagramPacket(buf, buf.size)
+                    sock.receive(pkt)
+                    val from = (pkt.address as? Inet4Address)?.hostAddress ?: continue
+                    recordBeacon(String(pkt.data, 0, pkt.length, Charsets.UTF_8), from)
+                } catch (e: Throwable) {
+                    if (sock.isClosed) break
+                }
+            }
+        }, "peer-beacon-rx").apply { isDaemon = true }.start()
+        // 送信
+        Thread({
+            while (beaconSocket === sock && !sock.isClosed) {
+                runCatching {
+                    val p = Prefs(app)
+                    val msg = JSONObject().put("app", "signage").put("id", p.deviceId).put("name", p.deviceName)
+                        .put("port", port).put("ver", version).put("grp", GroupCode.ident(p.groupCode)).toString().toByteArray(Charsets.UTF_8)
+                    for (addr in broadcastAddresses()) {
+                        runCatching { sock.send(DatagramPacket(msg, msg.size, addr, BEACON_PORT)) }
+                    }
+                }
+                try { Thread.sleep(BEACON_INTERVAL_MS) } catch (e: InterruptedException) { break }
+            }
+        }, "peer-beacon-tx").apply { isDaemon = true }.start()
+    }
+
+    private fun stopBeacon() {
+        beaconSocket?.let { runCatching { it.close() } }
+        beaconSocket = null
+        runCatching { multicastLock?.takeIf { it.isHeld }?.release() }
+        multicastLock = null
+    }
+
+    private fun broadcastAddresses(): List<InetAddress> {
+        val list = linkedSetOf<InetAddress>()
+        runCatching { list.add(InetAddress.getByName("255.255.255.255")) }
+        runCatching {
+            for (ni in NetworkInterface.getNetworkInterfaces()) {
+                if (!ni.isUp || ni.isLoopback) continue
+                for (ia in ni.interfaceAddresses) ia.broadcast?.let { list.add(it) }
+            }
+        }
+        return list.toList()
+    }
+
+    private fun recordBeacon(text: String, fromIp: String) {
+        val j = runCatching { JSONObject(text) }.getOrNull() ?: return
+        if (j.optString("app") != "signage") return
+        val id = j.optString("id").ifEmpty { return }
+        if (id == selfId) return
+        val port = j.optInt("port", 0)
+        if (port !in 1..65535) return
+        val name = j.optString("name").take(60).ifEmpty { fromIp }
+        val grp = j.optString("grp")
+        if (grp != selfGroup) {
+            val reason = if (selfGroup.isEmpty()) "グループを設定している端末（この端末は未設定）"
+            else if (grp.isEmpty()) "グループ未設定、または、古い版" else "別のグループ"
+            hidden[id] = Hidden(name, reason)
+            peers.remove(id)
+            return
+        }
+        hidden.remove(id)
+        peers[id] = Peer(id, name, fromIp, port, j.optString("ver").take(20), System.currentTimeMillis(), beacon = true)
     }
 
     private fun record(info: NsdServiceInfo) {
