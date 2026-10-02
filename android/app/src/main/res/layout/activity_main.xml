@@ -50,7 +50,7 @@
         <TextView
             android:id="@+id/rotateLabel"
             style="@style/Label"
-            android:text="画面を回す（Fire TV 用）" />
+            android:text="画面を回す（テレビ用）" />
 
         <RadioGroup
             android:id="@+id/rotateGroup"

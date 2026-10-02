@@ -122,10 +122,10 @@ class MainActivity : Activity() {
             }
         }
 
-        // 画面を回す（Fire TV 専用）
+        // 画面を回す（テレビ専用）
         val rotateLabel = findViewById<View>(R.id.rotateLabel)
         val rotateGroup = findViewById<RadioGroup>(R.id.rotateGroup)
-        if (PlayerActivity.isFireTv(this)) {
+        if (PlayerActivity.isTv(this)) {
             rotateGroup.check(when (prefs.screenRotate) { 1 -> R.id.rotateRight; 2 -> R.id.rotateLeft; else -> R.id.rotateNone })
             rotateGroup.setOnCheckedChangeListener { _, id ->
                 prefs.screenRotate = when (id) { R.id.rotateRight -> 1; R.id.rotateLeft -> 2; else -> 0 }

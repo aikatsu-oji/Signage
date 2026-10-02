@@ -50,7 +50,7 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("autoStart", false)
         set(v) = sp.edit().putBoolean("autoStart", v).apply()
 
-    /** 画面を回して表示する（Fire TV 専用）。0=回さない / 1=右（時計回り）に 90 度 / 2=左（反時計回り）に 90 度 */
+    /** 画面を回して表示する（テレビ専用：Fire TV・Google TV）。0=回さない / 1=右（時計回り）に 90 度 / 2=左（反時計回り）に 90 度 */
     var screenRotate: Int
         get() = sp.getInt("screenRotate", 0)
         set(v) = sp.edit().putInt("screenRotate", v.coerceIn(0, 2)).apply()

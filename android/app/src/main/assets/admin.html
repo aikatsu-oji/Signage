@@ -341,7 +341,7 @@
             <span class="sub" id="orientNote"></span>
           </div>
           <div class="orientRow" id="rotateRow" hidden>
-            <span class="ol">画面を回す（Fire TV 用）</span>
+            <span class="ol">画面を回す（テレビ用）</span>
             <div class="seg" id="rotateSeg" role="radiogroup" aria-label="画面を回す"></div>
             <span class="sub" id="rotateNote"></span>
           </div>
@@ -1766,7 +1766,7 @@
 
   /** 画面の向き（0=自動 / 1=横 / 2=縦）。保存前の変更中の値。Windows では確認用の表示（向きは Windows 側で決まる） */
   let layoutOrientation = 0;
-  /** 画面を回す（Fire TV 専用。0=回さない / 1=右に90° / 2=左に90°）。保存前の変更中の値 */
+  /** 画面を回す（テレビ専用。0=回さない / 1=右に90° / 2=左に90°）。保存前の変更中の値 */
   let layoutRotate = 0;
 
   /** 計算に使う画面の大きさ。向きを「横／縦」に選んでいれば、端末が報告した大きさをその向きに合わせて入れ替える */
@@ -1774,7 +1774,7 @@
     const sc = dev.state?.screen;
     const known = !!sc;
     let W0 = sc?.width || 1920, H0 = sc?.height || 1080;
-    // Fire TV の「画面を回す」：端末が報告する大きさは、保存済みの設定で回している場合は縦横が入れ替わっている。変更中の設定に合わせて直す
+    // テレビの「画面を回す」：端末が報告する大きさは、保存済みの設定で回している場合は縦横が入れ替わっている。変更中の設定に合わせて直す
     const stt = dev.state?.settings;
     if (stt?.screenRotateSupported) {
       if (Number(stt.screenRotate ?? 0) !== 0) [W0, H0] = [H0, W0];
@@ -1890,7 +1890,7 @@
       note = layoutOrientation === 0 ? `${now}。端末の向きに従います。` : `保存すると、再生画面を${layoutOrientation === 2 ? '縦' : '横'}向きに固定します（${now}）。`;
     }
     $('#orientNote').textContent = note;
-    // 画面を回す（Fire TV のみ。対応していない端末では表示しない）
+    // 画面を回す（テレビのみ。対応していない端末では表示しない）
     const supported = !!dev.state?.settings?.screenRotateSupported;
     $('#rotateRow').hidden = !supported;
     if (supported) {
