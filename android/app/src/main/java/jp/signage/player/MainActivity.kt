@@ -282,7 +282,7 @@ class MainActivity : Activity() {
             }
             row.addView(label)
             val spinner = Spinner(this).apply {
-                adapter = adapter(listOf("フォルダの画像・動画", "天気予報"))
+                adapter = adapter(listOf("フォルダの画像・動画", "天気予報", "Web ページ", "ニュース（RSS）"))
                 setSelection(prefs.zoneType(i))
                 minimumHeight = (48 * density).toInt()
             }
@@ -499,12 +499,17 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.adminBattery).setOnClickListener { requestIgnoreBatteryOptimizations() }
         findViewById<Button>(R.id.adminOpenLocal).setOnClickListener {
             // この端末自身で開けるかを確かめる（開ければサーバーは動いている → 開けない端末側はネットワークの問題）
-            val url = "http://127.0.0.1:${AdminServer.port}/"
+            val url = "${AdminServer.scheme}://127.0.0.1:${AdminServer.port}/"
             try {
                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
             } catch (e: ActivityNotFoundException) {
                 Toast.makeText(this, "ブラウザがありません", Toast.LENGTH_SHORT).show()
             }
+        }
+        bindSwitch(R.id.httpsSwitch, prefs.https) {
+            prefs.https = it
+            AdminServer.restart(this)
+            updateAdminInfo()
         }
         bindSwitch(R.id.updateSwitch, prefs.allowRemoteUpdate) {
             prefs.allowRemoteUpdate = it
@@ -542,6 +547,8 @@ class MainActivity : Activity() {
         val running = prefs.adminEnabled && AdminServer.isRunning
         findViewById<View>(R.id.adminPinReset).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
         findViewById<View>(R.id.adminName).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.httpsSwitch).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.httpsNote).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
         findViewById<View>(R.id.updateSwitch).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
         findViewById<View>(R.id.updateNote).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
         findViewById<View>(R.id.updateUnknown).visibility =
@@ -556,10 +563,17 @@ class MainActivity : Activity() {
             !prefs.adminEnabled -> "ON にすると、PC・スマホのブラウザから画像・動画の追加や削除、設定の変更ができます。"
             !AdminServer.isRunning -> "起動中…"
             else -> {
-                val urls = AdminServer.localAddresses().map { "http://$it:${AdminServer.port}/" }
+                val urls = AdminServer.localAddresses().map { "${AdminServer.scheme}://$it:${AdminServer.port}/" }
                 buildString {
                     append(if (urls.isEmpty()) "Wi-Fi・LAN に接続されていません" else "ブラウザで開くアドレス：\n" + urls.joinToString("\n"))
                     append("\nPIN：${prefs.adminPin}")
+                    append(
+                        when {
+                            AdminServer.tlsActive -> "\n通信：HTTPS（暗号化）　証明書 SHA-256：\n${TlsSupport.fingerprint()}"
+                            prefs.https -> "\n通信：HTTP（HTTPS にできませんでした：${AdminServer.tlsError.ifEmpty { "起動中" }}）"
+                            else -> "\n通信：HTTP（暗号化なし）"
+                        },
+                    )
                     append("\n端末名：${prefs.deviceName}")
                     if (prefs.macLock) append("\n操作できる端末：MAC アドレスで制限中（${prefs.allowedMacs.size} 台）")
                     append("\n\n同じネットワークのほかのサイネージ端末も、管理画面の「端末一覧」に自動で表示されます。")

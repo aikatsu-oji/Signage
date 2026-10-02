@@ -50,6 +50,14 @@ object AdminServer {
     private var starting = false
     @Volatile var port = 0
         private set
+
+    /** いま HTTPS で待ち受けているか（HTTPS にできなかったときは、HTTP のまま） */
+    @Volatile var tlsActive = false
+        private set
+
+    /** HTTPS にできなかった理由（空なら問題なし） */
+    @Volatile var tlsError = ""
+        private set
     val isRunning get() = server != null && port > 0
 
     private val pool = Executors.newFixedThreadPool(6)
@@ -85,10 +93,18 @@ object AdminServer {
         if (server != null || starting) return
         starting = true
         thread(name = "admin-server", isDaemon = true) {
+            // HTTPS が ON なら、自己署名の証明書で暗号化する。用意できなければ HTTP のまま続ける
+            tlsError = ""
+            val ssl = if (Prefs(app).https) {
+                runCatching { TlsSupport.serverContext() }.onFailure { tlsError = "${it.javaClass.simpleName}: ${it.message}" }.getOrNull()
+            } else null
             // 使用中なら次の番号を試す（bind に失敗したソケットは閉じられるので毎回作り直す）
             val bound = (DEFAULT_PORT until DEFAULT_PORT + 10).firstNotNullOfOrNull { p ->
-                runCatching { ServerSocket().apply { reuseAddress = true; bind(InetSocketAddress(p)) } }.getOrNull()
+                runCatching {
+                    (ssl?.serverSocketFactory?.createServerSocket() ?: ServerSocket()).apply { reuseAddress = true; bind(InetSocketAddress(p)) }
+                }.getOrNull()
             }
+            tlsActive = ssl != null && bound != null
             val s = synchronized(this) {
                 starting = false
                 if (bound != null && wanted) {
@@ -113,7 +129,16 @@ object AdminServer {
         }
     }
 
+    /** 設定（HTTPS など）が変わったとき、サーバーを起動し直す */
+    @Synchronized
+    fun restart(context: Context) {
+        app = context.applicationContext
+        stop()
+        update(context)
+    }
+
     private fun stop() {
+        tlsActive = false
         Peers.stop()
         server?.let { runCatching { it.close() } }
         server = null
@@ -323,7 +348,7 @@ object AdminServer {
         checkPin(req.headers["x-pin"])
 
         return when ("${req.method} ${req.path}") {
-            "GET /api/state" -> json(200, state(prefs).put("access", accessInfo(prefs, from)))
+            "GET /api/state" -> json(200, state(prefs).put("access", accessInfo(prefs, from)).put("tls", tlsInfo(prefs)))
             "GET /api/status" -> json(200, status(prefs))
             "PUT /api/apk" -> receiveApk(prefs, req)
             "GET /api/weather/offices" -> {
@@ -460,6 +485,13 @@ object AdminServer {
             else -> throw HttpError(404, "見つかりません")
         }
     }
+
+    private fun tlsInfo(prefs: Prefs) = JSONObject()
+        .put("enabled", prefs.https).put("active", tlsActive).put("error", tlsError)
+        .put("fingerprint", if (tlsActive) TlsSupport.fingerprint() else "")
+
+    /** 管理画面の URL（この端末の IP アドレス用）の頭の部分 */
+    val scheme get() = if (tlsActive) "https" else "http"
 
     /** 配信状況（管理画面のモニタリング用） */
     private fun status(prefs: Prefs): JSONObject {
@@ -609,6 +641,9 @@ object AdminServer {
                 .put("index", i)
                 .put("label", "区画${i + 1}（${names.getOrElse(i) { "" }}）")
                 .put("type", type)
+            if (type == Prefs.ZONE_WEB || type == Prefs.ZONE_RSS) {
+                z.put("url", prefs.zoneUrl(i)).put("refreshMin", prefs.zoneRefreshMin(i))
+            }
             if (type == Prefs.ZONE_FOLDER) {
                 val folder = prefs.zoneFolder(i)
                 z.put("folder", folder?.let(MediaScanner::describe) ?: "")
@@ -637,6 +672,8 @@ object AdminServer {
             .put("mainPercent", prefs.mainPercent)
             .put("sidePercent", prefs.sidePercent)
             .put("zoneTypes", JSONArray((0 until Prefs.MAX_ZONES).map(prefs::zoneType)))
+            .put("zoneUrls", JSONArray((0 until Prefs.MAX_ZONES).map(prefs::zoneUrl)))
+            .put("zoneRefreshMin", JSONArray((0 until Prefs.MAX_ZONES).map(prefs::zoneRefreshMin)))
             .put("imageSeconds", prefs.imageSeconds)
             .put("shuffle", prefs.shuffle)
             .put("recursive", prefs.recursive)
@@ -696,8 +733,21 @@ object AdminServer {
         j.optJSONArray("zoneTypes")?.let { a ->
             for (i in 0 until minOf(a.length(), Prefs.MAX_ZONES)) {
                 val t = a.getInt(i)
-                if (t == Prefs.ZONE_FOLDER || t == Prefs.ZONE_WEATHER) prefs.setZoneType(i, t)
+                if (t in Prefs.ZONE_FOLDER..Prefs.ZONE_RSS) prefs.setZoneType(i, t)
             }
+        }
+        j.optJSONArray("zoneUrls")?.let { a ->
+            for (i in 0 until minOf(a.length(), Prefs.MAX_ZONES)) {
+                val v = a.optString(i, "").trim()
+                if (v.isNotEmpty()) {
+                    val why = ZoneUrl.check(v)
+                    if (why.isNotEmpty()) throw HttpError(400, "区画${i + 1}：$why")
+                }
+                prefs.setZoneUrl(i, v)
+            }
+        }
+        j.optJSONArray("zoneRefreshMin")?.let { a ->
+            for (i in 0 until minOf(a.length(), Prefs.MAX_ZONES)) prefs.setZoneRefreshMin(i, a.optInt(i, 10))
         }
         if (j.has("imageSeconds")) prefs.imageSeconds = j.getInt("imageSeconds")
         if (j.has("shuffle")) prefs.shuffle = j.getBoolean("shuffle")

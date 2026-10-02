@@ -882,7 +882,7 @@
     if (d) {
       lines.push(`再生画面：${d.player.running ? '動作中' : '停止中'}`);
       for (const z of d.player.zones || []) {
-        const what = z.message ? `（${z.message.replace(/\n/g, ' ')}）` : z.kind === 'weather' || z.name === '天気予報' ? '天気予報' : z.name ? `[${z.video ? '動画' : '画像'}] ${z.name}${z.total ? `（${z.pos}/${z.total}）` : ''}` : '—';
+        const what = z.message ? `（${z.message.replace(/\n/g, ' ')}）` : z.kind === 'weather' || z.name === '天気予報' ? '天気予報' : z.kind === 'web' || z.kind === 'rss' ? z.name : z.name ? `[${z.video ? '動画' : '画像'}] ${z.name}${z.total ? `（${z.pos}/${z.total}）` : ''}` : '—';
         lines.push(`<div class="zl">区画${z.zone + 1}：${esc(what)}</div>`);
       }
       lines.push(`テロップ：${d.ticker.standing ? '止めるまで流すテロップあり' : d.ticker.queued ? `待機 ${d.ticker.queued} 件` : 'なし'}`);
@@ -1036,7 +1036,8 @@
       $('.st', li).textContent = {
         ok: `接続中  v${d.version || ''}`, pin: 'PIN が違います', offline: '応答なし', checking: '確認中…',
       }[d.status] || '';
-      $('span.dsub:last-child', li).textContent = d.self ? '' : (d.url || '').replace(/^http:\/\//, '');
+      $('span.dsub:last-child', li).textContent = d.self ? '' : (d.url || '').replace(/^https?:\/\//, '');
+      if ((d.self ? location.protocol === 'https:' : (d.url || '').startsWith('https:'))) $('.dname', li).append(Object.assign(document.createElement('span'), { className: 'exclTag', style: 'background:var(--ok)', textContent: '🔒 HTTPS' }));
       li.addEventListener('click', () => select(d.key));
       ul.append(li);
     }
@@ -1104,7 +1105,12 @@
     $('#tabDevName').textContent = selected().name ? `：${selected().name}` : '';
     const dev = selected();
     $('#devTitle').textContent = dev.name + (dev.self ? '（この端末）' : '');
-    $('#devSub').textContent = dev.self ? location.host : (dev.url || '').replace(/^http:\/\//, '');
+    const tls = dev.state?.tls;
+    const secure = dev.self ? location.protocol === 'https:' : (dev.url || '').startsWith('https:');
+    $('#devSub').textContent = (dev.self ? location.host : (dev.url || '').replace(/^https?:\/\//, ''))
+      + (secure ? '　🔒 HTTPS' : '　（HTTP・暗号化なし）')
+      + (tls?.fingerprint ? `　証明書 SHA-256：${tls.fingerprint.slice(0, 23)}…` : '');
+    $('#devSub').title = tls?.fingerprint || '';
     $('#removeBtn').hidden = dev.self || !dev.manual;
     const warn = $('#devWarn');
     const ok = dev.status === 'ok' && dev.state;
@@ -1131,6 +1137,15 @@
       } else {
         warn.textContent = dev.status === 'checking' ? '確認中…' :
           '端末に接続できません。端末の電源・Wi-Fi・管理画面の設定（ON になっているか）を確認してください。';
+        if (dev.status === 'offline' && (dev.url || '').startsWith('https:')) {
+          // 自己署名の証明書は、ブラウザが初回に警告を出す。許可していないと、このページからは接続できない
+          const a = document.createElement('a');
+          a.href = dev.url + '/'; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'この端末の証明書を許可する（新しいタブで開く）';
+          warn.append(document.createElement('br'), 'この端末は HTTPS です。ブラウザの警告（証明書）をまだ許可していない可能性があります。', document.createElement('br'), a,
+            document.createElement('br'), '開いたページで警告を許可（「詳細設定」→「…にアクセスする」）してから、このページに戻って「一覧を更新」を押してください。');
+        } else if (dev.status === 'offline' && location.protocol === 'https:' && (dev.url || '').startsWith('http:')) {
+          warn.append(document.createElement('br'), 'このページは HTTPS ですが、この端末は HTTP（暗号化なし）です。ブラウザが混在した通信を止めている可能性があります。端末も HTTPS にするか、HTTP のページから操作してください。');
+        }
       }
       return;
     }
@@ -1268,13 +1283,44 @@
         $('h2', stub).textContent = label;
         $('p', stub).textContent = pendingType === 0
           ? 'フォルダの画像・動画を表示する区画に変更中です。「画面分割を保存」を押すと、この区画のフォルダの内容が表示されます。'
-          : '天気予報を表示する区画に変更中です。「画面分割を保存」を押すと反映されます（地域：' + (dev.state.settings.weatherPlace || '未設定') + '）。';
+          : pendingType === 1
+            ? '天気予報を表示する区画に変更中です。「画面分割を保存」を押すと反映されます（地域：' + (dev.state.settings.weatherPlace || '未設定') + '）。'
+            : `「${ZONE_TYPE_NAMES[pendingType]}」を表示する区画に変更中です。「画面分割を保存」を押すと、この区画の URL を設定できるようになります。`;
         stub.classList.add('pending');
         root.append(stub);
         continue;
       }
       const z = saved;
       const sec = document.createElement('section');
+      if (z.type === 2 || z.type === 3) {
+        const isRss = z.type === 3;
+        sec.innerHTML = `<h2></h2>
+          <p class="sub">${isRss ? 'ニュースの見出し（RSS / Atom）を、数件ずつ切り替えて表示します。この端末がインターネットから取得します。' : '指定した Web ページを表示します。ページ側が埋め込みを禁止している場合（銀行・SNS など）は、表示されません。'}</p>
+          <div class="dlgrow" style="margin:8px 0">
+            <input type="url" class="zurl" placeholder="${isRss ? 'RSS の URL（例：https://www3.nhk.or.jp/rss/news/cat0.xml）' : 'ページの URL（例：https://example.com/）'}" maxlength="500" style="flex:1; min-width:220px">
+            <label class="check sub">読み直す間隔 <input type="number" class="zmin" min="1" max="1440" style="width:70px"> 分</label>
+            <button type="button" class="primary small zsave">保存</button>
+          </div>
+          <p class="sub zmsg"></p>`;
+        $('h2', sec).textContent = `${z.label}　${ZONE_TYPE_NAMES[z.type]}`;
+        $('.zurl', sec).value = z.url || '';
+        $('.zmin', sec).value = z.refreshMin || 10;
+        $('.zsave', sec).addEventListener('click', async () => {
+          // ほかの区画に設定済みの URL は、そのまま残す
+          const all = [0, 1, 2].map((i) => dev.state.settings.zoneUrls?.[i] ?? '');
+          const mins = [0, 1, 2].map((i) => dev.state.settings.zoneRefreshMin?.[i] ?? 10);
+          all[z.index] = $('.zurl', sec).value.trim();
+          mins[z.index] = Number($('.zmin', sec).value) || 10;
+          try {
+            await post(dev, '/api/settings', { zoneUrls: all, zoneRefreshMin: mins });
+            $('.zmsg', sec).textContent = all[z.index] ? '保存しました（再生画面に反映されます）' : 'URL を空にしました';
+            toast('保存しました');
+            setTimeout(() => refreshDevice(dev), 800);
+          } catch (e) { $('.zmsg', sec).textContent = e.message; toast(e.message); }
+        });
+        root.append(sec);
+        continue;
+      }
       if (z.type !== 0) {
         sec.innerHTML = `<h2></h2><p class="sub">天気予報を表示中（地域：<span></span>）</p>`;
         $('h2', sec).textContent = z.label;
@@ -1627,7 +1673,8 @@
 
   // ------------------------------------------------------------ 設定
 
-  const ZONE_TYPES = [['0', 'フォルダの画像・動画'], ['1', '天気予報']];
+  const ZONE_TYPES = [['0', 'フォルダの画像・動画'], ['1', '天気予報'], ['2', 'Web ページ'], ['3', 'ニュース（RSS）']];
+  const ZONE_TYPE_NAMES = { 0: 'フォルダの画像・動画', 1: '天気予報', 2: 'Web ページ', 3: 'ニュース（RSS）' };
   // 分割の比率（％）の範囲と刻み。ドラッグ・矢印キーで 5% ずつ動かす
   const LIMITS = { splitPercent: [10, 90], mainPercent: [20, 90], sidePercent: [10, 90] };
   const DEFAULT_PCT = { splitPercent: 50, mainPercent: 70, sidePercent: 50 };

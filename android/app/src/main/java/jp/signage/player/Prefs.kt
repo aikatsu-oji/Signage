@@ -140,6 +140,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("allowRemoteUpdate", false)
         set(v) = sp.edit().putBoolean("allowRemoteUpdate", v).apply()
 
+    /** 管理画面の通信を HTTPS（自己署名の証明書）にするか。変えたあと、サーバーを起動し直す */
+    var https: Boolean
+        get() = sp.getBoolean("https", false)
+        set(v) = sp.edit().putBoolean("https", v).apply()
+
     /** 操作できる端末を MAC アドレスで制限するか（初期状態は制限なし） */
     var macLock: Boolean
         get() = sp.getBoolean("macLock", false)
@@ -211,10 +216,20 @@ class Prefs(context: Context) {
     fun zoneType(i: Int): Int {
         val default = if (i == 2) ZONE_WEATHER else ZONE_FOLDER
         // 以前の版の「時計」など、今は無い種類はその区画の既定値に戻す
-        return sp.getInt("zoneType$i", default).takeIf { it == ZONE_FOLDER || it == ZONE_WEATHER } ?: default
+        return sp.getInt("zoneType$i", default).takeIf { it in ZONE_FOLDER..ZONE_RSS } ?: default
     }
 
     fun setZoneType(i: Int, type: Int) = sp.edit().putInt("zoneType$i", type).apply()
+
+    /** Web ページ・RSS の区画の URL（http / https のみ） */
+    fun zoneUrl(i: Int): String = sp.getString("zoneUrl$i", "") ?: ""
+
+    fun setZoneUrl(i: Int, url: String) = sp.edit().putString("zoneUrl$i", url).apply()
+
+    /** Web ページ・RSS の区画を読み直す間隔（分） */
+    fun zoneRefreshMin(i: Int): Int = sp.getInt("zoneRefreshMin$i", 10).coerceIn(1, 1440)
+
+    fun setZoneRefreshMin(i: Int, min: Int) = sp.edit().putInt("zoneRefreshMin$i", min.coerceIn(1, 1440)).apply()
 
     /** 区画 i のフォルダ。区画0 は従来の「再生フォルダ」 */
     fun zoneFolder(i: Int): Uri? =
@@ -299,6 +314,8 @@ class Prefs(context: Context) {
 
         const val ZONE_FOLDER = 0
         const val ZONE_WEATHER = 1
+        const val ZONE_WEB = 2
+        const val ZONE_RSS = 3
 
         const val CLOCK_TOP_RIGHT = 0
         const val CLOCK_BOTTOM_RIGHT = 1

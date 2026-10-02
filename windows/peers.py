@@ -13,8 +13,9 @@ SERVICE_TYPE = "_signage._tcp.local."
 
 
 class Peers:
-    def __init__(self, store, port, version, addresses):
+    def __init__(self, store, port, version, addresses, https=lambda: False):
         self.store = store
+        self.https = https  # () -> この端末が HTTPS で待ち受けているか
         self.port = port
         self.version = version
         self.addresses = addresses  # () -> [IPv4]
@@ -44,7 +45,7 @@ class Peers:
             f"{name}.{SERVICE_TYPE}",
             addresses=addrs,
             port=self.port,
-            properties={"id": s.device_id, "name": s.device_name, "ver": self.version},
+            properties={"id": s.device_id, "name": s.device_name, "ver": self.version, "https": "1" if self.https() else "0"},
             server=f"signage-{s.device_id[:8]}.local.",
         )
         try:
@@ -101,7 +102,7 @@ class Peers:
             self.peers[pid] = {
                 "id": pid,
                 "name": props.get("name") or name.split(".")[0],
-                "url": f"http://{addrs[0]}:{info.port}",
+                "url": f"{'https' if props.get('https') == '1' else 'http'}://{addrs[0]}:{info.port}",
                 "version": props.get("ver", ""),
                 "lastSeen": time.time(),
             }

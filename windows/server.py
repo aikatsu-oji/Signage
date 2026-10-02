@@ -18,6 +18,7 @@ import random
 import re
 import shutil
 import socket
+import ssl
 import threading
 import time
 from http import HTTPStatus
@@ -27,7 +28,9 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import devices
 import guard
+import rss
 import store as st
+import tlscert
 import weather
 
 mimetypes.add_type("video/mp4", ".m4v")
@@ -37,7 +40,8 @@ mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
-VERSION = "1.8.10"
+LOCAL_PORT = 18080  # HTTPS のとき、この PC 自身が使う HTTP のポート
+VERSION = "1.8.12"
 
 
 def resource_dir() -> Path:
@@ -72,7 +76,7 @@ IPV4 = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 
 def is_lan_origin(origin: str) -> bool:
     u = urlparse(origin)
-    if u.scheme != "http" or not u.hostname:
+    if u.scheme not in ("http", "https") or not u.hostname:
         return False
     if u.hostname == "localhost":
         return True
@@ -114,6 +118,10 @@ class _HTTPServer(ThreadingHTTPServer):
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
         super().server_bind()
 
+    def handle_error(self, request, client_address):
+        """接続のやり取りの失敗（証明書の警告で切られた、など）は、画面に出さず無視する"""
+        pass
+
 
 class HttpError(Exception):
     def __init__(self, status, message):
@@ -131,6 +139,11 @@ class Server:
         self.peers = None  # Peers（端末の検出）
         self.event_queues = []
         self.started = time.time()
+        self.local_port = 0       # この PC 自身が使う HTTP のポート（HTTPS のときは、LAN 向けとは別。HTTPS でないときは port と同じ）
+        self.local_httpd = None
+        self.tls_active = False   # いま HTTPS で待ち受けているか（設定を変えても、起動し直すまでは変わらない）
+        self.tls_fingerprint = ""
+        self.tls_error = ""
         self.player_status = None  # 再生画面が定期的に知らせる、いま再生中の内容
         self.player_beat = 0.0
         store.listeners.append(self._broadcast)
@@ -139,6 +152,15 @@ class Server:
 
     def start(self):
         handler = self._handler_class()
+        ctx = None
+        if self.store.get("https"):
+            try:
+                cert, key = tlscert.ensure(st.APP_DIR / "tls", local_addresses())
+                ctx = tlscert.server_context(cert, key)
+                self.tls_fingerprint = tlscert.fingerprint(cert)
+            except Exception as e:  # 証明書を用意できなければ、HTTP で続ける（管理画面に理由を出す）
+                self.tls_error = f"{e.__class__.__name__}: {e}"
+                ctx = None
         for p in range(DEFAULT_PORT, DEFAULT_PORT + 10):
             try:
                 self.httpd = _HTTPServer(("0.0.0.0", p), handler)
@@ -148,11 +170,29 @@ class Server:
                 continue
         if not self.httpd:
             raise OSError("使用できるポートがありません")
+        if ctx:
+            # 受け付けたあと、各接続のスレッドで暗号化の確立を行う（途中で止まった接続が、ほかの接続を止めないように）
+            self.httpd.socket = ctx.wrap_socket(self.httpd.socket, server_side=True, do_handshake_on_connect=False)
+            self.tls_active = True
+            # この PC 自身（再生画面・設定画面）は、暗号化なしのまま、この PC からだけ使える別のポートで開く
+            for lp in range(LOCAL_PORT, LOCAL_PORT + 20):
+                try:
+                    self.local_httpd = _HTTPServer(("127.0.0.1", lp), handler)
+                    self.local_port = lp
+                    break
+                except OSError:
+                    continue
+            if not self.local_httpd:
+                raise OSError("この PC 用のポートが使用できません")
+            threading.Thread(target=self.local_httpd.serve_forever, daemon=True).start()
+        else:
+            self.local_port = self.port
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
 
     def stop(self):
-        if self.httpd:
-            self.httpd.shutdown()
+        for h in (self.httpd, self.local_httpd):
+            if h:
+                h.shutdown()
 
     def _broadcast(self, event):
         for q in list(self.event_queues):
@@ -167,6 +207,9 @@ class Server:
         zones = []
         for i in range(st.zone_count(layout)):
             z = {"index": i, "label": f"区画{i + 1}（{names[i] if i < len(names) else ''}）", "type": s.zone_type(i)}
+            if z["type"] in (st.ZONE_WEB, st.ZONE_RSS):
+                z["url"] = s.zone_url(i)
+                z["refreshMin"] = s.zone_refresh(i)
             if z["type"] == st.ZONE_FOLDER:
                 folder = s.zone_folder(i)
                 z["folder"] = str(folder) if folder else ""
@@ -194,6 +237,8 @@ class Server:
             "weatherSeconds", "weatherTimeSeries",
             "weatherOffice", "weatherArea", "weatherAreaName", "weatherCity", "weatherCityName")}
         settings["zoneTypes"] = [s.zone_type(i) for i in range(st.MAX_ZONES)]
+        settings["zoneUrls"] = [s.zone_url(i) for i in range(st.MAX_ZONES)]
+        settings["zoneRefreshMin"] = [s.zone_refresh(i) for i in range(st.MAX_ZONES)]
         settings["weatherPlace"] = s.get("weatherCityName") or s.get("weatherAreaName") or ""
         return {
             "ticker": {"standing": s.get("tickerStanding"), "schedules": s.get("tickerSchedules") or []},
@@ -242,6 +287,10 @@ class Server:
             "platform": "windows",
         }
 
+    def tls_info(self):
+        s = self.store
+        return {"enabled": bool(s.get("https")), "active": self.tls_active, "fingerprint": self.tls_fingerprint, "error": self.tls_error}
+
     def access_info(self, addr):
         s = self.store
         return {
@@ -281,9 +330,24 @@ class Server:
         if isinstance(j.get("zoneTypes"), list):
             types = list(self.store.get("zoneTypes"))
             for i, t in enumerate(j["zoneTypes"][:st.MAX_ZONES]):
-                if t in (st.ZONE_FOLDER, st.ZONE_WEATHER):
+                if t in st.ZONE_TYPES:
                     types[i] = t
             u["zoneTypes"] = types
+        if isinstance(j.get("zoneUrls"), list):
+            urls = list(self.store.get("zoneUrls") or [""] * st.MAX_ZONES)
+            for i, v in enumerate(j["zoneUrls"][:st.MAX_ZONES]):
+                v = str(v or "").strip()
+                if v:
+                    why = rss.check_url(v)
+                    if why:
+                        raise HttpError(400, f"区画{i + 1}：{why}")
+                urls[i] = v
+            u["zoneUrls"] = urls
+        if isinstance(j.get("zoneRefreshMin"), list):
+            mins = list(self.store.get("zoneRefreshMin") or [10] * st.MAX_ZONES)
+            for i, v in enumerate(j["zoneRefreshMin"][:st.MAX_ZONES]):
+                mins[i] = clamp(v, 1, 1440)
+            u["zoneRefreshMin"] = mins
         for k, lo, hi in (("imageSeconds", 1, 3600), ("clockPosition", 0, 3), ("clockSize", 0, 2), ("fitMode", 0, 3), ("orientation", 0, 2),
                           ("weatherIntervalMin", 1, 1440), ("weatherSeconds", 3, 600)):
             if k in j: u[k] = clamp(j[k], lo, hi)
@@ -308,6 +372,14 @@ class Server:
 
         class Handler(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
+
+            def setup(self):
+                # HTTPS のときは、ここで暗号化を確立する（確立できない接続は、そのまま閉じる）
+                if isinstance(self.request, ssl.SSLSocket):
+                    self.request.settimeout(10)
+                    self.request.do_handshake()
+                    self.request.settimeout(None)
+                super().setup()
 
             def log_message(self, fmt, *args):
                 pass
@@ -490,6 +562,7 @@ class Server:
                 if key == "GET /api/state":
                     d = server.state()
                     d["access"] = server.access_info(self.client_address[0])
+                    d["tls"] = server.tls_info()
                     self.json(d)
                 elif key == "GET /api/status":
                     self.json(server.status())
@@ -661,6 +734,17 @@ class Server:
                         "rule": s.file_rule(zone, it["name"]),
                         "rotation": s.file_rotation(zone, it["name"]),
                     } for it in items])
+                if key == "GET /local/rss":
+                    try:
+                        zone = int(query.get("zone", "-1"))
+                    except ValueError:
+                        zone = -1
+                    if not (0 <= zone < st.zone_count(s.get("layout"))) or s.zone_type(zone) != st.ZONE_RSS:
+                        raise HttpError(400, "RSS の区画ではありません")
+                    try:
+                        return self.json({"items": rss.fetch(s.zone_url(zone))})
+                    except ValueError as e:
+                        raise HttpError(502, str(e))
                 if key == "GET /local/weather":
                     return self.json(weather.pages(s))
                 if key == "GET /local/ticker":
@@ -669,7 +753,8 @@ class Server:
                     return self.events()
                 if key == "GET /local/settings":
                     d = {k: s.get(k) for k in ("zoneFolders", "weatherOffice", "weatherArea", "weatherCity",
-                                              "adminEnabled", "adminPin", "monitor", "autoStart", "layout", "macLock", "allowedMacs")}
+                                              "adminEnabled", "adminPin", "monitor", "autoStart", "layout", "macLock", "allowedMacs", "https")}
+                    d["tls"] = server.tls_info()
                     d.update({
                         "deviceName": s.device_name,
                         "port": server.port,
@@ -813,6 +898,8 @@ class Server:
             u["adminPin"] = "%06d" % random.SystemRandom().randrange(1_000_000)
         if "adminEnabled" in j:
             u["adminEnabled"] = bool(j["adminEnabled"])
+        if "https" in j:
+            u["https"] = bool(j["https"])  # 反映には、アプリの再起動が必要（LAN の端末からは変えられない：切り替えると、ほかの端末から届かなくなるため）
         if "monitor" in j:
             u["monitor"] = int(j["monitor"])
         if "autoStart" in j:

@@ -22,7 +22,8 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif", ".svg"}
 VIDEO_EXTS = {".mp4", ".m4v", ".webm", ".mkv", ".mov", ".ogv"}
 
 LAYOUT_SINGLE, LAYOUT_LEFT_RIGHT, LAYOUT_TOP_BOTTOM, LAYOUT_MAIN_SIDE = 0, 1, 2, 3
-ZONE_FOLDER, ZONE_WEATHER = 0, 1
+ZONE_FOLDER, ZONE_WEATHER, ZONE_WEB, ZONE_RSS = 0, 1, 2, 3
+ZONE_TYPES = (ZONE_FOLDER, ZONE_WEATHER, ZONE_WEB, ZONE_RSS)
 MAX_ZONES = 3
 
 
@@ -85,10 +86,13 @@ DEFAULTS = {
     "autoStart": False,
     "tickerStanding": None,
     "tickerSchedules": [],
+    "https": False,  # LAN 向けの通信を HTTPS（自己署名の証明書）にするか。変えたあとは、アプリの再起動が必要
     "macLock": False,  # 操作できる端末を MAC アドレスで制限するか（初期状態は制限なし）
     "allowVpn": True,  # 制限中でも VPN（Tailscale）経由は許可するか（VPN では MAC アドレスを確認できない）
     "allowedMacs": [],  # 操作を許可する端末 [{mac, name}]
     "fileRotations": {},  # 画像・動画ごとの表示の回転（キーは「区画|ファイル名」、値は 90・180・270）
+    "zoneUrls": ["", "", ""],  # Web ページ・RSS の区画の URL
+    "zoneRefreshMin": [10, 10, 10],  # Web ページ・RSS の区画を読み直す間隔（分）
     "fileRules": {},  # 画像・動画ごとの再生条件（キーは「区画|ファイル名」）
 }
 
@@ -166,7 +170,18 @@ class Store:
     def zone_type(self, i):
         types = self.get("zoneTypes")
         t = types[i] if i < len(types) else ZONE_FOLDER
-        return t if t in (ZONE_FOLDER, ZONE_WEATHER) else ZONE_FOLDER
+        return t if t in ZONE_TYPES else ZONE_FOLDER
+
+    def zone_url(self, i):
+        urls = self.get("zoneUrls") or []
+        return urls[i] if i < len(urls) and isinstance(urls[i], str) else ""
+
+    def zone_refresh(self, i):
+        v = self.get("zoneRefreshMin") or []
+        try:
+            return max(1, min(1440, int(v[i])))
+        except (IndexError, TypeError, ValueError):
+            return 10
 
     def zone_folder(self, i):
         folders = self.get("zoneFolders")
