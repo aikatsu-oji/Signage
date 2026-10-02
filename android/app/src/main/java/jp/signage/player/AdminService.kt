@@ -83,7 +83,7 @@ class AdminService : Service() {
 
     private fun notification(): Notification {
         val text = if (AdminServer.isRunning) {
-            AdminServer.localAddresses().firstOrNull()?.let { "http://$it:${AdminServer.port}/" }
+            AdminServer.localAddresses().firstOrNull()?.let { "${AdminServer.scheme}://$it:${AdminServer.port}/" }
                 ?: "Wi-Fi・LAN に接続されていません"
         } else {
             "起動中…"

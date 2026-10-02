@@ -149,7 +149,7 @@ class App:
     def run(self):
         self.server.start()
         if not self.args.no_mdns:
-            self.peers = Peers(self.store, self.server.port, VERSION, local_addresses)
+            self.peers = Peers(self.store, self.server.port, VERSION, local_addresses, lambda: self.server.tls_active)
             self.server.peers = self.peers
             threading.Thread(target=self.peers.start, daemon=True).start()
         threading.Thread(target=self.schedule_loop, daemon=True).start()
@@ -185,7 +185,7 @@ class App:
     def open_player(self):
         self.close_player()
         edge = find_edge()
-        url = f"http://127.0.0.1:{self.server.port}/player"
+        url = f"http://127.0.0.1:{self.server.local_port}/player"
         mons = monitors()
         m = choose_monitor(mons, self.store.get("monitor") or 0)
         log(f"再生画面を開きます：{monitor_label(m) if m else 'モニター情報なし'}"
@@ -318,10 +318,10 @@ class App:
             log("操作できる端末の制限を解除しました（タスクトレイから）")
 
     def open_settings(self):
-        webbrowser.open(f"http://127.0.0.1:{self.server.port}/settings")
+        webbrowser.open(f"http://127.0.0.1:{self.server.local_port}/settings")
 
     def open_admin(self):
-        webbrowser.open(f"http://127.0.0.1:{self.server.port}/")
+        webbrowser.open(f"http://127.0.0.1:{self.server.local_port}/")
 
     def quit(self):
         self.close_player()
