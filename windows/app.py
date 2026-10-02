@@ -153,6 +153,7 @@ class App:
             self.server.peers = self.peers
             threading.Thread(target=self.peers.start, daemon=True).start()
         threading.Thread(target=self.schedule_loop, daemon=True).start()
+        threading.Thread(target=self.time_sync_loop, daemon=True).start()
         if self.store.get("autoStart"):
             set_autostart(True)  # 実行ファイルの場所が変わっていても登録し直す
         # 「Windows の起動時に自動で開始」が ON のときだけ、起動と同時に全画面で再生を始める
@@ -169,6 +170,20 @@ class App:
                 self.quit()
         else:
             self.run_tray()
+
+    def time_sync_loop(self):
+        """時刻サーバーに、1 時間ごとに問い合わせる（失敗したら 5 分後に、やり直す）。起動時にも、すぐに行う"""
+        while True:
+            try:
+                s = self.store
+                if s.get("timeSync"):
+                    due = int(time.time() * 1000) - int(s.get("timeSyncAt") or 0) >= 3600_000 or s.get("timeSyncError")
+                    if due:
+                        s.sync_time()
+                        s.notify("time")
+            except Exception:
+                pass
+            time.sleep(300)
 
     def schedule_loop(self):
         """1分ごとに予約したテロップの時刻を確認する"""

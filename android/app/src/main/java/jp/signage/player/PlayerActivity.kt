@@ -72,11 +72,29 @@ class PlayerActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private val clockTick = object : Runnable {
         override fun run() {
+            maybeSyncTime()
             updateClock()
             Ticker.checkSchedules(this@PlayerActivity, AppTime.localDateTime(prefs)) // 予約したテロップの時刻か確認
             handler.postDelayed(this, 60_000 - AppTime.nowMillis(prefs) % 60_000 + 50) // 分が変わった直後に更新
         }
     }
+    private var syncing = false
+
+    /** 時刻サーバーに問い合わせる時期なら、バックグラウンドで問い合わせる（1 時間ごと。失敗したら 5 分ごと） */
+    private fun maybeSyncTime() {
+        if (syncing || !TimeSync.due(prefs)) return
+        // 失敗が続くときは、5 分あけてやり直す
+        if (prefs.timeSyncError.isNotEmpty() && System.currentTimeMillis() - lastSyncTry < 300_000L) return
+        syncing = true
+        lastSyncTry = System.currentTimeMillis()
+        Thread {
+            TimeSync.syncNow(prefs)
+            handler.post { syncing = false; updateClock() }
+        }.start()
+    }
+
+    private var lastSyncTry = 0L
+
     private val hideInfo = Runnable { infoView.visibility = View.GONE }
 
     private lateinit var voiceBanner: TextView

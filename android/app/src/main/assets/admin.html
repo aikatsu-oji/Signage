@@ -444,8 +444,15 @@
                   <option value="America/Denver">アメリカ山岳部（デンバー）</option><option value="America/Los_Angeles">アメリカ西部（ロサンゼルス）</option><option value="Pacific/Honolulu">ハワイ</option>
                   <option value="Australia/Sydney">オーストラリア（シドニー）</option><option value="UTC">UTC</option>
                 </select></label>
-              <label class="field"><span>時刻のずれの補正（分。端末の時計が遅れているときは＋）</span>
+              <label class="check"><input type="checkbox" name="timeSync"> 時刻サーバーに定期的に問い合わせて、時刻を合わせる</label>
+              <label class="field"><span>時刻サーバー（NTP）</span>
+                <input type="text" name="timeServer" maxlength="100" placeholder="ntp.nict.jp" autocomplete="off"></label>
+              <label class="field"><span>手動の補正（分。端末の時計が遅れているときは＋）</span>
                 <input type="number" id="timeOffsetMin" min="-720" max="720" step="1" value="0"></label>
+            </div>
+            <div class="dlgrow" style="margin:6px 0">
+              <button type="button" class="small" id="timeSyncNow">今すぐ時刻サーバーに問い合わせる</button>
+              <span class="sub" id="timeSyncState"></span>
             </div>
             <p class="sub">アプリの時計の表示と、ファイルの再生条件（時間帯・曜日・期間）、予約テロップの時刻は、<b>この端末のシステムの設定とは別に</b>、ここで決めた形式・タイムゾーン・補正で動きます。<span id="appTimeNote"></span></p>
           </fieldset>
@@ -1821,6 +1828,10 @@
     }
     if (!LAYOUTS.some((l) => l.id === fval('layout'))) f.elements.layout.value = '0';
     $('#timeOffsetMin').value = Math.round((s.timeOffsetSec || 0) / 60);
+    const ts = s.timeSyncInfo;
+    $('#timeSyncState').textContent = !ts ? '（この端末のアプリは、時刻の同期に未対応です）' : !ts.enabled ? '同期は OFF です'
+      : ts.at ? `最後の同期：${new Date(ts.at).toLocaleString('ja-JP', { hour12: false })}　ずれ：端末の時計が ${(ts.offsetMs / 1000).toFixed(2)} 秒${ts.offsetMs >= 0 ? '遅れ' : '進み'}（${ts.method}）${ts.error ? '　※直近の問い合わせは失敗：' + ts.error : ''}`
+      : (ts.error ? `まだ同期できていません：${ts.error}` : 'まだ同期していません（起動から数分以内に行います）');
     $('#appTimeNote').textContent = s.appTime ? `　いま、アプリは ${s.appTime.replace('-', '/').replace('-', '/')} と考えています（保存済みの設定）。` : '';
     $('#weatherPlace').textContent = `（地域：${s.weatherPlace || '未設定'}）`;
     renderWeatherRegion(dev);
@@ -2307,11 +2318,22 @@
     const body = { zoneTypes: [0, 1, 2].map((i) => Number(layoutZoneTypes[i])) };
     for (const el of f.elements) {
       if (!el.name) continue;
-      body[el.name] = el.type === 'checkbox' ? el.checked : el.name === 'timeZone' ? el.value : Number(el.value);
+      body[el.name] = el.type === 'checkbox' ? el.checked : (el.name === 'timeZone' || el.name === 'timeServer') ? el.value.trim() : Number(el.value);
     }
     body.timeOffsetSec = Math.round(Number($('#timeOffsetMin').value) || 0) * 60;
     return { ...body, ...wxBody() };
   }
+
+  $('#timeSyncNow').addEventListener('click', async () => {
+    const dev = selected();
+    const btn = $('#timeSyncNow'); btn.disabled = true; btn.textContent = '問い合わせ中…';
+    try {
+      const r = await api(dev, '/api/timesync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }, 30000);
+      toast(r.error ? `同期できませんでした：${r.error}` : `同期しました（ずれ ${(r.offsetMs / 1000).toFixed(2)} 秒）`);
+      await refreshDevice(dev);
+    } catch (e) { toast(e.message); }
+    btn.disabled = false; btn.textContent = '今すぐ時刻サーバーに問い合わせる';
+  });
 
   $('#settings').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -2565,7 +2587,7 @@
 
   /** 設定ファイルに含める設定の項目（端末ごとに違うフォルダ・端末名・PIN・天気の地域は含めない） */
   const EXPORT_KEYS = ['layout', 'splitPercent', 'mainPercent', 'sidePercent', 'zoneTypes', 'imageSeconds', 'shuffle', 'recursive',
-    'videoSound', 'videoCompat', 'videoMultiSoft', 'fitMode', 'clockEnabled', 'clockPosition', 'clockSize', 'timeZone', 'timeFormat',
+    'videoSound', 'videoCompat', 'videoMultiSoft', 'fitMode', 'clockEnabled', 'clockPosition', 'clockSize', 'timeZone', 'timeFormat', 'timeSync', 'timeServer',
     'weatherEnabled', 'weatherIntervalMin', 'weatherSeconds', 'weatherTimeSeries'];
   const EXPORT_KIND = 'signage-settings';
 

@@ -90,7 +90,7 @@
    * getHours() などでそのまま読める Date で返す（時計の表示・再生条件・天気の時計に使う）
    */
   function appNow() {
-    const ms = Date.now() + (cfg.timeOffsetSec || 0) * 1000;
+    const ms = Date.now() + (cfg.timeOffsetMs ?? (cfg.timeOffsetSec || 0) * 1000);
     if (!cfg.timeZone) return new Date(ms);
     try {
       const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
@@ -691,6 +691,16 @@
     avoidTicker();
   }
 
+  /** 時刻サーバーとの同期で、アプリの時刻のずれが変わったとき、設定を読み直さずに、ずれだけ更新する */
+  async function refreshTimeOffset() {
+    try {
+      const c = await getJson('/local/config');
+      cfg.timeOffsetMs = c.timeOffsetMs;
+      updateClock();
+    } catch (e) { /* 次の機会に */ }
+  }
+  setInterval(refreshTimeOffset, 10 * 60 * 1000);
+
   function clockLoop() {
     updateClock();
     const now = appNow();
@@ -891,6 +901,7 @@
       if (e.data === 'settings') location.reload();
       else if (e.data === 'content') zones.forEach((z) => (z instanceof MediaZone ? z.reload() : null));
       else if (e.data === 'ticker') nextTicker();
+      else if (e.data === 'time') refreshTimeOffset();
     };
   }
   // ---- 管理画面のマイクの声の放送（16kHz・モノラル・16bit PCM を届いた順にすぐ再生する）

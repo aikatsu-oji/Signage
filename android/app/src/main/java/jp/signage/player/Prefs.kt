@@ -130,6 +130,33 @@ class Prefs(context: Context) {
         get() = sp.getInt("timeOffsetSec", 0)
         set(v) = sp.edit().putInt("timeOffsetSec", v.coerceIn(-43200, 43200)).apply()
 
+    /** 時刻サーバーに定期的に問い合わせて、アプリの時刻を合わせるか */
+    var timeSync: Boolean
+        get() = sp.getBoolean("timeSync", true)
+        set(v) = sp.edit().putBoolean("timeSync", v).apply()
+
+    var timeServer: String
+        get() = sp.getString("timeServer", "ntp.nict.jp") ?: "ntp.nict.jp"
+        set(v) = sp.edit().putString("timeServer", v).apply()
+
+    /** 最後に求めた、端末の時計のずれ（サーバー − 端末。ミリ秒） */
+    var timeSyncOffsetMs: Long
+        get() = sp.getLong("timeSyncOffsetMs", 0L)
+        set(v) = sp.edit().putLong("timeSyncOffsetMs", v).apply()
+
+    /** 最後に、時刻サーバーと合わせた時刻（エポックミリ秒。0 は未実施） */
+    var timeSyncAt: Long
+        get() = sp.getLong("timeSyncAt", 0L)
+        set(v) = sp.edit().putLong("timeSyncAt", v).apply()
+
+    var timeSyncMethod: String
+        get() = sp.getString("timeSyncMethod", "") ?: ""
+        set(v) = sp.edit().putString("timeSyncMethod", v).apply()
+
+    var timeSyncError: String
+        get() = sp.getString("timeSyncError", "") ?: ""
+        set(v) = sp.edit().putString("timeSyncError", v).apply()
+
     /** 時計の表示形式（0=24 時間 / 1=12 時間（午前・午後）） */
     var timeFormat: Int
         get() = sp.getInt("timeFormat", 0)

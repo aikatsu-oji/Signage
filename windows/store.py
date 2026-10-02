@@ -71,6 +71,12 @@ DEFAULTS = {
     "clockSize": 1,
     "timeZone": "",  # アプリの時計・再生条件・予約テロップに使うタイムゾーン（IANA 名。空なら、この PC の設定）
     "timeOffsetSec": 0,  # アプリの時刻の補正（秒。この PC の時計が、ずれているとき）
+    "timeSync": True,  # 時刻サーバーに定期的に問い合わせて、アプリの時刻を合わせるか
+    "timeServer": "ntp.nict.jp",  # 問い合わせる NTP サーバー（取れなければ HTTPS の Date ヘッダー）
+    "timeSyncOffsetMs": 0,  # 最後に求めた、PC の時計のずれ（サーバー − PC。ミリ秒）
+    "timeSyncAt": 0,  # 最後に、時刻サーバーと合わせた時刻（エポックミリ秒。0 は未実施）
+    "timeSyncMethod": "",
+    "timeSyncError": "",
     "timeFormat": 0,  # 時計の表示形式（0=24時間 / 1=12時間（午前・午後））
     "weatherEnabled": False,
     "weatherIntervalMin": 10,
@@ -387,10 +393,15 @@ class Store:
         schedules.sort(key=lambda s: s["time"])
         self.update({"tickerSchedules": schedules})
 
+    def time_offset_ms(self):
+        """アプリの時刻に足す、ずれ（ミリ秒）：時刻サーバーとの差（同期が ON のとき）＋ 手動の補正"""
+        auto = int(self.get("timeSyncOffsetMs") or 0) if self.get("timeSync") else 0
+        return auto + int(self.get("timeOffsetSec") or 0) * 1000
+
     def app_now(self):
         """アプリの時刻（この PC の設定とは別に決めたタイムゾーン・補正を反映した、その土地の壁時計の時刻。タイムゾーンの情報は持たない）"""
         from datetime import timedelta, timezone
-        t = datetime.now(timezone.utc) + timedelta(seconds=int(self.get("timeOffsetSec") or 0))
+        t = datetime.now(timezone.utc) + timedelta(milliseconds=self.time_offset_ms())
         name = self.get("timeZone") or ""
         if name:
             try:
@@ -399,6 +410,22 @@ class Store:
             except Exception:
                 pass  # タイムゾーンの名前が不正・データが無いときは、この PC の時刻
         return t.astimezone().replace(tzinfo=None)
+
+    def sync_time(self):
+        """時刻サーバーに問い合わせて、ずれを記録する。結果の辞書を返す（失敗しても、前回のずれは、そのまま使う）"""
+        import timesync
+        t0 = int(time.time() * 1000)
+        try:
+            offset, method = timesync.measure(self.get("timeServer") or "ntp.nict.jp")
+            self.update({"timeSyncOffsetMs": int(round(offset)), "timeSyncAt": t0, "timeSyncMethod": method, "timeSyncError": ""})
+        except Exception as e:
+            self.update({"timeSyncError": str(e)[:200]})
+        return self.time_sync_info()
+
+    def time_sync_info(self):
+        return {"enabled": bool(self.get("timeSync")), "server": self.get("timeServer"),
+                "offsetMs": int(self.get("timeSyncOffsetMs") or 0), "at": int(self.get("timeSyncAt") or 0),
+                "method": self.get("timeSyncMethod") or "", "error": self.get("timeSyncError") or ""}
 
     def check_schedules(self, now=None):
         now = now or self.app_now()

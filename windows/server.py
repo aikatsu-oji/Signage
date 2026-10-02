@@ -42,7 +42,7 @@ mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
 LOCAL_PORT = 18080  # HTTPS のとき、この PC 自身が使う HTTP のポート
-VERSION = "1.8.16"
+VERSION = "1.8.17"
 
 
 def resource_dir() -> Path:
@@ -234,9 +234,11 @@ class Server:
         settings = {k: s.get(k) for k in (
             "layout", "splitPercent", "mainPercent", "sidePercent", "imageSeconds", "shuffle", "recursive", "videoSound",
             "fitMode", "orientation",
-            "clockEnabled", "clockPosition", "clockSize", "timeZone", "timeOffsetSec", "timeFormat", "weatherEnabled", "weatherIntervalMin",
+            "clockEnabled", "clockPosition", "clockSize", "timeZone", "timeOffsetSec", "timeFormat", "timeSync", "timeServer", "weatherEnabled", "weatherIntervalMin",
             "weatherSeconds", "weatherTimeSeries",
             "weatherOffice", "weatherArea", "weatherAreaName", "weatherCity", "weatherCityName")}
+        settings["timeOffsetMs"] = s.time_offset_ms()  # 再生画面が使う、アプリの時刻のずれの合計
+        settings["timeSyncInfo"] = s.time_sync_info()
         settings["appTime"] = s.app_now().strftime("%Y-%m-%d %H:%M:%S")  # 管理画面での確認用（アプリが、いま何時と考えているか）
         settings["zoneTypes"] = [s.zone_type(i) for i in range(st.MAX_ZONES)]
         settings["zoneUrls"] = [s.zone_url(i) for i in range(st.MAX_ZONES)]
@@ -378,10 +380,16 @@ class Server:
                 except Exception:
                     raise HttpError(400, "タイムゾーンの名前が正しくありません")
             u["timeZone"] = name
+        if "timeServer" in j:
+            import timesync
+            host = str(j["timeServer"] or "").strip() or "ntp.nict.jp"
+            if not timesync.valid_host(host):
+                raise HttpError(400, "時刻サーバーの名前が正しくありません")
+            u["timeServer"] = host
         for k, lo, hi in (("imageSeconds", 1, 3600), ("clockPosition", 0, 3), ("clockSize", 0, 2), ("timeOffsetSec", -43200, 43200), ("timeFormat", 0, 1), ("fitMode", 0, 3), ("orientation", 0, 2),
                           ("weatherIntervalMin", 1, 1440), ("weatherSeconds", 3, 600)):
             if k in j: u[k] = clamp(j[k], lo, hi)
-        for k in ("shuffle", "recursive", "videoSound", "clockEnabled", "weatherEnabled", "weatherTimeSeries"):
+        for k in ("shuffle", "recursive", "videoSound", "clockEnabled", "weatherEnabled", "weatherTimeSeries", "timeSync"):
             if k in j: u[k] = bool(j[k])
         # 天気予報の地域（気象庁のコード。数字のみ）
         for k in ("weatherOffice", "weatherArea", "weatherCity"):
@@ -606,6 +614,10 @@ class Server:
                     self.json(server.status())
                 elif key == "GET /api/weather/offices":
                     self.json(weather.offices())
+                elif key == "POST /api/timesync":
+                    info = s.sync_time()  # すぐに、時刻サーバーに問い合わせる（数秒かかることがある）
+                    s.notify("time")
+                    self.json({**info, "appTime": s.app_now().strftime("%Y-%m-%d %H:%M:%S")})
                 elif key == "POST /api/group":
                     self.json(server.apply_group(self.body_json()))
                 elif key == "POST /api/access":

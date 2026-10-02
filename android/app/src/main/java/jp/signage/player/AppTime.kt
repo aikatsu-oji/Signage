@@ -15,8 +15,11 @@ object AppTime {
     fun zone(prefs: Prefs): ZoneId =
         prefs.timeZone.takeIf { it.isNotEmpty() }?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault()
 
-    /** いまの時刻（ミリ秒。端末の時計に、補正を足した値） */
-    fun nowMillis(prefs: Prefs): Long = System.currentTimeMillis() + prefs.timeOffsetSec * 1000L
+    /** アプリの時刻に足す、ずれ（ミリ秒）：時刻サーバーとの差（同期が ON のとき）＋ 手動の補正 */
+    fun offsetMs(prefs: Prefs): Long = (if (prefs.timeSync) prefs.timeSyncOffsetMs else 0L) + prefs.timeOffsetSec * 1000L
+
+    /** いまの時刻（ミリ秒。端末の時計に、ずれを足した値） */
+    fun nowMillis(prefs: Prefs): Long = System.currentTimeMillis() + offsetMs(prefs)
 
     /** その土地の壁時計の時刻 */
     fun localDateTime(prefs: Prefs): LocalDateTime =

@@ -367,6 +367,10 @@ object AdminServer {
                 val bytes = arr.toString().toByteArray(Charsets.UTF_8)
                 Response(200, "application/json; charset=utf-8", bytes.size.toLong()) { it.write(bytes) }
             }
+            "POST /api/timesync" -> {
+                TimeSync.syncNow(prefs) // すぐに、時刻サーバーに問い合わせる（数秒かかることがある）
+                json(200, timeSyncInfo(prefs).put("appTime", AppTime.localDateTime(prefs).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))))
+            }
             "POST /api/group" -> {
                 val code = req.json().optString("code", "").trim()
                 if (code.isNotEmpty() && !GroupCode.valid(code)) throw HttpError(400, "グループコードは、英数字と - _ だけの 8〜32 文字にしてください")
@@ -496,6 +500,10 @@ object AdminServer {
             else -> throw HttpError(404, "見つかりません")
         }
     }
+
+    private fun timeSyncInfo(prefs: Prefs) = JSONObject()
+        .put("enabled", prefs.timeSync).put("server", prefs.timeServer).put("offsetMs", prefs.timeSyncOffsetMs)
+        .put("at", prefs.timeSyncAt).put("method", prefs.timeSyncMethod).put("error", prefs.timeSyncError)
 
     private fun groupInfo(prefs: Prefs) =
         JSONObject().put("enabled", prefs.groupCode.isNotEmpty()).put("id", GroupCode.ident(prefs.groupCode))
@@ -713,6 +721,9 @@ object AdminServer {
             .put("timeZone", prefs.timeZone)
             .put("timeOffsetSec", prefs.timeOffsetSec)
             .put("timeFormat", prefs.timeFormat)
+            .put("timeSync", prefs.timeSync)
+            .put("timeServer", prefs.timeServer)
+            .put("timeSyncInfo", timeSyncInfo(prefs))
             .put("appTime", AppTime.localDateTime(prefs).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
             .put("weatherEnabled", prefs.weatherEnabled)
             .put("weatherIntervalMin", prefs.weatherIntervalMin)
@@ -789,6 +800,12 @@ object AdminServer {
         }
         if (j.has("timeOffsetSec")) prefs.timeOffsetSec = j.getInt("timeOffsetSec")
         if (j.has("timeFormat")) prefs.timeFormat = j.getInt("timeFormat")
+        if (j.has("timeSync")) prefs.timeSync = j.getBoolean("timeSync")
+        if (j.has("timeServer")) {
+            val host = j.optString("timeServer", "").trim().ifEmpty { "ntp.nict.jp" }
+            if (!TimeSync.validHost(host)) throw HttpError(400, "時刻サーバーの名前が正しくありません")
+            prefs.timeServer = host
+        }
         if (j.has("weatherEnabled")) prefs.weatherEnabled = j.getBoolean("weatherEnabled")
         if (j.has("weatherIntervalMin")) prefs.weatherIntervalMin = j.getInt("weatherIntervalMin")
         if (j.has("weatherSeconds")) prefs.weatherSeconds = j.getInt("weatherSeconds")
