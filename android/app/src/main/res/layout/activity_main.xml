@@ -470,20 +470,6 @@
             android:visibility="gone" />
 
         <Switch
-            android:id="@+id/httpsSwitch"
-            style="@style/Option"
-            android:text="通信を HTTPS（暗号化）にする"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/httpsNote"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textSize="12sp"
-            android:visibility="gone"
-            android:text="PIN・画像・設定の通信を暗号化します。証明書は端末が作る自己署名のもので、管理画面を開くブラウザに初回は警告が出ます（上に出る SHA-256 を確かめてから許可してください）。切り替えると、サーバーを起動し直します。" />
-
-        <Switch
             android:id="@+id/updateSwitch"
             style="@style/Option"
             android:text="管理画面からのアプリ更新を許可"

@@ -51,13 +51,6 @@ object AdminServer {
     @Volatile var port = 0
         private set
 
-    /** いま HTTPS で待ち受けているか（HTTPS にできなかったときは、HTTP のまま） */
-    @Volatile var tlsActive = false
-        private set
-
-    /** HTTPS にできなかった理由（空なら問題なし） */
-    @Volatile var tlsError = ""
-        private set
     val isRunning get() = server != null && port > 0
 
     private val pool = Executors.newFixedThreadPool(6)
@@ -94,24 +87,12 @@ object AdminServer {
         starting = true
         thread(name = "admin-server", isDaemon = true) {
             // HTTPS が ON なら、自己署名の証明書で暗号化する。用意できなければ HTTP のまま続ける
-            tlsError = ""
-            // 前回、TLS の握手の途中でアプリが落ちていたら、HTTPS を自動で切って HTTP に戻す
-            val guard = app.getSharedPreferences("tls_guard", Context.MODE_PRIVATE)
-            if (guard.getBoolean("handshaking", false)) {
-                guard.edit().putBoolean("handshaking", false).commit()
-                Prefs(app).https = false
-                tlsError = "前回の HTTPS 通信中にアプリが停止したため、HTTPS を自動で OFF にしました"
-            }
-            val ssl = if (Prefs(app).https) {
-                runCatching { TlsSupport.serverContext() }.onFailure { tlsError = "${it.javaClass.simpleName}: ${it.message}" }.getOrNull()
-            } else null
             // 使用中なら次の番号を試す（bind に失敗したソケットは閉じられるので毎回作り直す）
             val bound = (DEFAULT_PORT until DEFAULT_PORT + 10).firstNotNullOfOrNull { p ->
                 runCatching {
-                    (ssl?.serverSocketFactory?.createServerSocket() ?: ServerSocket()).apply { reuseAddress = true; bind(InetSocketAddress(p)) }
+                    ServerSocket().apply { reuseAddress = true; bind(InetSocketAddress(p)) }
                 }.getOrNull()
             }
-            tlsActive = ssl != null && bound != null
             val s = synchronized(this) {
                 starting = false
                 if (bound != null && wanted) {
@@ -134,7 +115,7 @@ object AdminServer {
                 try {
                     pool.execute {
                         // 通信まわりの例外でアプリごと落ちないよう、すべてここで受け止める
-                        try { handshake(client); handle(client) } catch (e: Throwable) { runCatching { client.close() } }
+                        try { handle(client) } catch (e: Throwable) { runCatching { client.close() } }
                     }
                 } catch (e: Throwable) { runCatching { client.close() } }
             }
@@ -150,7 +131,6 @@ object AdminServer {
     }
 
     private fun stop() {
-        tlsActive = false
         Peers.stop()
         server?.let { runCatching { it.close() } }
         server = null
@@ -230,19 +210,6 @@ object AdminServer {
     )
 
     private class HttpError(val status: Int, message: String) : Exception(message)
-
-    /** HTTPS のときは、最初に握手を済ませる（失敗や途中切断は、その接続だけ閉じる） */
-    private fun handshake(socket: Socket) {
-        val ssl = socket as? javax.net.ssl.SSLSocket ?: return
-        val guard = app.getSharedPreferences("tls_guard", Context.MODE_PRIVATE)
-        guard.edit().putBoolean("handshaking", true).commit()
-        try {
-            ssl.soTimeout = 10_000
-            ssl.startHandshake()
-        } finally {
-            guard.edit().putBoolean("handshaking", false).commit()
-        }
-    }
 
     private fun handle(socket: Socket) {
         socket.use { s ->
@@ -377,7 +344,7 @@ object AdminServer {
         checkPin(req.headers["x-pin"], req.headers["x-group-code"])
 
         return when ("${req.method} ${req.path}") {
-            "GET /api/state" -> json(200, state(prefs).put("access", accessInfo(prefs, from)).put("tls", tlsInfo(prefs)).put("group", groupInfo(prefs)))
+            "GET /api/state" -> json(200, state(prefs).put("access", accessInfo(prefs, from)).put("group", groupInfo(prefs)))
             "GET /api/status" -> json(200, status(prefs))
             "PUT /api/apk" -> receiveApk(prefs, req)
             "GET /api/weather/offices" -> {
@@ -535,12 +502,9 @@ object AdminServer {
     private fun groupInfo(prefs: Prefs) =
         JSONObject().put("enabled", prefs.groupCode.isNotEmpty()).put("id", GroupCode.ident(prefs.groupCode))
 
-    private fun tlsInfo(prefs: Prefs) = JSONObject()
-        .put("enabled", prefs.https).put("active", tlsActive).put("error", tlsError)
-        .put("fingerprint", if (tlsActive) TlsSupport.fingerprint() else "")
 
     /** 管理画面の URL（この端末の IP アドレス用）の頭の部分 */
-    val scheme get() = if (tlsActive) "https" else "http"
+    val scheme get() = "http"
 
     /** 配信状況（管理画面のモニタリング用） */
     private fun status(prefs: Prefs): JSONObject {

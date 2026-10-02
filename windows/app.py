@@ -149,7 +149,7 @@ class App:
     def run(self):
         self.server.start()
         if not self.args.no_mdns:
-            self.peers = Peers(self.store, self.server.port, VERSION, local_addresses, lambda: self.server.tls_active)
+            self.peers = Peers(self.store, self.server.port, VERSION, local_addresses)
             self.server.peers = self.peers
             threading.Thread(target=self.peers.start, daemon=True).start()
         threading.Thread(target=self.schedule_loop, daemon=True).start()

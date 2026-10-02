@@ -1138,7 +1138,6 @@
         ok: `接続中  v${d.version || ''}`, pin: 'PIN が違います', offline: '応答なし', checking: '確認中…',
       }[d.status] || '';
       $('span.dsub:last-child', li).textContent = d.self ? '' : (d.url || '').replace(/^https?:\/\//, '');
-      if ((d.self ? location.protocol === 'https:' : (d.url || '').startsWith('https:'))) $('.dname', li).append(Object.assign(document.createElement('span'), { className: 'exclTag', style: 'background:var(--ok)', textContent: '🔒 HTTPS' }));
       li.addEventListener('click', () => select(d.key));
       ul.append(li);
     }
@@ -1207,12 +1206,8 @@
     $('#tabDevName').textContent = selected().name ? `：${selected().name}` : '';
     const dev = selected();
     $('#devTitle').textContent = dev.name + (dev.self ? '（この端末）' : '');
-    const tls = dev.state?.tls;
-    const secure = dev.self ? location.protocol === 'https:' : (dev.url || '').startsWith('https:');
     $('#devSub').textContent = (dev.self ? location.host : (dev.url || '').replace(/^https?:\/\//, ''))
-      + (secure ? '　🔒 HTTPS' : '　（HTTP・暗号化なし）')
-      + (tls?.fingerprint ? `　証明書 SHA-256：${tls.fingerprint.slice(0, 23)}…` : '');
-    $('#devSub').title = tls?.fingerprint || '';
+      + '　（HTTP）';
     $('#removeBtn').hidden = dev.self || !dev.manual;
     const warn = $('#devWarn');
     const ok = dev.status === 'ok' && dev.state;
@@ -1248,15 +1243,6 @@
           btn.type = 'button'; btn.className = 'small primary'; btn.textContent = '接続を診断する';
           btn.addEventListener('click', () => { btn.hidden = true; diagnose(dev, box); });
           warn.append(document.createElement('br'), btn, box);
-        }
-        if (dev.status === 'offline' && (dev.url || '').startsWith('https:')) {
-          // 自己署名の証明書は、ブラウザが初回に警告を出す。許可していないと、このページからは接続できない
-          const a = document.createElement('a');
-          a.href = dev.url + '/'; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'この端末の証明書を許可する（新しいタブで開く）';
-          warn.append(document.createElement('br'), 'この端末は HTTPS です。ブラウザの警告（証明書）をまだ許可していない可能性があります。', document.createElement('br'), a,
-            document.createElement('br'), '開いたページで警告を許可（「詳細設定」→「…にアクセスする」）してから、このページに戻って「一覧を更新」を押してください。');
-        } else if (dev.status === 'offline' && location.protocol === 'https:' && (dev.url || '').startsWith('http:')) {
-          warn.append(document.createElement('br'), 'このページは HTTPS ですが、この端末は HTTP（暗号化なし）です。ブラウザが混在した通信を止めている可能性があります。端末も HTTPS にするか、HTTP のページから操作してください。');
         }
       }
       return;

@@ -187,11 +187,6 @@ class Prefs(context: Context) {
         get() = sp.getString("groupCode", "") ?: ""
         set(v) = sp.edit().putString("groupCode", v).apply()
 
-    /** 管理画面の通信を HTTPS（自己署名の証明書）にするか。変えたあと、サーバーを起動し直す */
-    var https: Boolean
-        get() = sp.getBoolean("https", false)
-        set(v) = sp.edit().putBoolean("https", v).apply()
-
     /** 操作できる端末を MAC アドレスで制限するか（初期状態は制限なし） */
     var macLock: Boolean
         get() = sp.getBoolean("macLock", false)

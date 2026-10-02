@@ -507,11 +507,6 @@ class MainActivity : Activity() {
             }
         }
         findViewById<Button>(R.id.groupButton).setOnClickListener { editGroupCode() }
-        bindSwitch(R.id.httpsSwitch, prefs.https) {
-            prefs.https = it
-            AdminServer.restart(this)
-            updateAdminInfo()
-        }
         bindSwitch(R.id.updateSwitch, prefs.allowRemoteUpdate) {
             prefs.allowRemoteUpdate = it
             updateAdminInfo()
@@ -550,8 +545,6 @@ class MainActivity : Activity() {
         findViewById<View>(R.id.adminName).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
         findViewById<View>(R.id.groupButton).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
         findViewById<Button>(R.id.groupButton).text = if (prefs.groupCode.isEmpty()) "グループコードを設定" else "グループコードを変更・解除"
-        findViewById<View>(R.id.httpsSwitch).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
-        findViewById<View>(R.id.httpsNote).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
         findViewById<View>(R.id.updateSwitch).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
         findViewById<View>(R.id.updateNote).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
         findViewById<View>(R.id.updateUnknown).visibility =
@@ -570,13 +563,7 @@ class MainActivity : Activity() {
                 buildString {
                     append(if (urls.isEmpty()) "Wi-Fi・LAN に接続されていません" else "ブラウザで開くアドレス：\n" + urls.joinToString("\n"))
                     append("\nPIN：${prefs.adminPin}")
-                    append(
-                        when {
-                            AdminServer.tlsActive -> "\n通信：HTTPS（暗号化）　証明書 SHA-256：\n${TlsSupport.fingerprint()}"
-                            prefs.https -> "\n通信：HTTP（HTTPS にできませんでした：${AdminServer.tlsError.ifEmpty { "起動中" }}）"
-                            else -> "\n通信：HTTP（暗号化なし）"
-                        },
-                    )
+                    append("\n通信：HTTP（暗号化なし）")
                     append("\n端末名：${prefs.deviceName}")
                     append("\nグループ：" + if (prefs.groupCode.isEmpty()) "未設定（PIN だけで操作できます）" else "設定済み（コードを知る端末だけ操作できます）")
                     if (prefs.macLock) append("\n操作できる端末：MAC アドレスで制限中（${prefs.allowedMacs.size} 台）")

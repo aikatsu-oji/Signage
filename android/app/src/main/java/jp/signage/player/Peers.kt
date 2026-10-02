@@ -22,9 +22,8 @@ object Peers {
         val port: Int,
         val version: String,
         val lastSeen: Long,
-        val https: Boolean = false,
     ) {
-        val url get() = "${if (https) "https" else "http"}://$host:$port"
+        val url get() = "http://$host:$port"
     }
 
     private var nsd: NsdManager? = null
@@ -66,7 +65,6 @@ object Peers {
             setPort(port)
             setAttribute("id", prefs.deviceId)
             setAttribute("name", prefs.deviceName)
-            setAttribute("https", if (AdminServer.tlsActive) "1" else "0")
             setAttribute("grp", GroupCode.ident(prefs.groupCode))
             setAttribute("ver", runCatching {
                 app.packageManager.getPackageInfo(app.packageName, 0).versionName
@@ -160,7 +158,6 @@ object Peers {
             port = info.port,
             version = attr("ver"),
             lastSeen = System.currentTimeMillis(),
-            https = attr("https") == "1",
         )
     }
 }

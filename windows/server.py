@@ -18,7 +18,6 @@ import random
 import re
 import shutil
 import socket
-import ssl
 import threading
 import time
 from http import HTTPStatus
@@ -31,7 +30,6 @@ import group
 import guard
 import rss
 import store as st
-import tlscert
 import weather
 
 mimetypes.add_type("video/mp4", ".m4v")
@@ -42,7 +40,7 @@ mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
 LOCAL_PORT = 18080  # HTTPS のとき、この PC 自身が使う HTTP のポート
-VERSION = "1.8.19"
+VERSION = "1.8.20"
 
 
 def resource_dir() -> Path:
@@ -142,9 +140,6 @@ class Server:
         self.started = time.time()
         self.local_port = 0       # この PC 自身が使う HTTP のポート（HTTPS のときは、LAN 向けとは別。HTTPS でないときは port と同じ）
         self.local_httpd = None
-        self.tls_active = False   # いま HTTPS で待ち受けているか（設定を変えても、起動し直すまでは変わらない）
-        self.tls_fingerprint = ""
-        self.tls_error = ""
         self.player_status = None  # 再生画面が定期的に知らせる、いま再生中の内容
         self.player_beat = 0.0
         store.listeners.append(self._broadcast)
@@ -153,15 +148,6 @@ class Server:
 
     def start(self):
         handler = self._handler_class()
-        ctx = None
-        if self.store.get("https"):
-            try:
-                cert, key = tlscert.ensure(st.APP_DIR / "tls", local_addresses())
-                ctx = tlscert.server_context(cert, key)
-                self.tls_fingerprint = tlscert.fingerprint(cert)
-            except Exception as e:  # 証明書を用意できなければ、HTTP で続ける（管理画面に理由を出す）
-                self.tls_error = f"{e.__class__.__name__}: {e}"
-                ctx = None
         for p in range(DEFAULT_PORT, DEFAULT_PORT + 10):
             try:
                 self.httpd = _HTTPServer(("0.0.0.0", p), handler)
@@ -171,23 +157,7 @@ class Server:
                 continue
         if not self.httpd:
             raise OSError("使用できるポートがありません")
-        if ctx:
-            # 受け付けたあと、各接続のスレッドで暗号化の確立を行う（途中で止まった接続が、ほかの接続を止めないように）
-            self.httpd.socket = ctx.wrap_socket(self.httpd.socket, server_side=True, do_handshake_on_connect=False)
-            self.tls_active = True
-            # この PC 自身（再生画面・設定画面）は、暗号化なしのまま、この PC からだけ使える別のポートで開く
-            for lp in range(LOCAL_PORT, LOCAL_PORT + 20):
-                try:
-                    self.local_httpd = _HTTPServer(("127.0.0.1", lp), handler)
-                    self.local_port = lp
-                    break
-                except OSError:
-                    continue
-            if not self.local_httpd:
-                raise OSError("この PC 用のポートが使用できません")
-            threading.Thread(target=self.local_httpd.serve_forever, daemon=True).start()
-        else:
-            self.local_port = self.port
+        self.local_port = self.port
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
 
     def stop(self):
@@ -310,10 +280,6 @@ class Server:
             threading.Thread(target=rediscover, daemon=True).start()
         return self.group_info()
 
-    def tls_info(self):
-        s = self.store
-        return {"enabled": bool(s.get("https")), "active": self.tls_active, "fingerprint": self.tls_fingerprint, "error": self.tls_error}
-
     def access_info(self, addr):
         s = self.store
         return {
@@ -410,14 +376,6 @@ class Server:
 
         class Handler(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
-
-            def setup(self):
-                # HTTPS のときは、ここで暗号化を確立する（確立できない接続は、そのまま閉じる）
-                if isinstance(self.request, ssl.SSLSocket):
-                    self.request.settimeout(10)
-                    self.request.do_handshake()
-                    self.request.settimeout(None)
-                super().setup()
 
             def log_message(self, fmt, *args):
                 pass
@@ -607,7 +565,6 @@ class Server:
                 if key == "GET /api/state":
                     d = server.state()
                     d["access"] = server.access_info(self.client_address[0])
-                    d["tls"] = server.tls_info()
                     d["group"] = server.group_info()
                     self.json(d)
                 elif key == "GET /api/status":
@@ -806,8 +763,7 @@ class Server:
                     return self.events()
                 if key == "GET /local/settings":
                     d = {k: s.get(k) for k in ("zoneFolders", "weatherOffice", "weatherArea", "weatherCity",
-                                              "adminEnabled", "adminPin", "monitor", "autoStart", "layout", "macLock", "allowedMacs", "https")}
-                    d["tls"] = server.tls_info()
+                                              "adminEnabled", "adminPin", "monitor", "autoStart", "layout", "macLock", "allowedMacs")}
                     d["group"] = server.group_info()
                     d.update({
                         "deviceName": s.device_name,
@@ -954,8 +910,6 @@ class Server:
             u["adminEnabled"] = bool(j["adminEnabled"])
         if "groupCode" in j:
             self.apply_group({"code": j["groupCode"]})  # この PC 自身から、グループコードを決める・解除する
-        if "https" in j:
-            u["https"] = bool(j["https"])  # 反映には、アプリの再起動が必要（LAN の端末からは変えられない：切り替えると、ほかの端末から届かなくなるため）
         if "monitor" in j:
             u["monitor"] = int(j["monitor"])
         if "autoStart" in j:
