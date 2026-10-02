@@ -35,6 +35,9 @@ import kotlin.concurrent.thread
  */
 object AdminServer {
     const val DEFAULT_PORT = 8080
+    private const val HEADER_TIMEOUT_MS = 10_000L
+    private const val MAX_TRACKED_IPS = 256
+    private const val STRIKE_FORGET_MS = 24 * 3_600_000L
 
     /** 再生側に知らせるイベント */
     const val EVENT_CONTENT = "content"   // ファイルが変わった → 読み直す
@@ -57,8 +60,9 @@ object AdminServer {
     private val main = Handler(Looper.getMainLooper())
     private val listeners = CopyOnWriteArraySet<(String) -> Unit>()
 
-    private var failures = 0
-    private var lockedUntil = 0L
+    /** PIN・グループコードの失敗は、接続元の IP ごとに数える（1 台の悪意ある端末が、本物の管理者まで締め出さないように） */
+    private class Strikes { var failures = 0; var rounds = 0; var lockedUntil = 0L; var last = 0L }
+    private val strikes = HashMap<String, Strikes>()
 
     fun addListener(l: (String) -> Unit) = listeners.add(l)
     fun removeListener(l: (String) -> Unit) = listeners.remove(l)
@@ -112,6 +116,8 @@ object AdminServer {
             Peers.start(app, s.localPort)
             while (!s.isClosed) {
                 val client = try { s.accept() } catch (e: IOException) { break } catch (e: Throwable) { continue }
+                // LAN の外からの接続は、何も読まずにすぐ切る（接続を占有されないように）
+                if (!isLan(client.inetAddress)) { runCatching { client.close() }; continue }
                 try {
                     pool.execute {
                         // 通信まわりの例外でアプリごと落ちないよう、すべてここで受け止める
@@ -172,7 +178,9 @@ object AdminServer {
         val headers: Map<String, String>,
         val body: InputStream,
     ) {
-        val contentLength = headers["content-length"]?.toLongOrNull() ?: 0L
+        val contentLength = (headers["content-length"]?.toLongOrNull() ?: 0L).also {
+            if (it < 0) throw HttpError(400, "不正なリクエスト")
+        }
 
         fun readText(limit: Int = 64 * 1024): String {
             if (contentLength > limit) throw HttpError(413, "データが大きすぎます")
@@ -255,7 +263,10 @@ object AdminServer {
         // ヘッダーを空行まで読む（最大 16KB）
         val buf = ByteArrayOutputStream()
         var last4 = 0
+        // 1 バイトずつ細々と送って接続を占有する攻撃（slowloris）を避けるため、ヘッダー全体に期限を設ける
+        val deadline = System.currentTimeMillis() + HEADER_TIMEOUT_MS
         while (true) {
+            if (System.currentTimeMillis() > deadline) throw HttpError(400, "リクエストの受信に時間がかかりすぎました")
             val b = input.read()
             if (b < 0) return null
             buf.write(b)
@@ -341,7 +352,7 @@ object AdminServer {
             val why = MacAccess.gate(true, prefs.allowedMacs, prefs.allowVpn, from, MacAccess.lookup(from))
             if (why.isNotEmpty()) throw HttpError(403, why)
         }
-        checkPin(req.headers["x-pin"], req.headers["x-group-code"])
+        checkPin(from, req.headers["x-pin"], req.headers["x-group-code"])
 
         return when ("${req.method} ${req.path}") {
             "GET /api/state" -> json(200, state(prefs).put("access", accessInfo(prefs, from)).put("group", groupInfo(prefs)))
@@ -607,9 +618,14 @@ object AdminServer {
     }
 
     @Synchronized
-    private fun checkPin(pin: String?, groupCode: String?) {
+    private fun checkPin(from: InetAddress, pin: String?, groupCode: String?) {
         val now = System.currentTimeMillis()
-        if (now < lockedUntil) throw HttpError(429, "PIN またはグループコードを続けて間違えたため、しばらく操作できません")
+        val key = from.hostAddress ?: ""
+        // 長く来ていない接続元の記録は捨てる（記録が増え続けないように）
+        if (strikes.size > MAX_TRACKED_IPS) strikes.entries.removeAll { now - it.value.last > STRIKE_FORGET_MS }
+        val st = strikes.getOrPut(key) { Strikes() }
+        st.last = now
+        if (now < st.lockedUntil) throw HttpError(429, "PIN またはグループコードを続けて間違えたため、しばらく操作できません")
         val prefs = Prefs(app)
         // グループコード（設定している端末だけ）と PIN を確かめる。どちらを間違えても、失敗の回数に数える
         val expectedGroup = prefs.groupCode
@@ -617,13 +633,15 @@ object AdminServer {
             (groupCode != null && MessageDigest.isEqual(groupCode.toByteArray(), expectedGroup.toByteArray()))
         val pinOk = pin != null && MessageDigest.isEqual(pin.toByteArray(), prefs.adminPin.toByteArray())
         if (groupOk && pinOk) {
-            failures = 0
+            strikes.remove(key)
             return
         }
-        failures++
-        if (failures >= 5) {
-            failures = 0
-            lockedUntil = now + 60_000
+        st.failures++
+        if (st.failures >= 5) {
+            // 5 回間違えるたびに、待ち時間を 1 分 → 5 分 → 25 分 → 1 時間 と延ばす
+            st.failures = 0
+            st.lockedUntil = now + minOf(60_000L * Math.pow(5.0, st.rounds.toDouble()).toLong(), 3_600_000L)
+            st.rounds++
         }
         // グループコードを先に判定する（コードを知らない相手に、PIN が合っているかを教えない）
         throw HttpError(401, if (groupOk) "PIN が違います" else "グループコードが違います")

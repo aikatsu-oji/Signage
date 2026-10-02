@@ -4,6 +4,7 @@
 - mDNS には、コードのハッシュの一部（識別子）だけを載せる。別のグループの端末は、端末一覧に出ない。
 """
 import hashlib
+import hmac
 import re
 
 _VALID = re.compile(r"^[A-Za-z0-9_-]{8,32}$")
@@ -18,3 +19,9 @@ def ident(code: str) -> str:
     if not code:
         return ""
     return hashlib.sha256(("signage-group:" + code).encode()).hexdigest()[:12]
+
+
+def sign(code: str, pid: str, port: int, ip: str) -> str:
+    """UDP の知らせ（ビーコン）の署名。コードを知らない者は、本物の端末を装った知らせを作れない。
+    送り元の IP も署名に含めるので、盗み見た知らせを別の端末から送り直しても通らない"""
+    return hmac.new(code.encode(), f"signage-beacon|{pid}|{port}|{ip}".encode(), hashlib.sha256).hexdigest()[:32]

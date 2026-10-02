@@ -2336,7 +2336,7 @@
     wxCities = !o ? [] : o.cities.length
       ? o.cities.map((c) => ({ code: c.code, name: c.name, areaCode: c.areaCode, areaName: c.areaName, label: `${c.name}　— ${c.areaName}` }))
       : o.areas.map(([code, name]) => ({ code: null, name: null, areaCode: code, areaName: name, label: name }));
-    $('#wxCity').innerHTML = wxCities.map((c, i) => `<option value="${i}">${c.label}</option>`).join('');
+    $('#wxCity').innerHTML = wxCities.map((c, i) => `<option value="${i}">${esc(c.label)}</option>`).join('');
     let i = wxCities.findIndex((c) => c.code && c.code === keepCity);
     if (i < 0) i = wxCities.findIndex((c) => c.areaCode === keepArea);
     $('#wxCity').selectedIndex = Math.max(0, i);
@@ -2351,7 +2351,7 @@
       $('#wxCity').innerHTML = '';
       return;
     }
-    $('#wxOffice').innerHTML = list.map((o) => `<option value="${o.code}">${o.name}</option>`).join('');
+    $('#wxOffice').innerHTML = list.map((o) => `<option value="${esc(o.code)}">${esc(o.name)}</option>`).join('');
     $('#wxOffice').value = st.weatherOffice || '130000';
     if ($('#wxOffice').selectedIndex < 0) $('#wxOffice').selectedIndex = 0;
     fillWxCities(st.weatherCity, st.weatherArea);
