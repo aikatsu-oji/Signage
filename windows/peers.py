@@ -3,6 +3,7 @@
 Android 版と同じ「_signage._tcp」で自分を登録し、ほかの端末（Android・Windows）を探す。
 """
 
+import json
 import socket
 import threading
 import time
@@ -11,6 +12,10 @@ import group
 from zeroconf import IPVersion, ServiceBrowser, ServiceInfo, ServiceStateChange, Zeroconf
 
 SERVICE_TYPE = "_signage._tcp.local."
+# mDNS が使えない機種（Fire TV など）でも見つけられるよう、UDP のブロードキャストでも知らせ合う
+BEACON_PORT = 48080
+BEACON_INTERVAL = 5
+BEACON_EXPIRE = 20
 
 
 class Peers:
@@ -26,8 +31,90 @@ class Peers:
         self.hidden = {}  # 見つかったが、グループが違うため、一覧に出さない端末 id -> {name, reason}
         self.names = {}  # サービス名 -> id
         self.lock = threading.Lock()
+        self._beacon_stop = threading.Event()
+        self._rx = None
+
+    # ---- UDP ブロードキャスト ----
+
+    def _beacon_message(self):
+        s = self.store
+        return json.dumps({"app": "signage", "id": s.device_id, "name": s.device_name, "port": self.port,
+                           "ver": self.version, "grp": group.ident(s.get("groupCode") or "")}, ensure_ascii=False).encode("utf-8")
+
+    def _beacon_tx(self, stop):
+        while not stop.is_set():
+            try:
+                msg = self._beacon_message()
+                for a in self.addresses():
+                    targets = ["255.255.255.255", ".".join(a.split(".")[:3] + ["255"])]
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    try:
+                        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                        sock.bind((a, 0))  # 複数のネットワークがあっても、それぞれから送る
+                        for t in targets:
+                            try:
+                                sock.sendto(msg, (t, BEACON_PORT))
+                            except OSError:
+                                pass
+                    except OSError:
+                        pass
+                    finally:
+                        sock.close()
+            except Exception:
+                pass
+            stop.wait(BEACON_INTERVAL)
+
+    def _beacon_rx(self, stop, sock):
+        while not stop.is_set():
+            try:
+                data, (ip, _) = sock.recvfrom(2048)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            try:
+                self._record_beacon(data, ip)
+            except Exception:
+                pass
+
+    def _record_beacon(self, data, ip):
+        j = json.loads(data.decode("utf-8"))
+        if not isinstance(j, dict) or j.get("app") != "signage":
+            return
+        pid = str(j.get("id") or "")
+        if not pid or pid == self.store.device_id:
+            return
+        port = j.get("port")
+        if not isinstance(port, int) or not 1 <= port <= 65535:
+            return
+        name = str(j.get("name") or ip)[:60]
+        grp = str(j.get("grp") or "")
+        own = group.ident(self.store.get("groupCode") or "")
+        with self.lock:
+            if grp != own:
+                reason = ("グループ未設定、または、古い版" if not grp else "別のグループ") if own else "グループを設定している端末（この端末は未設定）"
+                self.hidden[pid] = {"name": name, "reason": reason}
+                self.peers.pop(pid, None)
+                return
+            self.hidden.pop(pid, None)
+            self.peers[pid] = {"id": pid, "name": name, "url": f"http://{ip}:{port}", "version": str(j.get("ver") or "")[:20],
+                               "lastSeen": time.time(), "beacon": True}
+
+    def _start_beacon(self):
+        self._beacon_stop = stop = threading.Event()
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.settimeout(1.0)
+            sock.bind(("", BEACON_PORT))
+            self._rx = sock
+            threading.Thread(target=self._beacon_rx, args=(stop, sock), daemon=True).start()
+        except OSError:
+            self._rx = None  # 受信できなくても、送信は続ける
+        threading.Thread(target=self._beacon_tx, args=(stop,), daemon=True).start()
 
     def start(self):
+        self._start_beacon()
         try:
             self.zc = Zeroconf(ip_version=IPVersion.V4Only)
         except OSError:
@@ -69,6 +156,13 @@ class Peers:
         threading.Thread(target=run, daemon=True).start()
 
     def stop(self):
+        self._beacon_stop.set()
+        if self._rx:
+            try:
+                self._rx.close()
+            except OSError:
+                pass
+            self._rx = None
         if self.zc:
             try:
                 if self.info:
@@ -127,5 +221,6 @@ class Peers:
             return sorted(self.hidden.values(), key=lambda p: p["name"])
 
     def list(self):
+        now = time.time()
         with self.lock:
-            return sorted(self.peers.values(), key=lambda p: p["name"])
+            return sorted((p for p in self.peers.values() if not p.get("beacon") or now - p["lastSeen"] < BEACON_EXPIRE), key=lambda p: p["name"])
