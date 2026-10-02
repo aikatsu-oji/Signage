@@ -9,6 +9,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
+import java.io.File
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
@@ -37,6 +38,8 @@ object AdminServer {
     const val DEFAULT_PORT = 8080
     private const val HEADER_TIMEOUT_MS = 10_000L
     private const val MAX_TRACKED_IPS = 256
+    private const val MAX_UPLOAD_BYTES = 4L * 1024 * 1024 * 1024
+    private const val DISK_RESERVE_BYTES = 200L * 1024 * 1024
     private const val STRIKE_FORGET_MS = 24 * 3_600_000L
 
     /** 再生側に知らせるイベント */
@@ -387,6 +390,12 @@ object AdminServer {
                 val name = FolderStore.sanitize(req.query["name"] ?: "")
                     ?: throw HttpError(400, "画像・動画のファイルのみアップロードできます")
                 if (req.contentLength <= 0) throw HttpError(400, "ファイルが空です")
+                if (req.contentLength > MAX_UPLOAD_BYTES) throw HttpError(413, "ファイルが大きすぎます（4GB まで）")
+                // 空き容量を使い切らない（フォルダが通常のパスのときだけ確かめられる）
+                if (folder.scheme == "file") {
+                    val free = runCatching { File(folder.path ?: "").usableSpace }.getOrDefault(Long.MAX_VALUE)
+                    if (req.contentLength > free - DISK_RESERVE_BYTES) throw HttpError(413, "空き容量が足りません")
+                }
                 val saved = FolderStore.upload(app, folder, name, req.contentLength, req.body)
                 json(200, JSONObject().put("ok", true).put("name", saved))
             }

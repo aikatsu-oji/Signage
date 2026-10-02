@@ -15,6 +15,7 @@ import mimetypes
 import os
 import queue
 import random
+import secrets
 import re
 import shutil
 import socket
@@ -69,6 +70,13 @@ def is_local(addr: str) -> bool:
         ip = ip.ipv4_mapped
     return ip.is_loopback
 
+
+# この PC の設定画面（X-Local-Token が必要）だけが使う API。再生画面が使うもの（config・playlist など）は含めない
+LOCAL_PROTECTED = {"GET /local/settings", "POST /local/settings", "POST /local/access-reset",
+                   "POST /local/pick-folder", "POST /local/open-folder"}
+
+MAX_UPLOAD_BYTES = 4 * 1024 ** 3     # 1 ファイルの上限
+DISK_RESERVE_BYTES = 200 * 1024 ** 2   # 空き容量を、これだけは残す
 
 IPV4 = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 
@@ -142,6 +150,15 @@ class Server:
         self.peers = None  # Peers（端末の検出）
         self.event_queues = []
         self.started = time.time()
+        # この PC の設定画面だけが使う合言葉（起動のたびに作り直す）。127.0.0.1 から来る別のプロセス・
+        # 逆プロキシ経由の接続が、PIN なしで設定（PIN の表示・変更）を操作できないようにする
+        self.local_token = secrets.token_urlsafe(24)
+        try:
+            tf = st.APP_DIR / "local.token"
+            st.APP_DIR.mkdir(parents=True, exist_ok=True)
+            tf.write_text(self.local_token, encoding="utf-8")
+        except OSError:
+            pass
         self.local_port = 0       # この PC 自身が使う HTTP のポート（HTTPS のときは、LAN 向けとは別。HTTPS でないときは port と同じ）
         self.local_httpd = None
         self.player_status = None  # 再生画面が定期的に知らせる、いま再生中の内容
@@ -608,6 +625,16 @@ class Server:
                     length = self.content_length()
                     if length <= 0:
                         raise HttpError(400, "ファイルが空です")
+                    if length > MAX_UPLOAD_BYTES:
+                        self.close_connection = True
+                        raise HttpError(413, "ファイルが大きすぎます（4GB まで）")
+                    try:
+                        free = shutil.disk_usage(folder).free
+                    except OSError:
+                        free = None
+                    if free is not None and length > free - DISK_RESERVE_BYTES:
+                        self.close_connection = True
+                        raise HttpError(413, "空き容量が足りません")
                     final = s.unique_name(folder, name)
                     tmp = folder / f".upload-{time.time_ns()}{os.path.splitext(final)[1]}"
                     try:
@@ -741,6 +768,9 @@ class Server:
                         raise HttpError(404, "見つかりません")
                     return self.send_file(target)
                 key = f"{method} {path}"
+                if key in LOCAL_PROTECTED and not hmac.compare_digest(
+                        (self.headers.get("X-Local-Token") or "").encode(), server.local_token.encode()):
+                    raise HttpError(403, "設定画面を、タスクトレイの「設定を開く」から開き直してください")
                 if key == "GET /local/config":
                     cfg = server.state()["settings"]
                     cfg.update({

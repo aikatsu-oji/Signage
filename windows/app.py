@@ -333,7 +333,7 @@ class App:
             log("操作できる端末の制限を解除しました（タスクトレイから）")
 
     def open_settings(self):
-        webbrowser.open(f"http://127.0.0.1:{self.server.local_port}/settings")
+        webbrowser.open(f"http://127.0.0.1:{self.server.local_port}/settings?t={self.server.local_token}")
 
     def open_admin(self):
         webbrowser.open(f"http://127.0.0.1:{self.server.local_port}/")
@@ -426,7 +426,11 @@ def main():
                 pass
         elif running:
             # 同じ版がすでに動いているときは、設定画面を開くだけ
-            webbrowser.open(f"http://127.0.0.1:{running[0]}/settings")
+            try:
+                token = (st.APP_DIR / "local.token").read_text(encoding="utf-8").strip()
+            except OSError:
+                token = ""
+            webbrowser.open(f"http://127.0.0.1:{running[0]}/settings?t={token}")
         return
     App(args).run()
 
