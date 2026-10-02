@@ -27,6 +27,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import devices
+import group
 import guard
 import rss
 import store as st
@@ -41,7 +42,7 @@ mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
 LOCAL_PORT = 18080  # HTTPS のとき、この PC 自身が使う HTTP のポート
-VERSION = "1.8.12"
+VERSION = "1.8.13"
 
 
 def resource_dir() -> Path:
@@ -287,6 +288,25 @@ class Server:
             "platform": "windows",
         }
 
+    def group_info(self):
+        code = self.store.get("groupCode") or ""
+        return {"enabled": bool(code), "id": group.ident(code)}
+
+    def apply_group(self, j):
+        """グループコードを決める・解除する（呼び出した端末は、新しいコードに切り替える）"""
+        code = str(j.get("code") or "").strip()
+        if code and not group.valid(code):
+            raise HttpError(400, "グループコードは、英数字と - _ だけの 8〜32 文字にしてください")
+        self.store.update({"groupCode": code})
+        if self.peers:
+            # 見つけ合いの識別子を変える。一覧は、新しいグループで作り直す（少し時間がかかる）
+            peers = self.peers
+            def rediscover():
+                peers.stop()
+                peers.start()
+            threading.Thread(target=rediscover, daemon=True).start()
+        return self.group_info()
+
     def tls_info(self):
         s = self.store
         return {"enabled": bool(s.get("https")), "active": self.tls_active, "fingerprint": self.tls_fingerprint, "error": self.tls_error}
@@ -399,7 +419,7 @@ class Server:
                 h = {
                     "Access-Control-Allow-Origin": origin,
                     "Vary": "Origin",
-                    "Access-Control-Allow-Headers": "X-Pin, Content-Type",
+                    "Access-Control-Allow-Headers": "X-Pin, X-Group-Code, Content-Type",
                     "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
                     "Access-Control-Max-Age": "600",
                 }
@@ -499,7 +519,7 @@ class Server:
                         return
                     if path.startswith("/api/"):
                         self.check_access(client)
-                        self.check_pin(self.headers.get("X-Pin"))
+                        self.check_pin(self.headers.get("X-Pin"), self.headers.get("X-Group-Code"))
                         self.route_api(method, path, query)
                         return
                     raise HttpError(404, "見つかりません")
@@ -524,20 +544,25 @@ class Server:
                 if why:
                     raise HttpError(403, why)
 
-            def check_pin(self, pin):
+            def check_pin(self, pin, group_code=None):
+                """グループコード（設定している端末だけ）と PIN を確かめる。どちらを間違えても、失敗の回数に数える"""
                 now = time.time()
                 with server.store.lock:
                     if now < server.locked_until:
-                        raise HttpError(429, "PIN を続けて間違えたため、しばらく操作できません")
+                        raise HttpError(429, "PIN またはグループコードを続けて間違えたため、しばらく操作できません")
+                    expected_group = server.store.get("groupCode") or ""
+                    group_ok = (not expected_group) or bool(group_code and hmac.compare_digest(group_code.encode(), expected_group.encode()))
                     expected = server.store.get("adminPin")
-                    if pin and hmac.compare_digest(pin.encode(), expected.encode()):
+                    pin_ok = bool(pin and hmac.compare_digest(pin.encode(), expected.encode()))
+                    if group_ok and pin_ok:
                         server.failures = 0
                         return
                     server.failures += 1
                     if server.failures >= 5:
                         server.failures = 0
                         server.locked_until = now + 60
-                raise HttpError(401, "PIN が違います")
+                # グループコードを先に判定する（コードを知らない相手に、PIN が合っているかを教えない）
+                raise HttpError(401, "PIN が違います" if group_ok else "グループコードが違います")
 
             def folder_of(self, raw, writable=False):
                 s = server.store
@@ -563,11 +588,14 @@ class Server:
                     d = server.state()
                     d["access"] = server.access_info(self.client_address[0])
                     d["tls"] = server.tls_info()
+                    d["group"] = server.group_info()
                     self.json(d)
                 elif key == "GET /api/status":
                     self.json(server.status())
                 elif key == "GET /api/weather/offices":
                     self.json(weather.offices())
+                elif key == "POST /api/group":
+                    self.json(server.apply_group(self.body_json()))
                 elif key == "POST /api/access":
                     self.json(server.apply_access(self.body_json(), self.client_address[0]))
                 elif key == "PUT /api/upload":
@@ -755,6 +783,7 @@ class Server:
                     d = {k: s.get(k) for k in ("zoneFolders", "weatherOffice", "weatherArea", "weatherCity",
                                               "adminEnabled", "adminPin", "monitor", "autoStart", "layout", "macLock", "allowedMacs", "https")}
                     d["tls"] = server.tls_info()
+                    d["group"] = server.group_info()
                     d.update({
                         "deviceName": s.device_name,
                         "port": server.port,
@@ -898,6 +927,8 @@ class Server:
             u["adminPin"] = "%06d" % random.SystemRandom().randrange(1_000_000)
         if "adminEnabled" in j:
             u["adminEnabled"] = bool(j["adminEnabled"])
+        if "groupCode" in j:
+            self.apply_group({"code": j["groupCode"]})  # この PC 自身から、グループコードを決める・解除する
         if "https" in j:
             u["https"] = bool(j["https"])  # 反映には、アプリの再起動が必要（LAN の端末からは変えられない：切り替えると、ほかの端末から届かなくなるため）
         if "monitor" in j:

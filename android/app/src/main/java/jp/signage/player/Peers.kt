@@ -36,6 +36,8 @@ object Peers {
     /** mDNS のサービス名 → 端末 ID（見えなくなったときに消すため） */
     private val serviceIds = ConcurrentHashMap<String, String>()
     private var selfId = ""
+    /** この端末のグループの識別子（空ならグループなし）。同じ識別子の端末だけを一覧に出す */
+    private var selfGroup = ""
 
     // 古い Android では解決を同時に1件しかできないので順番に行う
     private val resolveQueue = ArrayDeque<NsdServiceInfo>()
@@ -49,6 +51,7 @@ object Peers {
         val app = context.applicationContext
         val prefs = Prefs(app)
         selfId = prefs.deviceId
+        selfGroup = GroupCode.ident(prefs.groupCode)
         val manager = app.getSystemService(NsdManager::class.java) ?: return
         nsd = manager
 
@@ -59,6 +62,7 @@ object Peers {
             setAttribute("id", prefs.deviceId)
             setAttribute("name", prefs.deviceName)
             setAttribute("https", if (AdminServer.tlsActive) "1" else "0")
+            setAttribute("grp", GroupCode.ident(prefs.groupCode))
             setAttribute("ver", runCatching {
                 app.packageManager.getPackageInfo(app.packageName, 0).versionName
             }.getOrNull() ?: "")
@@ -130,6 +134,8 @@ object Peers {
         fun attr(key: String) = attrs[key]?.let { String(it, Charsets.UTF_8) } ?: ""
         val id = attr("id").ifEmpty { return }
         if (id == selfId) return
+        // 別のグループ（組織）の端末は、一覧に出さない
+        if (attr("grp") != selfGroup) return
         @Suppress("DEPRECATION")
         val host = info.host
         // 管理画面の URL に使うので IPv4 のみ（LAN のサイネージ端末は通常 IPv4 を持つ）

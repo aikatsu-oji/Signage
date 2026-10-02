@@ -218,7 +218,8 @@
     <p class="sub">端末の設定画面に表示されている PIN（6桁）を入力してください。</p>
     <form id="loginForm">
       <input id="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••••">
-      <button class="primary" style="width:100%">ログイン</button>
+      <input id="groupCode" type="password" autocomplete="off" maxlength="32" placeholder="グループコード（設定している場合のみ）" style="margin-top:8px">
+      <button class="primary" style="width:100%; margin-top:8px">ログイン</button>
     </form>
     <p id="loginError" class="sub" style="color:var(--danger)"></p>
   </section>
@@ -484,6 +485,21 @@
         </section>
       </div>
       <div class="pane" id="pane-access" hidden>
+      <section id="groupSec">
+        <h2>グループ（組織）コード <span class="sub" id="groupSummary"></span></h2>
+        <p class="sub">同じコードを持つ端末・管理画面だけが、サイネージを操作できます（PIN に加えて必要）。同じネットワークにある<b>別のグループのサイネージは、端末一覧に出なくなります</b>。英数字と - _ の 8〜32 文字。通信を暗号化（HTTPS）しないと、コードは LAN 内で盗み見られる可能性があります。</p>
+        <div class="dlgrow" style="margin:8px 0">
+          <input type="text" id="groupInput" maxlength="32" placeholder="新しいグループコード" autocomplete="off" style="flex:1; min-width:180px">
+          <button type="button" class="primary small" id="groupApply">見つかっている全端末に設定</button>
+          <button type="button" class="small danger" id="groupRemove">グループを解除</button>
+        </div>
+        <ol class="log" id="groupLog"></ol>
+        <p class="sub" id="groupState"></p>
+        <p class="sub">・設定した端末は、このページから、続けて操作できます（このブラウザにコードを覚えます）。別の PC・スマホからは、ログインのときにコードを入力してください。<br>
+        ・<b>電源が切れているなど、設定できなかった端末は、別のグループになります。</b> その端末が戻ったら、もう一度設定してください。<br>
+        ・コードを忘れたときは、端末の設定画面（Windows は設定画面、Android は端末の設定画面）で解除できます。</p>
+      </section>
+
       <section id="accessSec">
         <details>
           <summary><h2>管理画面に入れる端末</h2><span class="sub" id="accessSummary"></span></summary>
@@ -608,6 +624,9 @@
   // 端末ごとの PIN（端末ID → PIN）。新しい端末にはまず最後に使った PIN を試す
   const pins = store.get('signage-pins', {});
   let defaultPin = store.get('signage-default-pin', '');
+  /** グループ（組織）コード。設定している端末にだけ必要（全端末に同じコードを使う） */
+  let groupCode = store.get('signage-group', '');
+  const saveGroup = () => store.set('signage-group', groupCode);
   const savePins = () => { store.set('signage-pins', pins); store.set('signage-default-pin', defaultPin); };
 
   /** 端末の一覧。key は端末ID（未接続の手動追加分は URL） */
@@ -632,7 +651,7 @@
     const timer = setTimeout(() => ctrl.abort(), timeout);
     let res;
     try {
-      res = await fetch(dev.url + path, { ...opts, signal: ctrl.signal, headers: { 'X-Pin': dev.pin || '', ...(opts.headers || {}) } });
+      res = await fetch(dev.url + path, { ...opts, signal: ctrl.signal, headers: { 'X-Pin': dev.pin || '', 'X-Group-Code': groupCode, ...(opts.headers || {}) } });
     } catch (e) {
       throw new ApiError(e.name === 'AbortError' ? '応答がありません' : '接続できません', 0);
     } finally { clearTimeout(timer); }
@@ -652,12 +671,15 @@
     $('#login').hidden = false;
     $('#loginError').textContent = error;
     $('#pin').value = '';
+    $('#groupCode').value = groupCode;
     $('#pin').focus();
   }
 
   $('#loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     defaultPin = $('#pin').value.trim();
+    groupCode = $('#groupCode').value.trim();
+    saveGroup();
     await start();
   });
 
@@ -1010,6 +1032,53 @@
     finally { renderApkTarget(); setTimeout(() => $('#refreshBtn').click(), 3000); }
   });
 
+  // ------------------------------------------------------------ グループ（組織）コード
+
+  function renderGroup() {
+    if (!$('#groupSec')) return;
+    const all = [...devices.values()].filter((d) => d.status === 'ok' && d.state);
+    const withInfo = all.filter((d) => d.state.group);
+    const enabled = withInfo.filter((d) => d.state.group.enabled);
+    $('#groupSummary').textContent = !withInfo.length ? '' : enabled.length ? `（設定済み：${enabled.length} / ${withInfo.length} 台）` : '（未設定）';
+    const ids = new Set(withInfo.map((d) => d.state.group.id));
+    const old = all.filter((d) => !d.state.group).map((d) => d.name);
+    const lines = [];
+    if (ids.size > 1) lines.push(`⚠ グループコードの設定が、端末ごとに違います：${withInfo.map((d) => `${d.name}（${d.state.group.enabled ? d.state.group.id.slice(0, 4) : '未設定'}）`).join('、')}。「見つかっている全端末に設定」で揃えてください。`);
+    if (old.length) lines.push(`グループコードに未対応の端末（古い版）：${old.join('、')}`);
+    $('#groupState').textContent = lines.join('\n');
+    $('#groupState').style.whiteSpace = 'pre-line';
+  }
+
+  async function applyGroup(code) {
+    const list = [...devices.values()].filter((d) => d.status === 'ok' && d.state?.group);
+    if (!list.length) { toast('設定できる端末がありません'); return; }
+    const log = $('#groupLog'); log.replaceChildren();
+    const line = (t, cls = '') => { const li = document.createElement('li'); li.textContent = t; li.className = cls; log.append(li); return li; };
+    let okCount = 0;
+    // 設定する間は、これまでのコードで送る（まだ変えていない端末が、受け付けられるように）
+    for (const dev of list) {
+      const li = line(`${dev.name}：設定中…`);
+      try { await post(dev, '/api/group', { code }); li.textContent = `${dev.name}：設定しました`; li.className = 'ok'; okCount++; }
+      catch (e) { li.textContent = `${dev.name}：${e.message}`; li.className = 'ng'; }
+    }
+    if (okCount) { groupCode = code; saveGroup(); }
+    toast(`${okCount} / ${list.length} 台に設定しました`);
+    // 一覧は、新しいグループで見つけ直される（少し時間がかかる）
+    await Promise.all(list.map((d) => refreshDevice(d)));
+    setTimeout(() => $('#refreshBtn').click(), 4000);
+  }
+
+  $('#groupApply').addEventListener('click', () => {
+    const code = $('#groupInput').value.trim();
+    if (!/^[A-Za-z0-9_-]{8,32}$/.test(code)) { toast('グループコードは、英数字と - _ だけの 8〜32 文字にしてください'); return; }
+    if (!confirm(`見つかっているすべての端末に、このグループコードを設定します。\nコードを知らない端末・管理画面は、操作できなくなり、端末一覧にも出なくなります。よろしいですか？`)) return;
+    applyGroup(code).then(() => { $('#groupInput').value = ''; });
+  });
+  $('#groupRemove').addEventListener('click', () => {
+    if (!confirm('見つかっているすべての端末の、グループコードを解除します（PIN だけで操作できる状態に戻ります）。よろしいですか？')) return;
+    applyGroup('');
+  });
+
   // ------------------------------------------------------------ 端末一覧
 
   function renderDevices() {
@@ -1045,6 +1114,7 @@
     renderBulk();
     renderTargetBars();
     renderApkTarget();
+    renderGroup();
     renderAccess();
   }
 
@@ -1127,7 +1197,9 @@
     if (!ok) {
       warn.replaceChildren();
       if (dev.status === 'pin') {
-        warn.append('この端末の PIN が違います（端末ごとに PIN が異なる場合は入力してください）。 ');
+        warn.append(/グループ/.test(dev.error || '')
+          ? 'この端末のグループコードが、いまのコードと違います（別のグループの端末か、コードの設定が揃っていません）。 '
+          : 'この端末の PIN が違います（端末ごとに PIN が異なる場合は入力してください）。 ');
         const b = document.createElement('button');
         b.className = 'small'; b.textContent = 'PIN を入力';
         b.addEventListener('click', () => askPin(dev));
@@ -1608,6 +1680,7 @@
       const xhr = new XMLHttpRequest();
       xhr.open('PUT', `${dev.url}/api/upload?zone=${zone}&name=${encodeURIComponent(file.name)}`);
       xhr.setRequestHeader('X-Pin', dev.pin || '');
+      xhr.setRequestHeader('X-Group-Code', groupCode);
       xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
       xhr.onload = () => {
         let msg = '';
@@ -2260,7 +2333,7 @@
       const li = logLine(`${dev.name}：${label}…`, '', log);
       try {
         if (dev.status !== 'ok') await check(dev);
-        if (dev.status !== 'ok') throw new Error(dev.status === 'pin' ? 'PIN が違います' : dev.status === 'denied' ? dev.error : '応答なし');
+        if (dev.status !== 'ok') throw new Error(dev.status === 'pin' ? (/グループ/.test(dev.error || '') ? 'グループコードが違います' : 'PIN が違います') : dev.status === 'denied' ? dev.error : '応答なし');
         const msg = await fn(dev, li);
         li.textContent = `${dev.name}：${msg || '完了'}`;
         li.className = 'done';
@@ -2327,7 +2400,7 @@
     const info = voiceInfoFor(dev);
     const next = prev.then(() => fetch(dev.url + path, {
       method: 'POST', body,
-      headers: { 'X-Pin': dev.pin || '', 'Content-Type': 'application/octet-stream' },
+      headers: { 'X-Pin': dev.pin || '', 'X-Group-Code': groupCode, 'Content-Type': 'application/octet-stream' },
     }).then(async (r) => {
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || ('エラー ' + r.status));
