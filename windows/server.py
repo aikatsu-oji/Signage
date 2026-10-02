@@ -50,7 +50,8 @@ def resource_dir() -> Path:
     return Path(base) if base else Path(__file__).resolve().parent
 
 
-def is_lan(addr: str) -> bool:
+def is_private(addr: str) -> bool:
+    """ループバック・プライベート・リンクローカル（この PC が自分のアドレスとして知らせてよい範囲）"""
     try:
         ip = ipaddress.ip_address(addr.split("%")[0])
     except ValueError:
@@ -58,6 +59,11 @@ def is_lan(addr: str) -> bool:
     if ip.version == 6 and ip.ipv4_mapped:
         ip = ip.ipv4_mapped
     return ip.is_loopback or ip.is_private or ip.is_link_local
+
+
+def is_lan(addr: str) -> bool:
+    """操作を受け付ける接続元か。LAN に加えて、VPN（Tailscale の 100.64.0.0/10 など）も許可する"""
+    return is_private(addr) or devices.is_vpn(addr.split("%")[0])
 
 
 def is_local(addr: str) -> bool:
@@ -99,7 +105,7 @@ def local_addresses() -> list:
         pass
     result = []
     for a in found:
-        if a not in result and is_lan(a) and not a.startswith("127."):
+        if a not in result and is_private(a) and not a.startswith("127."):
             result.append(a)
     return result
 

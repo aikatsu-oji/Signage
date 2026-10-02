@@ -609,11 +609,14 @@ object AdminServer {
         return accessInfo(prefs, from)
     }
 
-    private fun isLan(a: InetAddress): Boolean = when (a) {
+    /** LAN に加えて、VPN（Tailscale の 100.64.0.0/10 など）からの接続も受け付ける */
+    private fun isLan(a: InetAddress): Boolean = MacAccess.isVpn(a) || isPrivate(a)
+
+    private fun isPrivate(a: InetAddress): Boolean = when (a) {
         is Inet4Address -> a.isLoopbackAddress || a.isSiteLocalAddress || a.isLinkLocalAddress
         is Inet6Address -> a.isLoopbackAddress || a.isLinkLocalAddress || a.isSiteLocalAddress ||
             (a.address[0].toInt() and 0xFE) == 0xFC || // ユニークローカル fc00::/7
-            (a.isIPv4CompatibleAddress && isLan(InetAddress.getByAddress(a.address.copyOfRange(12, 16))))
+            (a.isIPv4CompatibleAddress && isPrivate(InetAddress.getByAddress(a.address.copyOfRange(12, 16))))
         else -> false
     }
 
