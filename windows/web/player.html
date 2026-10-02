@@ -85,7 +85,30 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   /** 画像・動画ごとの再生条件 {slots: [条件, …]} に、いま合うか（どれか1つに合えば再生。以前の形式＝条件1つだけも可） */
-  function ruleActive(rule, now = new Date()) {
+  /**
+   * アプリの時刻。この PC の設定とは別に決めたタイムゾーン・補正を反映して、その土地の壁時計の時刻を、
+   * getHours() などでそのまま読める Date で返す（時計の表示・再生条件・天気の時計に使う）
+   */
+  function appNow() {
+    const ms = Date.now() + (cfg.timeOffsetMs ?? (cfg.timeOffsetSec || 0) * 1000);
+    if (!cfg.timeZone) return new Date(ms);
+    try {
+      const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+        timeZone: cfg.timeZone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric',
+        hour: 'numeric', minute: 'numeric', second: 'numeric',
+      }).formatToParts(new Date(ms)).map((x) => [x.type, Number(x.value)]));
+      return new Date(p.year, p.month - 1, p.day, p.hour, p.minute, p.second, ((ms % 1000) + 1000) % 1000);
+    } catch (e) { return new Date(ms); }
+  }
+
+  /** 時計の時刻の表示（0=24時間 / 1=12時間（午前・午後）） */
+  function hmText(t) {
+    const m = String(t.getMinutes()).padStart(2, '0');
+    if ((cfg.timeFormat || 0) === 1) return `${t.getHours() < 12 ? '午前' : '午後'}${t.getHours() % 12 || 12}:${m}`;
+    return `${t.getHours()}:${m}`;
+  }
+
+  function ruleActive(rule, now = appNow()) {
     if (!rule) return true;
     if (Array.isArray(rule.slots)) return rule.slots.length === 0 || rule.slots.some((r) => slotActive(r, now));
     return slotActive(rule, now);
@@ -124,7 +147,7 @@
   function dateOf(iso) { return new Date(iso.length <= 10 ? iso + 'T00:00:00' : iso); }
   function dayClass(d) { return d.getDay() === 6 ? 'sat' : d.getDay() === 0 ? 'sun' : ''; }
   function dateLabel(iso) { const d = dateOf(iso); return `${d.getMonth() + 1}/${d.getDate()}(${WEEK[d.getDay()]})`; }
-  function clockText() { const t = new Date(); return `${t.getMonth() + 1}月${t.getDate()}日(${WEEK[t.getDay()]}) ${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')}`; }
+  function clockText() { const t = appNow(); return `${t.getMonth() + 1}月${t.getDate()}日(${WEEK[t.getDay()]}) ${hmText(t)}`; }
   function iconEl(icon, size) {
     const e = el('div', 'icon');
     e.style.fontSize = size + 'em';
@@ -350,7 +373,7 @@
       this.showingWeather = false;
       // 再生条件（時間帯・曜日・期間）に合わないファイルは飛ばす
       const pick = (from, dir) => {
-        const now = new Date();
+        const now = appNow();
         for (let i = from; i >= 0 && i < this.playlist.length; i += dir) if (ruleActive(this.playlist[i].rule, now)) return i;
         return -1;
       };
@@ -654,8 +677,8 @@
   function updateClock() {
     const c = $('#clock');
     if (!cfg.clockEnabled || clockHiddenForPanel) { c.style.display = 'none'; return; }
-    const t = new Date();
-    c.innerHTML = `<span class="d">${t.getMonth() + 1}/${t.getDate()}(${WEEK[t.getDay()]})</span>${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')}`;
+    const t = appNow();
+    c.innerHTML = `<span class="d">${t.getMonth() + 1}/${t.getDate()}(${WEEK[t.getDay()]})</span>${hmText(t)}`;
     const base = Math.min(innerWidth, innerHeight);
     c.style.fontSize = base / [26, 18, 12][cfg.clockSize ?? 1] + 'px';
     const m = base * 0.03 + 'px';
@@ -668,9 +691,19 @@
     avoidTicker();
   }
 
+  /** 時刻サーバーとの同期で、アプリの時刻のずれが変わったとき、設定を読み直さずに、ずれだけ更新する */
+  async function refreshTimeOffset() {
+    try {
+      const c = await getJson('/local/config');
+      cfg.timeOffsetMs = c.timeOffsetMs;
+      updateClock();
+    } catch (e) { /* 次の機会に */ }
+  }
+  setInterval(refreshTimeOffset, 10 * 60 * 1000);
+
   function clockLoop() {
     updateClock();
-    const now = new Date();
+    const now = appNow();
     setTimeout(clockLoop, 60000 - (now.getSeconds() * 1000 + now.getMilliseconds()) + 50);
   }
 
@@ -868,6 +901,7 @@
       if (e.data === 'settings') location.reload();
       else if (e.data === 'content') zones.forEach((z) => (z instanceof MediaZone ? z.reload() : null));
       else if (e.data === 'ticker') nextTicker();
+      else if (e.data === 'time') refreshTimeOffset();
     };
   }
   // ---- 管理画面のマイクの声の放送（16kHz・モノラル・16bit PCM を届いた順にすぐ再生する）

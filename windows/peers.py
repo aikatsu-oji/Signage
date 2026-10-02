@@ -14,9 +14,8 @@ SERVICE_TYPE = "_signage._tcp.local."
 
 
 class Peers:
-    def __init__(self, store, port, version, addresses, https=lambda: False):
+    def __init__(self, store, port, version, addresses):
         self.store = store
-        self.https = https  # () -> この端末が HTTPS で待ち受けているか
         self.port = port
         self.version = version
         self.addresses = addresses  # () -> [IPv4]
@@ -24,6 +23,7 @@ class Peers:
         self.info = None
         self.browser = None
         self.peers = {}  # id -> dict
+        self.hidden = {}  # 見つかったが、グループが違うため、一覧に出さない端末 id -> {name, reason}
         self.names = {}  # サービス名 -> id
         self.lock = threading.Lock()
 
@@ -46,7 +46,7 @@ class Peers:
             f"{name}.{SERVICE_TYPE}",
             addresses=addrs,
             port=self.port,
-            properties={"id": s.device_id, "name": s.device_name, "ver": self.version, "https": "1" if self.https() else "0", "grp": group.ident(s.get("groupCode") or "")},
+            properties={"id": s.device_id, "name": s.device_name, "ver": self.version, "grp": group.ident(s.get("groupCode") or "")},
             server=f"signage-{s.device_id[:8]}.local.",
         )
         try:
@@ -79,6 +79,7 @@ class Peers:
             self.zc = None
         with self.lock:
             self.peers.clear()
+            self.hidden.clear()
             self.names.clear()
 
     def _on_change(self, zeroconf, service_type, name, state_change):
@@ -87,6 +88,7 @@ class Peers:
                 pid = self.names.pop(name, None)
                 if pid:
                     self.peers.pop(pid, None)
+                    self.hidden.pop(pid, None)
             return
         threading.Thread(target=self._resolve, args=(zeroconf, service_type, name), daemon=True).start()
 
@@ -99,7 +101,13 @@ class Peers:
         if not pid or pid == self.store.device_id:
             return
         # 別のグループ（組織）の端末は、一覧に出さない
-        if props.get("grp", "") != group.ident(self.store.get("groupCode") or ""):
+        own = group.ident(self.store.get("groupCode") or "")
+        if props.get("grp", "") != own:
+            # 一覧には出さないが、なぜ見えないかを、管理画面で案内できるように、覚えておく
+            reason = ("グループ未設定、または、古い版" if not props.get("grp") else "別のグループ") if own else "グループを設定している端末（この端末は未設定）"
+            with self.lock:
+                self.names[name] = pid
+                self.hidden[pid] = {"name": props.get("name") or name.split(".")[0], "reason": reason}
             return
         addrs = info.parsed_addresses(IPVersion.V4Only)
         if not addrs:
@@ -109,10 +117,14 @@ class Peers:
             self.peers[pid] = {
                 "id": pid,
                 "name": props.get("name") or name.split(".")[0],
-                "url": f"{'https' if props.get('https') == '1' else 'http'}://{addrs[0]}:{info.port}",
+                "url": f"http://{addrs[0]}:{info.port}",
                 "version": props.get("ver", ""),
                 "lastSeen": time.time(),
             }
+
+    def list_hidden(self):
+        with self.lock:
+            return sorted(self.hidden.values(), key=lambda p: p["name"])
 
     def list(self):
         with self.lock:

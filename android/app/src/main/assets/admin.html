@@ -243,6 +243,7 @@
         <p class="sub">同じネットワークのサイネージ端末が自動で表示されます。<b>チェック</b>＝テロップ・マイクなどを送る端末。<b>名前をクリック</b>＝その端末の設定を開きます。</p>
         <label class="check sub"><input type="checkbox" id="checkAll"> すべて選択</label>
         <ul class="devices" id="devices"></ul>
+        <p class="sub" id="hiddenPeers" hidden></p>
         <div class="bulk" id="bulk" hidden>
           <strong id="bulkTitle"></strong>
           <div class="row">
@@ -432,7 +433,29 @@
                 <select name="clockPosition"><option value="0">右上</option><option value="1">右下</option><option value="2">左上</option><option value="3">左下</option></select></label>
               <label class="field"><span>大きさ</span>
                 <select name="clockSize"><option value="0">小</option><option value="1">中</option><option value="2">大</option></select></label>
+              <label class="field"><span>時刻の形式</span>
+                <select name="timeFormat"><option value="0">24 時間（15:30）</option><option value="1">12 時間（午後3:30）</option></select></label>
+              <label class="field"><span>タイムゾーン（時計・再生条件・予約テロップ）</span>
+                <select name="timeZone">
+                  <option value="">この端末の設定に合わせる</option>
+                  <option value="Asia/Tokyo">日本（東京）</option><option value="Asia/Seoul">韓国（ソウル）</option><option value="Asia/Shanghai">中国（上海）</option>
+                  <option value="Asia/Taipei">台湾（台北）</option><option value="Asia/Hong_Kong">香港</option><option value="Asia/Singapore">シンガポール</option>
+                  <option value="Asia/Bangkok">タイ（バンコク）</option><option value="Asia/Dubai">UAE（ドバイ）</option><option value="Europe/London">イギリス（ロンドン）</option>
+                  <option value="Europe/Paris">フランス（パリ）</option><option value="America/New_York">アメリカ東部（ニューヨーク）</option><option value="America/Chicago">アメリカ中部（シカゴ）</option>
+                  <option value="America/Denver">アメリカ山岳部（デンバー）</option><option value="America/Los_Angeles">アメリカ西部（ロサンゼルス）</option><option value="Pacific/Honolulu">ハワイ</option>
+                  <option value="Australia/Sydney">オーストラリア（シドニー）</option><option value="UTC">UTC</option>
+                </select></label>
+              <label class="check"><input type="checkbox" name="timeSync"> 時刻サーバーに定期的に問い合わせて、時刻を合わせる</label>
+              <label class="field"><span>時刻サーバー（NTP）</span>
+                <input type="text" name="timeServer" maxlength="100" placeholder="ntp.nict.jp" autocomplete="off"></label>
+              <label class="field"><span>手動の補正（分。端末の時計が遅れているときは＋）</span>
+                <input type="number" id="timeOffsetMin" min="-720" max="720" step="1" value="0"></label>
             </div>
+            <div class="dlgrow" style="margin:6px 0">
+              <button type="button" class="small" id="timeSyncNow">今すぐ時刻サーバーに問い合わせる</button>
+              <span class="sub" id="timeSyncState"></span>
+            </div>
+            <p class="sub">アプリの時計の表示と、ファイルの再生条件（時間帯・曜日・期間）、予約テロップの時刻は、<b>この端末のシステムの設定とは別に</b>、ここで決めた形式・タイムゾーン・補正で動きます。<span id="appTimeNote"></span></p>
           </fieldset>
           <fieldset>
             <legend>天気予報 <span class="sub" id="weatherPlace"></span></legend>
@@ -713,6 +736,13 @@
     try {
       const d = await api(self, '/api/devices');
       for (const p of d.peers) addDevice({ key: p.id, id: p.id, name: p.name, url: p.url, version: p.version });
+      // グループが違うため一覧に出していない端末（なぜ見えないかの案内）
+      const hid = d.hidden || [];
+      const box = $('#hiddenPeers');
+      box.hidden = !hid.length;
+      box.textContent = hid.length
+        ? `見つかりましたが、一覧に出していない端末：${hid.map((h) => `${h.name}（${h.reason}）`).join('、')}。グループ未設定の端末は、その端末の画面でグループコードを決めてください。古い版の端末は、更新してください。`
+        : '';
     } catch (e) {}
     for (const url of store.get('signage-manual', [])) {
       if (![...devices.values()].some((d) => d.url === url)) addDevice({ key: url, url, name: url.replace(/^https?:\/\//, ''), manual: true });
@@ -1108,7 +1138,6 @@
         ok: `接続中  v${d.version || ''}`, pin: 'PIN が違います', offline: '応答なし', checking: '確認中…',
       }[d.status] || '';
       $('span.dsub:last-child', li).textContent = d.self ? '' : (d.url || '').replace(/^https?:\/\//, '');
-      if ((d.self ? location.protocol === 'https:' : (d.url || '').startsWith('https:'))) $('.dname', li).append(Object.assign(document.createElement('span'), { className: 'exclTag', style: 'background:var(--ok)', textContent: '🔒 HTTPS' }));
       li.addEventListener('click', () => select(d.key));
       ul.append(li);
     }
@@ -1177,12 +1206,8 @@
     $('#tabDevName').textContent = selected().name ? `：${selected().name}` : '';
     const dev = selected();
     $('#devTitle').textContent = dev.name + (dev.self ? '（この端末）' : '');
-    const tls = dev.state?.tls;
-    const secure = dev.self ? location.protocol === 'https:' : (dev.url || '').startsWith('https:');
     $('#devSub').textContent = (dev.self ? location.host : (dev.url || '').replace(/^https?:\/\//, ''))
-      + (secure ? '　🔒 HTTPS' : '　（HTTP・暗号化なし）')
-      + (tls?.fingerprint ? `　証明書 SHA-256：${tls.fingerprint.slice(0, 23)}…` : '');
-    $('#devSub').title = tls?.fingerprint || '';
+      + '　（HTTP）';
     $('#removeBtn').hidden = dev.self || !dev.manual;
     const warn = $('#devWarn');
     const ok = dev.status === 'ok' && dev.state;
@@ -1211,14 +1236,13 @@
       } else {
         warn.textContent = dev.status === 'checking' ? '確認中…' :
           '端末に接続できません。端末の電源・Wi-Fi・管理画面の設定（ON になっているか）を確認してください。';
-        if (dev.status === 'offline' && (dev.url || '').startsWith('https:')) {
-          // 自己署名の証明書は、ブラウザが初回に警告を出す。許可していないと、このページからは接続できない
-          const a = document.createElement('a');
-          a.href = dev.url + '/'; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'この端末の証明書を許可する（新しいタブで開く）';
-          warn.append(document.createElement('br'), 'この端末は HTTPS です。ブラウザの警告（証明書）をまだ許可していない可能性があります。', document.createElement('br'), a,
-            document.createElement('br'), '開いたページで警告を許可（「詳細設定」→「…にアクセスする」）してから、このページに戻って「一覧を更新」を押してください。');
-        } else if (dev.status === 'offline' && location.protocol === 'https:' && (dev.url || '').startsWith('http:')) {
-          warn.append(document.createElement('br'), 'このページは HTTPS ですが、この端末は HTTP（暗号化なし）です。ブラウザが混在した通信を止めている可能性があります。端末も HTTPS にするか、HTTP のページから操作してください。');
+        if (dev.status === 'offline' && !dev.self) {
+          const box = document.createElement('div');
+          box.style.marginTop = '6px';
+          const btn = document.createElement('button');
+          btn.type = 'button'; btn.className = 'small primary'; btn.textContent = '接続を診断する';
+          btn.addEventListener('click', () => { btn.hidden = true; diagnose(dev, box); });
+          warn.append(document.createElement('br'), btn, box);
         }
       }
       return;
@@ -1328,6 +1352,70 @@
   $('#accessEnabled').addEventListener('change', (e) => saveAccess({ enabled: e.target.checked }));
   $('#accessVpn').addEventListener('change', (e) => saveAccess({ allowVpn: e.target.checked }));
   $('#accessSync').addEventListener('click', () => saveAccess({}));
+
+  // ------------------------------------------------------------ 接続の診断（「応答なし」のとき）
+
+  /** その IP のポートに、サーバーが居るか（応答があれば、中身が読めなくても居るとみなす）。HTTPS は、証明書を許可していないと、居ても届かない */
+  async function probePort(scheme, host, port) {
+    try {
+      await fetch(`${scheme}://${host}:${port}/`, { mode: 'no-cors', cache: 'no-store', signal: AbortSignal.timeout(2500) });
+      return true;
+    } catch (e) { return false; }
+  }
+
+  /** 手動で追加した端末の URL を、付け替える */
+  async function moveManualDevice(dev, url) {
+    store.set('signage-manual', [...new Set(store.get('signage-manual', []).filter((u) => u !== dev.url).concat(url))]);
+    devices.delete(dev.key);
+    checked.delete(dev.key);
+    addDevice({ key: url, url, name: url.replace(/^https?:\/\//, ''), manual: true });
+    selectedKey = url;
+    await check(devices.get(url));
+    renderDevices();
+    renderDetail();
+  }
+
+  async function diagnose(dev, box) {
+    box.replaceChildren('診断中…（数秒かかります）');
+    const u = new URL(dev.url);
+    const host = u.hostname;
+    const cur = Number(u.port || (u.protocol === 'https:' ? 443 : 80));
+    const ports = Array.from({ length: 10 }, (_, i) => 8080 + i);
+    const found = (await Promise.all(ports.map(async (p) => ((await probePort('http', host, p)) ? p : 0)))).filter(Boolean);
+    const line = (t) => { const d = document.createElement('div'); d.textContent = t; box.append(d); return d; };
+    box.replaceChildren();
+    if (u.protocol === 'http:' && found.includes(cur)) {
+      line(`✔ ${host}:${cur} には、HTTP で届いています。ただ、状態を取得できませんでした。`);
+      line('・管理画面（このページ）のアドレスが、LAN の外のものではないか、ブラウザの拡張機能や、セキュリティソフトが通信を止めていないか、確認してください。');
+      line('・端末の「管理画面（別の端末から操作）」が ON か、確認してください。');
+    } else if (found.length) {
+      line(`✔ ${host} の、別のポートに届きました：${found.map((p) => ':' + p).join('、')}（いまは :${cur}）`);
+      for (const p of found) {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'small primary'; b.textContent = `:${p} に切り替える`;
+        b.addEventListener('click', () => moveManualDevice(dev, `http://${host}:${p}`));
+        box.append(b, ' ');
+      }
+    } else {
+      line(`✘ ${host} の、8080〜8089 のどのポートにも、HTTP では届きません。次の順に確認してください。`);
+      line('1. 端末の設定画面の「管理画面（別の端末から操作）」が ON か。表示されている「ブラウザで開くアドレス」の IP とポートが、ここと同じか。');
+      line('2. 端末の電源が入っていて、アプリが動いているか（Fire TV は、スリープ中は届かないことがあります。アプリを一度開いてください）。');
+      line('3. この PC と端末が、同じネットワークにあるか（ゲスト Wi-Fi や、機器どうしの通信を止める設定がないか）。');
+      line('4. 端末が HTTPS（暗号化）になっている場合は、下のリンクで証明書を許可してください（HTTPS の端末には、HTTP では届きません）。');
+    }
+    const links = document.createElement('div');
+    links.style.marginTop = '6px';
+    for (const [label, href] of [[`https://${host}:${cur}/ を開く`, `https://${host}:${cur}/`], [`http://${host}:${cur}/ を開く`, `http://${host}:${cur}/`]]) {
+      const a = document.createElement('a');
+      a.href = href; a.target = '_blank'; a.rel = 'noopener'; a.textContent = label;
+      links.append(a, '　');
+    }
+    box.append(links);
+    const again = document.createElement('button');
+    again.type = 'button'; again.className = 'small'; again.style.marginTop = '6px'; again.textContent = 'もう一度つなぐ';
+    again.addEventListener('click', async () => { await refreshDevice(dev); });
+    box.append(again);
+  }
 
   async function askPin(dev) {
     const p = prompt(`「${dev.name}」の PIN（6桁）を入力してください`);
@@ -1805,6 +1893,12 @@
       if (!(v >= lo && v <= hi)) f.elements[k].value = String(Math.min(hi, Math.max(lo, Math.round(v || DEFAULT_PCT[k]))));
     }
     if (!LAYOUTS.some((l) => l.id === fval('layout'))) f.elements.layout.value = '0';
+    $('#timeOffsetMin').value = Math.round((s.timeOffsetSec || 0) / 60);
+    const ts = s.timeSyncInfo;
+    $('#timeSyncState').textContent = !ts ? '（この端末のアプリは、時刻の同期に未対応です）' : !ts.enabled ? '同期は OFF です'
+      : ts.at ? `最後の同期：${new Date(ts.at).toLocaleString('ja-JP', { hour12: false })}　ずれ：端末の時計が ${(ts.offsetMs / 1000).toFixed(2)} 秒${ts.offsetMs >= 0 ? '遅れ' : '進み'}（${ts.method}）${ts.error ? '　※直近の問い合わせは失敗：' + ts.error : ''}`
+      : (ts.error ? `まだ同期できていません：${ts.error}` : 'まだ同期していません（起動から数分以内に行います）');
+    $('#appTimeNote').textContent = s.appTime ? `　いま、アプリは ${s.appTime.replace('-', '/').replace('-', '/')} と考えています（保存済みの設定）。` : '';
     $('#weatherPlace').textContent = `（地域：${s.weatherPlace || '未設定'}）`;
     renderWeatherRegion(dev);
     renderLayoutCard();
@@ -2290,10 +2384,22 @@
     const body = { zoneTypes: [0, 1, 2].map((i) => Number(layoutZoneTypes[i])) };
     for (const el of f.elements) {
       if (!el.name) continue;
-      body[el.name] = el.type === 'checkbox' ? el.checked : Number(el.value);
+      body[el.name] = el.type === 'checkbox' ? el.checked : (el.name === 'timeZone' || el.name === 'timeServer') ? el.value.trim() : Number(el.value);
     }
+    body.timeOffsetSec = Math.round(Number($('#timeOffsetMin').value) || 0) * 60;
     return { ...body, ...wxBody() };
   }
+
+  $('#timeSyncNow').addEventListener('click', async () => {
+    const dev = selected();
+    const btn = $('#timeSyncNow'); btn.disabled = true; btn.textContent = '問い合わせ中…';
+    try {
+      const r = await api(dev, '/api/timesync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }, 30000);
+      toast(r.error ? `同期できませんでした：${r.error}` : `同期しました（ずれ ${(r.offsetMs / 1000).toFixed(2)} 秒）`);
+      await refreshDevice(dev);
+    } catch (e) { toast(e.message); }
+    btn.disabled = false; btn.textContent = '今すぐ時刻サーバーに問い合わせる';
+  });
 
   $('#settings').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -2547,7 +2653,7 @@
 
   /** 設定ファイルに含める設定の項目（端末ごとに違うフォルダ・端末名・PIN・天気の地域は含めない） */
   const EXPORT_KEYS = ['layout', 'splitPercent', 'mainPercent', 'sidePercent', 'zoneTypes', 'imageSeconds', 'shuffle', 'recursive',
-    'videoSound', 'videoCompat', 'videoMultiSoft', 'fitMode', 'clockEnabled', 'clockPosition', 'clockSize',
+    'videoSound', 'videoCompat', 'videoMultiSoft', 'fitMode', 'clockEnabled', 'clockPosition', 'clockSize', 'timeZone', 'timeFormat', 'timeSync', 'timeServer',
     'weatherEnabled', 'weatherIntervalMin', 'weatherSeconds', 'weatherTimeSeries'];
   const EXPORT_KIND = 'signage-settings';
 

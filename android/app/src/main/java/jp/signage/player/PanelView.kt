@@ -74,7 +74,8 @@ abstract class PanelView(context: Context) : LinearLayout(context) {
 
     /** 見出し（横向きは題名と時計を1行に、縦向きは2行に）と発表時刻 */
     protected fun addHeader(title: String, report: LocalDateTime, stale: Boolean, landscape: Boolean, extra: String? = null) {
-        val clockView = text(clock(LocalDateTime.now()), 1.6f, bold = true)
+        val appPrefs = Prefs(context)
+        val clockView = text(clock(AppTime.localDateTime(appPrefs), appPrefs.timeFormat), 1.6f, bold = true)
         // 題名が1行に収まらないときは文字を縮める（縮めても入らない分は省略）
         val titleView = text(title, 2.2f, bold = true).apply {
             maxLines = 1
@@ -145,6 +146,6 @@ abstract class PanelView(context: Context) : LinearLayout(context) {
         else -> default
     }
 
-    private fun clock(t: LocalDateTime) =
-        "${t.monthValue}月${t.dayOfMonth}日(${weekday(t.toLocalDate())}) ${t.hour}:%02d".format(t.minute)
+    private fun clock(t: LocalDateTime, format: Int) =
+        "${t.monthValue}月${t.dayOfMonth}日(${weekday(t.toLocalDate())}) ${AppTime.hm(t, format)}"
 }

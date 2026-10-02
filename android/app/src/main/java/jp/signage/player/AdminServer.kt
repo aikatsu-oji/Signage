@@ -51,13 +51,6 @@ object AdminServer {
     @Volatile var port = 0
         private set
 
-    /** いま HTTPS で待ち受けているか（HTTPS にできなかったときは、HTTP のまま） */
-    @Volatile var tlsActive = false
-        private set
-
-    /** HTTPS にできなかった理由（空なら問題なし） */
-    @Volatile var tlsError = ""
-        private set
     val isRunning get() = server != null && port > 0
 
     private val pool = Executors.newFixedThreadPool(6)
@@ -94,17 +87,12 @@ object AdminServer {
         starting = true
         thread(name = "admin-server", isDaemon = true) {
             // HTTPS が ON なら、自己署名の証明書で暗号化する。用意できなければ HTTP のまま続ける
-            tlsError = ""
-            val ssl = if (Prefs(app).https) {
-                runCatching { TlsSupport.serverContext() }.onFailure { tlsError = "${it.javaClass.simpleName}: ${it.message}" }.getOrNull()
-            } else null
             // 使用中なら次の番号を試す（bind に失敗したソケットは閉じられるので毎回作り直す）
             val bound = (DEFAULT_PORT until DEFAULT_PORT + 10).firstNotNullOfOrNull { p ->
                 runCatching {
-                    (ssl?.serverSocketFactory?.createServerSocket() ?: ServerSocket()).apply { reuseAddress = true; bind(InetSocketAddress(p)) }
+                    ServerSocket().apply { reuseAddress = true; bind(InetSocketAddress(p)) }
                 }.getOrNull()
             }
-            tlsActive = ssl != null && bound != null
             val s = synchronized(this) {
                 starting = false
                 if (bound != null && wanted) {
@@ -123,8 +111,13 @@ object AdminServer {
             notify(EVENT_SERVER)
             Peers.start(app, s.localPort)
             while (!s.isClosed) {
-                val client = try { s.accept() } catch (e: IOException) { break }
-                pool.execute { handle(client) }
+                val client = try { s.accept() } catch (e: IOException) { break } catch (e: Throwable) { continue }
+                try {
+                    pool.execute {
+                        // 通信まわりの例外でアプリごと落ちないよう、すべてここで受け止める
+                        try { handle(client) } catch (e: Throwable) { runCatching { client.close() } }
+                    }
+                } catch (e: Throwable) { runCatching { client.close() } }
             }
         }
     }
@@ -138,7 +131,6 @@ object AdminServer {
     }
 
     private fun stop() {
-        tlsActive = false
         Peers.stop()
         server?.let { runCatching { it.close() } }
         server = null
@@ -352,7 +344,7 @@ object AdminServer {
         checkPin(req.headers["x-pin"], req.headers["x-group-code"])
 
         return when ("${req.method} ${req.path}") {
-            "GET /api/state" -> json(200, state(prefs).put("access", accessInfo(prefs, from)).put("tls", tlsInfo(prefs)).put("group", groupInfo(prefs)))
+            "GET /api/state" -> json(200, state(prefs).put("access", accessInfo(prefs, from)).put("group", groupInfo(prefs)))
             "GET /api/status" -> json(200, status(prefs))
             "PUT /api/apk" -> receiveApk(prefs, req)
             "GET /api/weather/offices" -> {
@@ -366,6 +358,10 @@ object AdminServer {
                 }
                 val bytes = arr.toString().toByteArray(Charsets.UTF_8)
                 Response(200, "application/json; charset=utf-8", bytes.size.toLong()) { it.write(bytes) }
+            }
+            "POST /api/timesync" -> {
+                TimeSync.syncNow(prefs) // すぐに、時刻サーバーに問い合わせる（数秒かかることがある）
+                json(200, timeSyncInfo(prefs).put("appTime", AppTime.localDateTime(prefs).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))))
             }
             "POST /api/group" -> {
                 val code = req.json().optString("code", "").trim()
@@ -425,7 +421,9 @@ object AdminServer {
                 Peers.list().forEach {
                     list.put(JSONObject().put("id", it.id).put("name", it.name).put("url", it.url).put("version", it.version))
                 }
-                json(200, JSONObject().put("id", prefs.deviceId).put("name", prefs.deviceName).put("peers", list))
+                val hidden = JSONArray()
+                Peers.listHidden().forEach { hidden.put(JSONObject().put("name", it.name).put("reason", it.reason)) }
+                json(200, JSONObject().put("id", prefs.deviceId).put("name", prefs.deviceName).put("peers", list).put("hidden", hidden))
             }
             "POST /api/pin" -> {
                 if (!prefs.setAdminPin(req.json().optString("pin"))) throw HttpError(400, "PIN は6桁の数字にしてください")
@@ -497,15 +495,16 @@ object AdminServer {
         }
     }
 
+    private fun timeSyncInfo(prefs: Prefs) = JSONObject()
+        .put("enabled", prefs.timeSync).put("server", prefs.timeServer).put("offsetMs", prefs.timeSyncOffsetMs)
+        .put("at", prefs.timeSyncAt).put("method", prefs.timeSyncMethod).put("error", prefs.timeSyncError)
+
     private fun groupInfo(prefs: Prefs) =
         JSONObject().put("enabled", prefs.groupCode.isNotEmpty()).put("id", GroupCode.ident(prefs.groupCode))
 
-    private fun tlsInfo(prefs: Prefs) = JSONObject()
-        .put("enabled", prefs.https).put("active", tlsActive).put("error", tlsError)
-        .put("fingerprint", if (tlsActive) TlsSupport.fingerprint() else "")
 
     /** 管理画面の URL（この端末の IP アドレス用）の頭の部分 */
-    val scheme get() = if (tlsActive) "https" else "http"
+    val scheme get() = "http"
 
     /** 配信状況（管理画面のモニタリング用） */
     private fun status(prefs: Prefs): JSONObject {
@@ -710,6 +709,13 @@ object AdminServer {
             .put("clockEnabled", prefs.clockEnabled)
             .put("clockPosition", prefs.clockPosition)
             .put("clockSize", prefs.clockSize)
+            .put("timeZone", prefs.timeZone)
+            .put("timeOffsetSec", prefs.timeOffsetSec)
+            .put("timeFormat", prefs.timeFormat)
+            .put("timeSync", prefs.timeSync)
+            .put("timeServer", prefs.timeServer)
+            .put("timeSyncInfo", timeSyncInfo(prefs))
+            .put("appTime", AppTime.localDateTime(prefs).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
             .put("weatherEnabled", prefs.weatherEnabled)
             .put("weatherIntervalMin", prefs.weatherIntervalMin)
             .put("weatherSeconds", prefs.weatherSeconds)
@@ -778,6 +784,19 @@ object AdminServer {
         if (j.has("clockEnabled")) prefs.clockEnabled = j.getBoolean("clockEnabled")
         if (j.has("clockPosition")) prefs.clockPosition = j.getInt("clockPosition").coerceIn(0, 3)
         if (j.has("clockSize")) prefs.clockSize = j.getInt("clockSize")
+        if (j.has("timeZone")) {
+            val name = j.optString("timeZone", "").trim()
+            if (name.isNotEmpty() && runCatching { java.time.ZoneId.of(name) }.isFailure) throw HttpError(400, "タイムゾーンの名前が正しくありません")
+            prefs.timeZone = name
+        }
+        if (j.has("timeOffsetSec")) prefs.timeOffsetSec = j.getInt("timeOffsetSec")
+        if (j.has("timeFormat")) prefs.timeFormat = j.getInt("timeFormat")
+        if (j.has("timeSync")) prefs.timeSync = j.getBoolean("timeSync")
+        if (j.has("timeServer")) {
+            val host = j.optString("timeServer", "").trim().ifEmpty { "ntp.nict.jp" }
+            if (!TimeSync.validHost(host)) throw HttpError(400, "時刻サーバーの名前が正しくありません")
+            prefs.timeServer = host
+        }
         if (j.has("weatherEnabled")) prefs.weatherEnabled = j.getBoolean("weatherEnabled")
         if (j.has("weatherIntervalMin")) prefs.weatherIntervalMin = j.getInt("weatherIntervalMin")
         if (j.has("weatherSeconds")) prefs.weatherSeconds = j.getInt("weatherSeconds")

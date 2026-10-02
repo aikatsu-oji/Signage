@@ -69,7 +69,7 @@ object FileRule {
         val end = minutesOf(rule.optString("end"))
         // 日をまたぐ時間帯の 0 時以降は、前日の分として扱う
         val overnight = start != null && end != null && start > end && minutes < end
-        val day = Calendar.getInstance().apply { timeInMillis = now.timeInMillis; if (overnight) add(Calendar.DAY_OF_MONTH, -1) }
+        val day = (now.clone() as Calendar).apply { if (overnight) add(Calendar.DAY_OF_MONTH, -1) }
 
         val days = rule.optJSONArray("days")
         if (days != null && days.length() > 0) {

@@ -2,4 +2,4 @@ zeroconf
 pystray
 pillow
 pyinstaller
-cryptography
+tzdata

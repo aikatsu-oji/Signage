@@ -63,10 +63,6 @@
   <section>
     <h2>管理画面（別の端末から操作）</h2>
     <div class="row"><label></label><label><input type="checkbox" id="adminEnabled"> 同じネットワークの PC・スマホから操作できるようにする</label></div>
-    <div class="row"><label></label><label><input type="checkbox" id="https"> 通信を HTTPS（暗号化）にする</label></div>
-    <p class="sub" id="httpsNote">LAN 内の通信（PIN・画像・設定）を暗号化します。証明書は、この PC が作る自己署名のもので、<b>管理画面を開くブラウザに、初回は警告が出ます</b>（下のフィンガープリントを確かめてから許可してください）。切り替えたあとは、タスクトレイの「終了」から、アプリを起動し直してください。HTTPS の端末の管理画面は、https://（アドレス）:ポート で開きます。</p>
-    <div class="row"><label>状態</label><span id="httpsState" class="sub"></span></div>
-    <div class="row"><label>フィンガープリント</label><code id="httpsFp" style="font-size:11px;word-break:break-all"></code></div>
     <div class="row"><label>グループコード</label><input type="text" id="groupCode" maxlength="32" placeholder="（未設定）" style="width:220px" autocomplete="off">
       <button id="groupClear" type="button">解除</button></div>
     <p class="sub">同じコードを持つ端末・管理画面だけが操作できます（PIN に加えて必要）。同じネットワークにある別のグループのサイネージは、端末一覧に出なくなります。英数字と - _ の 8〜32 文字。<b>グループの全端末に、同じコードを設定してください</b>（管理画面の「入れる端末」タブから、まとめて設定できます）。コードを忘れたときは、ここで解除できます。</p>
@@ -111,20 +107,14 @@
     $('#monitor').value = String(s.monitor || 0);
     $('#autoStart').checked = !!s.autoStart;
     $('#adminEnabled').checked = !!s.adminEnabled;
-    $('#https').checked = !!s.https;
     $('#groupCode').value = '';
     $('#groupCode').placeholder = (s.group || {}).enabled ? '（設定済み・変えるときだけ入力）' : '（未設定）';
-    const t = s.tls || {};
-    $('#httpsState').textContent = t.error ? `証明書を用意できず、HTTP のままです（${t.error}）`
-      : t.active ? (s.https ? 'HTTPS で動作中' : 'HTTPS で動作中（OFF にした設定は、再起動後に反映されます）')
-      : (s.https ? '設定は ON です。アプリを起動し直すと、HTTPS になります' : 'HTTP（暗号化なし）');
-    $('#httpsFp').textContent = t.fingerprint || '（HTTPS で起動すると表示されます）';
     $('#accessState').textContent = s.macLock ? `MAC アドレスで制限中（${(s.allowedMacs || []).length} 台を許可）` : '制限なし';
     $('#accessReset').hidden = !s.macLock;
     $('#deviceName').value = s.deviceName;
     $('#adminPin').value = s.adminPin;
     $('#urls').innerHTML = (s.addresses.length ? s.addresses : ['（LAN に接続されていません）'])
-      .map((a) => a.includes('.') ? `${(s.tls || {}).active ? 'https' : 'http'}://${a}:${s.port}/` : a).join('<br>');
+      .map((a) => a.includes('.') ? `http://${a}:${s.port}/` : a).join('<br>');
     renderZones();
   }
 
@@ -199,7 +189,6 @@
       monitor: Number($('#monitor').value),
       autoStart: $('#autoStart').checked,
       adminEnabled: $('#adminEnabled').checked,
-      https: $('#https').checked,
       ...($('#groupCode').value.trim() ? { groupCode: $('#groupCode').value.trim() } : {}),
       deviceName: $('#deviceName').value.trim(),
       adminPin: $('#adminPin').value.trim(),

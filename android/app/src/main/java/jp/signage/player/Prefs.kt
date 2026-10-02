@@ -120,6 +120,48 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putInt("clockPosition", v).apply()
 
     /** 時計の大きさ (0: 小, 1: 中, 2: 大) */
+    /** アプリの時計・再生条件・予約テロップに使うタイムゾーン（IANA 名。空なら端末の設定） */
+    var timeZone: String
+        get() = sp.getString("timeZone", "") ?: ""
+        set(v) = sp.edit().putString("timeZone", v).apply()
+
+    /** アプリの時刻の補正（秒。端末の時計がずれているとき） */
+    var timeOffsetSec: Int
+        get() = sp.getInt("timeOffsetSec", 0)
+        set(v) = sp.edit().putInt("timeOffsetSec", v.coerceIn(-43200, 43200)).apply()
+
+    /** 時刻サーバーに定期的に問い合わせて、アプリの時刻を合わせるか */
+    var timeSync: Boolean
+        get() = sp.getBoolean("timeSync", true)
+        set(v) = sp.edit().putBoolean("timeSync", v).apply()
+
+    var timeServer: String
+        get() = sp.getString("timeServer", "ntp.nict.jp") ?: "ntp.nict.jp"
+        set(v) = sp.edit().putString("timeServer", v).apply()
+
+    /** 最後に求めた、端末の時計のずれ（サーバー − 端末。ミリ秒） */
+    var timeSyncOffsetMs: Long
+        get() = sp.getLong("timeSyncOffsetMs", 0L)
+        set(v) = sp.edit().putLong("timeSyncOffsetMs", v).apply()
+
+    /** 最後に、時刻サーバーと合わせた時刻（エポックミリ秒。0 は未実施） */
+    var timeSyncAt: Long
+        get() = sp.getLong("timeSyncAt", 0L)
+        set(v) = sp.edit().putLong("timeSyncAt", v).apply()
+
+    var timeSyncMethod: String
+        get() = sp.getString("timeSyncMethod", "") ?: ""
+        set(v) = sp.edit().putString("timeSyncMethod", v).apply()
+
+    var timeSyncError: String
+        get() = sp.getString("timeSyncError", "") ?: ""
+        set(v) = sp.edit().putString("timeSyncError", v).apply()
+
+    /** 時計の表示形式（0=24 時間 / 1=12 時間（午前・午後）） */
+    var timeFormat: Int
+        get() = sp.getInt("timeFormat", 0)
+        set(v) = sp.edit().putInt("timeFormat", v.coerceIn(0, 1)).apply()
+
     var clockSize: Int
         get() = sp.getInt("clockSize", 1)
         set(v) = sp.edit().putInt("clockSize", v.coerceIn(0, 2)).apply()
@@ -144,11 +186,6 @@ class Prefs(context: Context) {
     var groupCode: String
         get() = sp.getString("groupCode", "") ?: ""
         set(v) = sp.edit().putString("groupCode", v).apply()
-
-    /** 管理画面の通信を HTTPS（自己署名の証明書）にするか。変えたあと、サーバーを起動し直す */
-    var https: Boolean
-        get() = sp.getBoolean("https", false)
-        set(v) = sp.edit().putBoolean("https", v).apply()
 
     /** 操作できる端末を MAC アドレスで制限するか（初期状態は制限なし） */
     var macLock: Boolean
