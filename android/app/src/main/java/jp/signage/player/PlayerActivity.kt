@@ -37,15 +37,17 @@ import kotlin.math.abs
  */
 class PlayerActivity : Activity() {
     companion object {
-        /** Fire TV（Amazon のテレビ端末）かどうか。画面を回す処理はこの端末だけが対象 */
-        fun isFireTv(ctx: android.content.Context): Boolean =
-            Build.MANUFACTURER.equals("Amazon", ignoreCase = true) &&
-                ctx.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
+        /**
+         * テレビ端末（Fire TV・Google TV・Android TV）かどうか。画面を回す処理は、この端末だけが対象。
+         * テレビの OS は、アプリが縦向きを求めても画面を回さない。回る端末（画面が縦長になる端末）では、二重に回さない
+         */
+        fun isTv(ctx: android.content.Context): Boolean =
+            ctx.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
 
-        /** 「画面を回す」が有効なとき（Fire TV 専用。画面は横長のままなので、再生画面そのものを回して表示する） */
+        /** 「画面を回す」が有効なとき（テレビ専用。画面は横長のままなので、再生画面そのものを回して表示する） */
         @Suppress("DEPRECATION")
         fun needsSoftRotation(ctx: android.content.Context, prefs: Prefs): Boolean {
-            if (prefs.screenRotate == 0 || !isFireTv(ctx)) return false
+            if (prefs.screenRotate == 0 || !isTv(ctx)) return false
             val dm = android.util.DisplayMetrics()
             (ctx.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay.getRealMetrics(dm)
             return dm.widthPixels > dm.heightPixels
@@ -90,7 +92,7 @@ class PlayerActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_player)
         prefs = Prefs(this)
-        // 「画面を回す」が有効なときは、向きの指定（Fire TV では細い窓になる）をせず、再生画面を回して表示する
+        // 「画面を回す」が有効なときは、向きの指定（テレビでは細い窓になることがある）をせず、再生画面を回して表示する
         requestedOrientation = if (needsSoftRotation(this, prefs)) ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED else prefs.orientation
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -165,7 +167,7 @@ class PlayerActivity : Activity() {
     /**
      * 区画を画面に並べる。メイン＋サイドは、横長の画面では右側に、縦長の画面では下側にサイドを置く。
      */
-    /** 縦向きを選んだのに画面が横長のまま（Fire TV など、OS が向きの指定を無視する端末）のときは、再生画面そのものを 90 度回して表示する */
+    /** 縦向きを選んだのに画面が横長のまま（Fire TV・Google TV など、OS が向きの指定を無視する端末）のときは、再生画面そのものを 90 度回して表示する */
     private var softRotated = false
 
     @Suppress("DEPRECATION")
