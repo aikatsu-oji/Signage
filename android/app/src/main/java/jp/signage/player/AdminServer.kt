@@ -95,6 +95,13 @@ object AdminServer {
         thread(name = "admin-server", isDaemon = true) {
             // HTTPS が ON なら、自己署名の証明書で暗号化する。用意できなければ HTTP のまま続ける
             tlsError = ""
+            // 前回、TLS の握手の途中でアプリが落ちていたら、HTTPS を自動で切って HTTP に戻す
+            val guard = app.getSharedPreferences("tls_guard", Context.MODE_PRIVATE)
+            if (guard.getBoolean("handshaking", false)) {
+                guard.edit().putBoolean("handshaking", false).commit()
+                Prefs(app).https = false
+                tlsError = "前回の HTTPS 通信中にアプリが停止したため、HTTPS を自動で OFF にしました"
+            }
             val ssl = if (Prefs(app).https) {
                 runCatching { TlsSupport.serverContext() }.onFailure { tlsError = "${it.javaClass.simpleName}: ${it.message}" }.getOrNull()
             } else null
@@ -123,8 +130,13 @@ object AdminServer {
             notify(EVENT_SERVER)
             Peers.start(app, s.localPort)
             while (!s.isClosed) {
-                val client = try { s.accept() } catch (e: IOException) { break }
-                pool.execute { handle(client) }
+                val client = try { s.accept() } catch (e: IOException) { break } catch (e: Throwable) { continue }
+                try {
+                    pool.execute {
+                        // 通信まわりの例外でアプリごと落ちないよう、すべてここで受け止める
+                        try { handshake(client); handle(client) } catch (e: Throwable) { runCatching { client.close() } }
+                    }
+                } catch (e: Throwable) { runCatching { client.close() } }
             }
         }
     }
@@ -218,6 +230,19 @@ object AdminServer {
     )
 
     private class HttpError(val status: Int, message: String) : Exception(message)
+
+    /** HTTPS のときは、最初に握手を済ませる（失敗や途中切断は、その接続だけ閉じる） */
+    private fun handshake(socket: Socket) {
+        val ssl = socket as? javax.net.ssl.SSLSocket ?: return
+        val guard = app.getSharedPreferences("tls_guard", Context.MODE_PRIVATE)
+        guard.edit().putBoolean("handshaking", true).commit()
+        try {
+            ssl.soTimeout = 10_000
+            ssl.startHandshake()
+        } finally {
+            guard.edit().putBoolean("handshaking", false).commit()
+        }
+    }
 
     private fun handle(socket: Socket) {
         socket.use { s ->
