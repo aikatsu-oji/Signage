@@ -540,6 +540,12 @@ class MainActivity : Activity() {
 
     private fun updateAdminInfo() {
         val info = findViewById<TextView>(R.id.adminInfo)
+        // リモコンで操作する TV では、アドレスの文字にフォーカスが当たらないようにする（タッチ操作の端末は、コピーできるよう選択可能）
+        if (!PlayerActivity.isTv(this)) {
+            if (!info.isTextSelectable) info.setTextIsSelectable(true)
+        } else {
+            info.isFocusable = false
+        }
         val running = prefs.adminEnabled && AdminServer.isRunning
         findViewById<View>(R.id.adminPinReset).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
         findViewById<View>(R.id.adminName).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
