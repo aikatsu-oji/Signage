@@ -33,6 +33,11 @@ object Peers {
     private val main = Handler(Looper.getMainLooper())
 
     private val peers = ConcurrentHashMap<String, Peer>()
+
+    /** 見つかったが、グループが違うため、一覧に出さない端末（id → 名前と理由）。なぜ見えないかを、管理画面で案内するため */
+    class Hidden(val name: String, val reason: String)
+    private val hidden = ConcurrentHashMap<String, Hidden>()
+    fun listHidden(): List<Hidden> = hidden.values.sortedBy { it.name }
     /** mDNS のサービス名 → 端末 ID（見えなくなったときに消すため） */
     private val serviceIds = ConcurrentHashMap<String, String>()
     private var selfId = ""
@@ -81,7 +86,7 @@ object Peers {
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
             override fun onServiceFound(info: NsdServiceInfo) = enqueueResolve(info)
             override fun onServiceLost(info: NsdServiceInfo) {
-                serviceIds.remove(info.serviceName)?.let { peers.remove(it) }
+                serviceIds.remove(info.serviceName)?.let { peers.remove(it); hidden.remove(it) }
             }
         }.also { runCatching { manager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, it) } }
     }
@@ -95,6 +100,7 @@ object Peers {
         discovery = null
         nsd = null
         peers.clear()
+        hidden.clear()
         serviceIds.clear()
         synchronized(resolveQueue) { resolveQueue.clear(); resolving = false }
     }
@@ -135,7 +141,13 @@ object Peers {
         val id = attr("id").ifEmpty { return }
         if (id == selfId) return
         // 別のグループ（組織）の端末は、一覧に出さない
-        if (attr("grp") != selfGroup) return
+        if (attr("grp") != selfGroup) {
+            val reason = if (selfGroup.isEmpty()) "グループを設定している端末（この端末は未設定）"
+            else if (attr("grp").isEmpty()) "グループ未設定、または、古い版" else "別のグループ"
+            serviceIds[info.serviceName] = id
+            hidden[id] = Hidden(attr("name").ifEmpty { info.serviceName }, reason)
+            return
+        }
         @Suppress("DEPRECATION")
         val host = info.host
         // 管理画面の URL に使うので IPv4 のみ（LAN のサイネージ端末は通常 IPv4 を持つ）

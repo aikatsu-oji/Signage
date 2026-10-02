@@ -429,7 +429,9 @@ object AdminServer {
                 Peers.list().forEach {
                     list.put(JSONObject().put("id", it.id).put("name", it.name).put("url", it.url).put("version", it.version))
                 }
-                json(200, JSONObject().put("id", prefs.deviceId).put("name", prefs.deviceName).put("peers", list))
+                val hidden = JSONArray()
+                Peers.listHidden().forEach { hidden.put(JSONObject().put("name", it.name).put("reason", it.reason)) }
+                json(200, JSONObject().put("id", prefs.deviceId).put("name", prefs.deviceName).put("peers", list).put("hidden", hidden))
             }
             "POST /api/pin" -> {
                 if (!prefs.setAdminPin(req.json().optString("pin"))) throw HttpError(400, "PIN は6桁の数字にしてください")

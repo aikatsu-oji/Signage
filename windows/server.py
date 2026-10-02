@@ -42,7 +42,7 @@ mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
 LOCAL_PORT = 18080  # HTTPS のとき、この PC 自身が使う HTTP のポート
-VERSION = "1.8.17"
+VERSION = "1.8.18"
 
 
 def resource_dir() -> Path:
@@ -710,7 +710,8 @@ class Server:
                     self.json({"ok": True})
                 elif key == "GET /api/devices":
                     peers = server.peers.list() if server.peers else []
-                    self.json({"id": s.device_id, "name": s.device_name, "peers": peers})
+                    hidden = server.peers.list_hidden() if server.peers else []
+                    self.json({"id": s.device_id, "name": s.device_name, "peers": peers, "hidden": hidden})
                 elif key == "POST /api/pin":
                     pin = str(self.body_json().get("pin", ""))
                     if not re.fullmatch(r"\d{6}", pin):

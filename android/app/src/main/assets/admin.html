@@ -243,6 +243,7 @@
         <p class="sub">同じネットワークのサイネージ端末が自動で表示されます。<b>チェック</b>＝テロップ・マイクなどを送る端末。<b>名前をクリック</b>＝その端末の設定を開きます。</p>
         <label class="check sub"><input type="checkbox" id="checkAll"> すべて選択</label>
         <ul class="devices" id="devices"></ul>
+        <p class="sub" id="hiddenPeers" hidden></p>
         <div class="bulk" id="bulk" hidden>
           <strong id="bulkTitle"></strong>
           <div class="row">
@@ -735,6 +736,13 @@
     try {
       const d = await api(self, '/api/devices');
       for (const p of d.peers) addDevice({ key: p.id, id: p.id, name: p.name, url: p.url, version: p.version });
+      // グループが違うため一覧に出していない端末（なぜ見えないかの案内）
+      const hid = d.hidden || [];
+      const box = $('#hiddenPeers');
+      box.hidden = !hid.length;
+      box.textContent = hid.length
+        ? `見つかりましたが、一覧に出していない端末：${hid.map((h) => `${h.name}（${h.reason}）`).join('、')}。グループ未設定の端末は、その端末の画面でグループコードを決めてください。古い版の端末は、更新してください。`
+        : '';
     } catch (e) {}
     for (const url of store.get('signage-manual', [])) {
       if (![...devices.values()].some((d) => d.url === url)) addDevice({ key: url, url, name: url.replace(/^https?:\/\//, ''), manual: true });
