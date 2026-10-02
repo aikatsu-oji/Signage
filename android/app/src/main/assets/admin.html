@@ -1241,6 +1241,14 @@
       } else {
         warn.textContent = dev.status === 'checking' ? '確認中…' :
           '端末に接続できません。端末の電源・Wi-Fi・管理画面の設定（ON になっているか）を確認してください。';
+        if (dev.status === 'offline' && !dev.self) {
+          const box = document.createElement('div');
+          box.style.marginTop = '6px';
+          const btn = document.createElement('button');
+          btn.type = 'button'; btn.className = 'small primary'; btn.textContent = '接続を診断する';
+          btn.addEventListener('click', () => { btn.hidden = true; diagnose(dev, box); });
+          warn.append(document.createElement('br'), btn, box);
+        }
         if (dev.status === 'offline' && (dev.url || '').startsWith('https:')) {
           // 自己署名の証明書は、ブラウザが初回に警告を出す。許可していないと、このページからは接続できない
           const a = document.createElement('a');
@@ -1358,6 +1366,70 @@
   $('#accessEnabled').addEventListener('change', (e) => saveAccess({ enabled: e.target.checked }));
   $('#accessVpn').addEventListener('change', (e) => saveAccess({ allowVpn: e.target.checked }));
   $('#accessSync').addEventListener('click', () => saveAccess({}));
+
+  // ------------------------------------------------------------ 接続の診断（「応答なし」のとき）
+
+  /** その IP のポートに、サーバーが居るか（応答があれば、中身が読めなくても居るとみなす）。HTTPS は、証明書を許可していないと、居ても届かない */
+  async function probePort(scheme, host, port) {
+    try {
+      await fetch(`${scheme}://${host}:${port}/`, { mode: 'no-cors', cache: 'no-store', signal: AbortSignal.timeout(2500) });
+      return true;
+    } catch (e) { return false; }
+  }
+
+  /** 手動で追加した端末の URL を、付け替える */
+  async function moveManualDevice(dev, url) {
+    store.set('signage-manual', [...new Set(store.get('signage-manual', []).filter((u) => u !== dev.url).concat(url))]);
+    devices.delete(dev.key);
+    checked.delete(dev.key);
+    addDevice({ key: url, url, name: url.replace(/^https?:\/\//, ''), manual: true });
+    selectedKey = url;
+    await check(devices.get(url));
+    renderDevices();
+    renderDetail();
+  }
+
+  async function diagnose(dev, box) {
+    box.replaceChildren('診断中…（数秒かかります）');
+    const u = new URL(dev.url);
+    const host = u.hostname;
+    const cur = Number(u.port || (u.protocol === 'https:' ? 443 : 80));
+    const ports = Array.from({ length: 10 }, (_, i) => 8080 + i);
+    const found = (await Promise.all(ports.map(async (p) => ((await probePort('http', host, p)) ? p : 0)))).filter(Boolean);
+    const line = (t) => { const d = document.createElement('div'); d.textContent = t; box.append(d); return d; };
+    box.replaceChildren();
+    if (u.protocol === 'http:' && found.includes(cur)) {
+      line(`✔ ${host}:${cur} には、HTTP で届いています。ただ、状態を取得できませんでした。`);
+      line('・管理画面（このページ）のアドレスが、LAN の外のものではないか、ブラウザの拡張機能や、セキュリティソフトが通信を止めていないか、確認してください。');
+      line('・端末の「管理画面（別の端末から操作）」が ON か、確認してください。');
+    } else if (found.length) {
+      line(`✔ ${host} の、別のポートに届きました：${found.map((p) => ':' + p).join('、')}（いまは :${cur}）`);
+      for (const p of found) {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'small primary'; b.textContent = `:${p} に切り替える`;
+        b.addEventListener('click', () => moveManualDevice(dev, `http://${host}:${p}`));
+        box.append(b, ' ');
+      }
+    } else {
+      line(`✘ ${host} の、8080〜8089 のどのポートにも、HTTP では届きません。次の順に確認してください。`);
+      line('1. 端末の設定画面の「管理画面（別の端末から操作）」が ON か。表示されている「ブラウザで開くアドレス」の IP とポートが、ここと同じか。');
+      line('2. 端末の電源が入っていて、アプリが動いているか（Fire TV は、スリープ中は届かないことがあります。アプリを一度開いてください）。');
+      line('3. この PC と端末が、同じネットワークにあるか（ゲスト Wi-Fi や、機器どうしの通信を止める設定がないか）。');
+      line('4. 端末が HTTPS（暗号化）になっている場合は、下のリンクで証明書を許可してください（HTTPS の端末には、HTTP では届きません）。');
+    }
+    const links = document.createElement('div');
+    links.style.marginTop = '6px';
+    for (const [label, href] of [[`https://${host}:${cur}/ を開く`, `https://${host}:${cur}/`], [`http://${host}:${cur}/ を開く`, `http://${host}:${cur}/`]]) {
+      const a = document.createElement('a');
+      a.href = href; a.target = '_blank'; a.rel = 'noopener'; a.textContent = label;
+      links.append(a, '　');
+    }
+    box.append(links);
+    const again = document.createElement('button');
+    again.type = 'button'; again.className = 'small'; again.style.marginTop = '6px'; again.textContent = 'もう一度つなぐ';
+    again.addEventListener('click', async () => { await refreshDevice(dev); });
+    box.append(again);
+  }
 
   async function askPin(dev) {
     const p = prompt(`「${dev.name}」の PIN（6桁）を入力してください`);
