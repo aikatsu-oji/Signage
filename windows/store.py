@@ -85,7 +85,8 @@ DEFAULTS = {
     "weatherEnabled": False,
     "weatherIntervalMin": 10,
     "weatherSeconds": 15,
-    "weatherExtra": [],  # 追加で表示する地域（[{office, area, areaName, cityName}]。最大 12）
+    "weatherRegions": [],  # 地方ごとの一覧を表示する地方の ID（kinki など）
+    "weatherRegionDay": 1,  # 一覧に出す日（0=きょう 1=あした 2=両方）
     "weatherTimeSeries": True,
     "weatherOffice": "130000",
     "weatherArea": "130010",

@@ -41,7 +41,7 @@ mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
 LOCAL_PORT = 18080  # HTTPS のとき、この PC 自身が使う HTTP のポート
-VERSION = "1.8.27"
+VERSION = "1.8.29"
 
 
 def resource_dir() -> Path:
@@ -227,7 +227,7 @@ class Server:
             "fitMode", "orientation",
             "clockEnabled", "clockPosition", "clockSize", "timeZone", "timeOffsetSec", "timeFormat", "timeSync", "timeServer", "weatherEnabled", "weatherIntervalMin",
             "weatherSeconds", "weatherTimeSeries",
-            "weatherOffice", "weatherArea", "weatherAreaName", "weatherCity", "weatherCityName", "weatherExtra")}
+            "weatherOffice", "weatherArea", "weatherAreaName", "weatherCity", "weatherCityName", "weatherRegions", "weatherRegionDay")}
         settings["timeOffsetMs"] = s.time_offset_ms()  # 再生画面が使う、アプリの時刻のずれの合計
         settings["timeSyncInfo"] = s.time_sync_info()
         settings["appTime"] = s.app_now().strftime("%Y-%m-%d %H:%M:%S")  # 管理画面での確認用（アプリが、いま何時と考えているか）
@@ -390,11 +390,13 @@ class Server:
         for k in ("weatherAreaName", "weatherCityName"):
             if k in j:
                 u[k] = str(j[k])[:40] if j[k] else None
-        if "weatherExtra" in j:
+        if "weatherRegions" in j:
             try:
-                u["weatherExtra"] = weather.clean_extra(j["weatherExtra"])
+                u["weatherRegions"] = weather.clean_regions(j["weatherRegions"])
             except ValueError as e:
                 raise HttpError(400, str(e))
+        if "weatherRegionDay" in j:
+            u["weatherRegionDay"] = clamp(j["weatherRegionDay"], 0, 2)
         self.store.update(u)
 
     # ------------------------------------------------------------ ハンドラー
@@ -785,6 +787,7 @@ class Server:
                         "zoneCount": st.zone_count(s.get("layout")),
                         "zoneFolders": [bool(s.zone_folder(i)) for i in range(st.MAX_ZONES)],
                         "weatherOffice": s.get("weatherOffice"),
+                        "weatherRegions": s.get("weatherRegions") or [],
                     })
                     return self.json(cfg)
                 if key == "GET /local/playlist":
@@ -814,6 +817,8 @@ class Server:
                         raise HttpError(502, str(e))
                 if key == "GET /local/weather":
                     return self.json(weather.pages(s))
+                if key == "GET /local/weather_map":
+                    return self.json(weather.map_data())
                 if key == "GET /local/ticker":
                     return self.json(s.next_ticker(take=query.get("take", "1") != "0"))
                 if key == "GET /local/events":

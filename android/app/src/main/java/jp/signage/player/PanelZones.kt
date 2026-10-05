@@ -14,6 +14,7 @@ import java.util.concurrent.Executors
 sealed class WeatherPage {
     class Daily(val data: WeatherData, val cityName: String?) : WeatherPage()
     class Series(val data: TimeSeriesData, val cityName: String?, val areaName: String?) : WeatherPage()
+    class Region(val data: RegionPageData) : WeatherPage()
 }
 
 /** 天気予報の各画面に表示するデータ一式（設定の地域 + 追加した地域の順） */
@@ -23,20 +24,23 @@ class WeatherPages(val pages: List<WeatherPage>) {
     companion object {
         /** 設定の地域（と追加した地域）の予報を読み込む（通信するのでバックグラウンドで呼ぶ） */
         fun load(context: Context, prefs: Prefs): WeatherPages {
-            val places = mutableListOf<WeatherPlace>()
-            prefs.weatherOffice?.let { places += WeatherPlace(it, prefs.weatherArea, prefs.weatherAreaName, prefs.weatherCityName) }
-            places += prefs.weatherExtra
             val pages = mutableListOf<WeatherPage>()
-            for (p in places) {
-                val daily = runCatching { Weather.get(context, p.office, p.area) }.getOrNull()
-                val series = if (prefs.weatherTimeSeries && p.area != null) {
-                    runCatching { Weather.getTimeSeries(context, p.area) }.getOrNull()?.takeIf { it.slots.isNotEmpty() }
+            prefs.weatherOffice?.let { office ->
+                val area = prefs.weatherArea
+                val daily = runCatching { Weather.get(context, office, area) }.getOrNull()
+                val series = if (prefs.weatherTimeSeries && area != null) {
+                    runCatching { Weather.getTimeSeries(context, area) }.getOrNull()?.takeIf { it.slots.isNotEmpty() }
                 } else {
                     null
                 }
-                val area = daily?.areaName ?: p.areaName
-                daily?.let { pages += WeatherPage.Daily(it, p.cityName) }
-                series?.let { pages += WeatherPage.Series(it, p.cityName, area) }
+                daily?.let { pages += WeatherPage.Daily(it, prefs.weatherCityName) }
+                series?.let { pages += WeatherPage.Series(it, prefs.weatherCityName, daily?.areaName ?: prefs.weatherAreaName) }
+            }
+            val picked = prefs.weatherRegions
+            if (picked.isNotEmpty()) {
+                val regions = Weather.regions(context).filter { it.id in picked }
+                runCatching { Weather.regionPages(context, regions, prefs.weatherRegionDay) }.getOrDefault(emptyList())
+                    .forEach { pages += WeatherPage.Region(it) }
             }
             return WeatherPages(pages)
         }
@@ -48,6 +52,7 @@ class WeatherZone(private val activity: Activity, private val prefs: Prefs) : Zo
     override val view = FrameLayout(activity)
     private val weatherView = WeatherView(activity)
     private val timeSeriesView = TimeSeriesView(activity).apply { visibility = View.INVISIBLE }
+    private val regionView = RegionView(activity).apply { visibility = View.INVISIBLE }
     private val message = TextView(activity).apply {
         gravity = Gravity.CENTER
         setTextColor(0xFFAAAAAA.toInt())
@@ -64,6 +69,7 @@ class WeatherZone(private val activity: Activity, private val prefs: Prefs) : Zo
         view.setBackgroundColor(0xFF0D2A5C.toInt())
         view.addView(weatherView, FrameLayout.LayoutParams(-1, -1))
         view.addView(timeSeriesView, FrameLayout.LayoutParams(-1, -1))
+        view.addView(regionView, FrameLayout.LayoutParams(-1, -1))
         view.addView(message, FrameLayout.LayoutParams(-1, -1))
     }
 
@@ -84,7 +90,7 @@ class WeatherZone(private val activity: Activity, private val prefs: Prefs) : Zo
 
     /** 予報を読み込み直して先頭の画面から表示（データは30分キャッシュされる） */
     private fun reload(my: Int) {
-        if (prefs.weatherOffice == null && prefs.weatherExtra.isEmpty()) {
+        if (prefs.weatherOffice == null && prefs.weatherRegions.isEmpty()) {
             showMessage("天気予報の地域が設定されていません")
             return
         }
@@ -109,8 +115,9 @@ class WeatherZone(private val activity: Activity, private val prefs: Prefs) : Zo
         val target: View = when (val p = pages[page]) {
             is WeatherPage.Daily -> weatherView.also { it.bind(p.data, p.cityName) }
             is WeatherPage.Series -> timeSeriesView.also { it.bind(p.data, p.cityName, p.areaName) }
+            is WeatherPage.Region -> regionView.also { it.bind(p.data, Weather.regions(activity).firstOrNull { r -> r.name == p.data.name }) }
         }
-        listOf<View>(weatherView, timeSeriesView).filter { it !== target }.forEach { it.animate().alpha(0f).setDuration(prefs.fadeMillis).start() }
+        listOf<View>(weatherView, timeSeriesView, regionView).filter { it !== target }.forEach { it.animate().alpha(0f).setDuration(prefs.fadeMillis).start() }
         target.visibility = View.VISIBLE
         target.bringToFront()
         target.animate().alpha(1f).setDuration(prefs.fadeMillis).start()

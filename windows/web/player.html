@@ -24,9 +24,30 @@
     background: linear-gradient(#1565c0, #0d2a5c); display: flex; flex-direction: column;
     padding: calc(var(--u) * 1.2); box-sizing: border-box; font-size: var(--u); text-shadow: 0 .05em .15em #0006; }
   .panel.show { opacity: 1; }
+  /* 地方ごとの一覧（地図のように、府県のタイルを並べる） */
+  .panel .map { position: relative; flex: 1; min-height: 0; margin: .4em 0; }
+  .panel .tile { position: absolute; transform: translate(-50%, -50%); border-radius: .8em; padding: .35em .7em; text-align: center;
+    color: #fff; background: #78909c; box-shadow: 0 .15em .5em #0005; min-width: 5.2em; }
+  .panel .tile.sun { background: #f57c00; } .panel .tile.cloud { background: #78909c; }
+  .panel .tile.rain { background: #1565c0; border: .1em solid #ffffff88; } .panel .tile.snow { background: #4fa3d9; }
+  .panel .tile .tn { font-size: 1.15em; font-weight: bold; white-space: nowrap; }
+  .panel .tile .icon { line-height: 1.1; }
+  .panel .tile .tt { font-size: .95em; white-space: nowrap; }
+  .panel .tile .tp { font-size: .8em; opacity: .85; }
+  .panel .tile.small .tp { display: none; }
+  .panel .map { overflow: hidden; border-radius: .6em; }
+  .panel .bgmap { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .panel .bgmap path { stroke-linejoin: round; }
+  .panel .bgmap path { fill: #ffffff14; stroke: #ffffff44; stroke-width: 1; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+  .panel .bgmap path.mine { fill: #ffffff33; stroke: #ffffff88; }
+  .panel .bgmap .lead { stroke: #ffffffaa; stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .panel .dot { position: absolute; width: .45em; height: .45em; margin: -.225em 0 0 -.225em; border-radius: 50%; background: #fff; box-shadow: 0 0 .2em #0008; }
+  .panel .tile { z-index: 2; }
   .panel .t22 { font-size: 2.2em; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .panel .head { display: flex; align-items: flex-end; gap: 1em; }
   .panel .head .t22 { flex: 1; min-width: 0; }
+  .panel.portrait .head { flex-wrap: wrap; gap: .2em 1em; }
+  .panel.portrait .head .t22 { flex: 1 1 100%; }
   .panel .clock { font-size: 1.6em; font-weight: bold; white-space: nowrap; }
   .panel .note { font-size: .9em; opacity: .7; }
   .panel .foot { font-size: .8em; opacity: .6; text-align: right; }
@@ -139,8 +160,10 @@
   let cfg = null;
   let zones = [];
   let mainZone = null;
+  let mapData = null;   // 地図の背景（都道府県の境界）。天気予報の一覧が出る前に、読み込んでおく
 
   setTimeout(() => { $('#hint').style.opacity = 0; }, 6000);
+  const mapReady = getJson('/local/weather_map').then((m) => { mapData = m; }).catch(() => {});
 
   // ------------------------------------------------------------ 天気予報の画面
 
@@ -218,6 +241,97 @@
       panel.append(week);
     }
     panel.append(el('div', 'foot', '出典：気象庁ホームページ（https://www.jma.go.jp/bosai/forecast/）のデータを加工して表示'));
+  }
+
+  /** 地方ごとの一覧（日本地図の上に、府県の天気をタイルで並べる） */
+  function renderRegion(panel, d) {
+    panel.replaceChildren();
+    const { compact } = sizePanel(panel);
+    header(panel, `${d.name}の天気（${d.day === 0 ? 'きょう' : 'あした'}）`, d.reportTime, d.stale, `${dateLabel(d.date)}の予報`);
+    const map = el('div', 'map');
+    const cls = (ic) => !ic ? '' : ic[0] === '☀️' || ic[0] === '🌙' ? 'sun' : ic[0] === '☔' ? 'rain' : ic[0] === '⛄' ? 'snow' : 'cloud';
+    const tiles = d.tiles.map((t) => {
+      const c = el('div', 'tile ' + cls(t.icon));
+      c.append(el('div', 'tn', t.label));
+      if (t.icon) {
+        c.append(iconEl(t.icon, compact ? 1.7 : 2.3));
+        c.append(el('div', 'tt', `${t.max ? t.max + '℃' : '--'} / ${t.min ? t.min + '℃' : '--'}`));
+        if (t.pop != null) c.append(el('div', 'tp', `☂ ${t.pop}%`));
+      } else {
+        c.append(el('div', 'tt', '--'));
+      }
+      return { t, c };
+    });
+    map.append(...tiles.map((x) => x.c));
+    panel.append(map, el('div', 'foot', '出典：気象庁ホームページ（https://www.jma.go.jp/bosai/forecast/）のデータを加工して表示'));
+    layoutRegion(map, d, tiles);
+  }
+
+  /** 地図（縦横比を保って、この地方の範囲が収まる大きさ）を描き、タイルを実際の位置に置く。重なるタイルは、ずらして引き出し線でつなぐ */
+  function layoutRegion(map, d, tiles) {
+    const W = map.clientWidth, H = map.clientHeight;
+    if (!W || !H || !d.view) return;
+    const [lon0, lon1, lat0, lat1] = d.view;
+    const midLat = (lat0 + lat1) / 2;
+    const kx = Math.cos(midLat * Math.PI / 180) * (d.stretch || 1);   // 経度 1 度の長さ（緯度 1 度を 1 とする）
+    const scale = Math.min(W / ((lon1 - lon0) * kx), H / (lat1 - lat0));
+    const mw = (lon1 - lon0) * kx * scale, mh = (lat1 - lat0) * scale;
+    const ox = (W - mw) / 2, oy = (H - mh) / 2;
+    const px = (lon) => ox + (lon - lon0) * kx * scale, py = (lat) => oy + (lat1 - lat) * scale;
+
+    // タイルが多くて地図を覆い隠すときは、タイルを小さくする（面積の 35% まで）
+    const natural = tiles.reduce((a, { c }) => a + c.offsetWidth * c.offsetHeight, 0);
+    const k = Math.max(0.55, Math.min(1, Math.sqrt(0.35 * mw * mh / Math.max(natural, 1))));
+    if (k < 1) tiles.forEach(({ c }) => { c.style.fontSize = k + 'em'; c.classList.toggle('small', k < 0.85); });
+
+    // タイルの位置（実際の位置を中心に。重なりを解消）
+    const boxes = tiles.map(({ t, c }) => {
+      const x0 = t.pos ? W * t.pos[0] / 100 : px(t.lon), y0 = t.pos ? H * t.pos[1] / 100 : py(t.lat);   // pos があれば、地図の外の決まった位置に置く
+      return { c, t, w: c.offsetWidth, h: c.offsetHeight, x: x0, y: y0, x0, y0, free: !!t.pos };
+    });
+    const gap = 6;
+    for (let it = 0; it < 80; it++) {
+      let moved = false;
+      for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i], b = boxes[j];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const ox2 = (a.w + b.w) / 2 + gap - Math.abs(dx), oy2 = (a.h + b.h) / 2 + gap - Math.abs(dy);
+        if (ox2 <= 0 || oy2 <= 0) continue;
+        moved = true;
+        if (ox2 < oy2) { const s = (dx >= 0 ? 1 : -1) * ox2 / 2; a.x -= s; b.x += s; }
+        else { const s = (dy >= 0 ? 1 : -1) * oy2 / 2; a.y -= s; b.y += s; }
+      }
+      for (const b of boxes) { b.x = Math.min(W - b.w / 2, Math.max(b.w / 2, b.x)); b.y = Math.min(H - b.h / 2, Math.max(b.h / 2, b.y)); }
+      if (!moved) break;
+    }
+
+    // 地図（都道府県）と引き出し線
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('class', 'bgmap');
+    const mp = mapData;
+    if (mp && mp.prefs) {
+      const mine = new Set(d.tiles.map((t) => t.office.slice(0, 2)));
+      for (const [code, rings] of Object.entries(mp.prefs)) {
+        const path = document.createElementNS(NS, 'path');
+        path.setAttribute('d', rings.map((r) => { let s = ''; for (let i = 0; i < r.length; i += 2) s += (i ? 'L' : 'M') + px(r[i] / mp.scale).toFixed(1) + ' ' + py(r[i + 1] / mp.scale).toFixed(1); return s + 'Z'; }).join(''));
+        path.setAttribute('class', mine.has(code) ? 'mine' : '');
+        svg.append(path);
+      }
+    }
+    for (const b of boxes) {
+      if (!b.free && Math.hypot(b.x - b.x0, b.y - b.y0) > Math.min(b.w, b.h) * 0.45) {
+        const ln = document.createElementNS(NS, 'line');
+        ln.setAttribute('x1', b.x0); ln.setAttribute('y1', b.y0); ln.setAttribute('x2', b.x); ln.setAttribute('y2', b.y); ln.setAttribute('class', 'lead');
+        svg.append(ln);
+      }
+    }
+    map.prepend(svg);
+    for (const b of boxes) {
+      b.c.style.left = b.x + 'px'; b.c.style.top = b.y + 'px';
+      if (b.free) continue;
+      const dot = el('div', 'dot'); dot.style.left = b.x0 + 'px'; dot.style.top = b.y0 + 'px'; map.append(dot);
+    }
   }
 
   function renderSeries(panel, d, city, area) {
@@ -312,10 +426,10 @@
       this.imgA = imageLayer(); this.imgB = imageLayer();
       this.video = el('video', 'layer');
       this.video.playsInline = true;
-      this.daily = el('div', 'panel'); this.series = el('div', 'panel');
+      this.daily = el('div', 'panel'); this.series = el('div', 'panel'); this.region = el('div', 'panel');
       this.msg = el('div', 'msg'); this.msg.hidden = true;
-      this.root.append(this.video, this.imgA, this.imgB, this.daily, this.series, this.msg);
-      this.layers = [this.video, this.imgA, this.imgB, this.daily, this.series];
+      this.root.append(this.video, this.imgA, this.imgB, this.daily, this.series, this.region, this.msg);
+      this.layers = [this.video, this.imgA, this.imgB, this.daily, this.series, this.region];
       this.playlist = []; this.index_ = -1; this.token = 0;
       this.showing = null; this.paused = false;
       this.lastWeatherAt = Date.now(); this.showingWeather = false; this.weatherPages = [];
@@ -345,7 +459,7 @@
       for (const l of this.layers) l.classList.toggle('show', l === target);
       if (target !== this.video) { this.video.pause(); }
       this.showing = target;
-      if (this.isMain) onPanelShown(target === this.daily || target === this.series);
+      if (this.isMain) onPanelShown(target === this.daily || target === this.series || target === this.region);
     }
 
     clearTimers() { clearTimeout(this.timer); clearTimeout(this.watchdog); this.timer = null; }
@@ -357,7 +471,7 @@
     }
 
     weatherDue() {
-      if (!this.isMain || !cfg.weatherOffice) return false;
+      if (!this.isMain || (!cfg.weatherOffice && !(cfg.weatherRegions || []).length)) return false;
       if (forceWeather) return true;
       return cfg.weatherEnabled && Date.now() - this.lastWeatherAt >= cfg.weatherIntervalMin * 60000;
     }
@@ -456,6 +570,7 @@
       this.watchdog = setTimeout(() => { if (my === this.token) this.goto(1); }, 20000);
       let data = null;
       try { data = await getJson('/local/weather'); } catch (e) {}
+      await mapReady;
       if (my !== this.token) return;
       clearTimeout(this.watchdog);
       this.weatherPages = weatherPageList(data);
@@ -505,11 +620,13 @@
       if (p?.daily) out.push({ kind: 'daily', d: p.daily, city: p.cityName, area: p.areaName });
       if (p?.series) out.push({ kind: 'series', d: p.series, city: p.cityName, area: p.areaName });
     }
+    for (const r of data?.regions || []) out.push({ kind: 'region', d: r });
     return out;
   }
   /** 画面の 1 ページ分を、区画の部品に描いて、その要素を返す */
   function bindWeatherPage(zone, page) {
     if (page.kind === 'daily') { renderDaily(zone.daily, page.d, page.city); return zone.daily; }
+    if (page.kind === 'region') { renderRegion(zone.region, page.d); return zone.region; }
     renderSeries(zone.series, page.d, page.city, page.area); return zone.series;
   }
 
@@ -519,9 +636,9 @@
     constructor() {
       this.root = el('div', 'zone');
       this.root.style.background = '#0d2a5c';
-      this.daily = el('div', 'panel'); this.series = el('div', 'panel');
+      this.daily = el('div', 'panel'); this.series = el('div', 'panel'); this.region = el('div', 'panel');
       this.msg = el('div', 'msg'); this.msg.hidden = true;
-      this.root.append(this.daily, this.series, this.msg);
+      this.root.append(this.daily, this.series, this.region, this.msg);
       this.token = 0;
     }
 
@@ -531,6 +648,7 @@
     async reload(my) {
       let data = null;
       try { data = await getJson('/local/weather'); } catch (e) {}
+      await mapReady;
       if (my !== this.token) return;
       if (!data) {
         this.msg.hidden = false;
@@ -548,7 +666,7 @@
     show(i, my) {
       this.cur = i;
       const shown = bindWeatherPage(this, this.pages[i]);
-      [this.daily, this.series].forEach((p) => p.classList.toggle('show', p === shown));
+      [this.daily, this.series, this.region].forEach((p) => p.classList.toggle('show', p === shown));
       setTimeout(() => {
         if (my !== this.token) return;
         if (i + 1 < this.pages.length) this.show(i + 1, my); else this.reload(my);

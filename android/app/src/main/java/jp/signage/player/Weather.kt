@@ -53,6 +53,29 @@ data class TimeSeriesData(
     val stale: Boolean,
 )
 
+/** 地方ごとの一覧の 1 か所（府県のタイル）。lon・lat は実際の位置。pos があれば、地図の外の決まった位置（％）に置く */
+data class RegionTile(val label: String, val office: String, val hint: String?, val lon: Float, val lat: Float, val pos: Pair<Float, Float>?)
+
+/** view は地図の表示範囲（経度の最小・最大, 緯度の最小・最大）、stretch は横の引き伸ばし */
+data class Region(val id: String, val name: String, val tiles: List<RegionTile>, val view: FloatArray, val stretch: Float)
+
+/** 地図の背景（都道府県の境界）。経緯度を scale 倍した整数の、外周の点列（x, y, x, y, ...） */
+class MapData(val scale: Int, val prefs: Map<String, List<IntArray>>)
+
+/** 一覧のタイル 1 つ分の予報（day が無いときは取得できなかった） */
+data class TileForecast(val tile: RegionTile, val day: DayForecast?)
+
+/** 地方ごとの一覧の 1 画面分 */
+data class RegionPageData(
+    val name: String,
+    /** 0=きょう 1=あした */
+    val dayIndex: Int,
+    val date: LocalDate,
+    val tiles: List<TileForecast>,
+    val reportTime: LocalDateTime,
+    val stale: Boolean,
+)
+
 /** 市区町村と、その予報を出している地域 (例: 千代田区 → 東京地方) */
 data class City(val code: String, val name: String, val areaCode: String, val areaName: String)
 
@@ -74,11 +97,12 @@ object Weather {
     private const val AREA_URL = "https://www.jma.go.jp/bosai/common/const/area.json"
     private const val MAX_AGE = 30 * 60_000L
 
-    fun get(context: Context, office: String, areaCode: String?): WeatherData? {
+    /** hint を指定すると、地域コードの代わりに、名前にそれを含む地域（例: 「中部」）の予報を返す */
+    fun get(context: Context, office: String, areaCode: String?, hint: String? = null): WeatherData? {
         val (json, stale) = cached(context, "forecast_$office.json", FORECAST_URL.format(office)) {
-            parse(it, areaCode)
+            parse(it, areaCode, hint)
         } ?: return null
-        return runCatching { parse(json, areaCode).copy(stale = stale) }.getOrNull()
+        return runCatching { parse(json, areaCode, hint).copy(stale = stale) }.getOrNull()
     }
 
     /** 3時間ごとの予報（地域時系列予報）。areaCode は地域コード (例: 130010) */
@@ -141,6 +165,56 @@ object Weather {
         }.getOrDefault(emptyList())
     }
 
+    /** 地方ごとの一覧の定義（assets/weather_regions.json） */
+    fun regions(context: Context): List<Region> = runCatching {
+        val root = JSONObject(context.assets.open("weather_regions.json").bufferedReader(Charsets.UTF_8).use { it.readText() })
+        val arr = root.getJSONArray("regions")
+        (0 until arr.length()).map { i ->
+            val r = arr.getJSONObject(i)
+            val tiles = r.getJSONArray("tiles")
+            val v = r.getJSONArray("view")
+            Region(r.getString("id"), r.getString("name"), (0 until tiles.length()).map { k ->
+                val t = tiles.getJSONObject(k)
+                val pos = t.optJSONArray("pos")?.let { Pair(it.getDouble(0).toFloat(), it.getDouble(1).toFloat()) }
+                RegionTile(t.getString("label"), t.getString("office"), t.optString("hint").ifEmpty { null },
+                    t.getDouble("lon").toFloat(), t.getDouble("lat").toFloat(), pos)
+            }, FloatArray(4) { v.getDouble(it).toFloat() }, r.optDouble("stretch", 1.0).toFloat())
+        }
+    }.getOrDefault(emptyList())
+
+    @Volatile private var mapCache: MapData? = null
+
+    /** 地図の背景（assets/weather_map.json）。読めなければ null（背景なしで表示する） */
+    fun mapData(context: Context): MapData? = mapCache ?: runCatching {
+        val root = JSONObject(context.assets.open("weather_map.json").bufferedReader(Charsets.UTF_8).use { it.readText() })
+        val prefs = root.getJSONObject("prefs")
+        MapData(root.getInt("scale"), prefs.keys().asSequence().associateWith { code ->
+            val rings = prefs.getJSONArray(code)
+            (0 until rings.length()).map { i -> rings.getJSONArray(i).let { a -> IntArray(a.length()) { a.getInt(it) } } }
+        })
+    }.getOrNull()?.also { mapCache = it }
+
+    /** 選んだ地方の一覧の画面を作る（府県ごとの予報を並行して取得する。通信するのでバックグラウンドで呼ぶ） */
+    fun regionPages(context: Context, regions: List<Region>, dayMode: Int): List<RegionPageData> {
+        val tiles = regions.flatMap { it.tiles }.distinctBy { it.office to it.hint }
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(8)
+        val forecasts: Map<Pair<String, String?>, WeatherData?> = try {
+            tiles.map { t -> t to pool.submit<WeatherData?> { runCatching { get(context, t.office, null, t.hint) }.getOrNull() } }
+                .associate { (t, f) -> (t.office to t.hint) to runCatching { f.get() }.getOrNull() }
+        } finally {
+            pool.shutdown()
+        }
+        val days = when (dayMode) { 0 -> listOf(0); 2 -> listOf(0, 1); else -> listOf(1) }
+        return regions.flatMap { r ->
+            days.mapNotNull { d ->
+                val list = r.tiles.map { t -> TileForecast(t, forecasts[t.office to t.hint]?.days?.getOrNull(d)) }
+                val any = r.tiles.firstNotNullOfOrNull { forecasts[it.office to it.hint] } ?: return@mapNotNull null
+                val day = list.firstNotNullOfOrNull { it.day } ?: return@mapNotNull null
+                RegionPageData(r.name, d, day.date, list, any.reportTime, r.tiles.any { forecasts[it.office to it.hint]?.stale == true })
+            }
+        }
+    }
+
     private fun httpGet(url: String): String {
         val c = URL(url).openConnection() as HttpURLConnection
         c.connectTimeout = 8000
@@ -156,7 +230,7 @@ object Weather {
 
     // ---------------------------------------------------------------- 解析
 
-    fun parse(json: String, areaCode: String?): WeatherData {
+    fun parse(json: String, areaCode: String?, hint: String? = null): WeatherData {
         val root = JSONArray(json)
         val short = root.getJSONObject(0)
         val report = OffsetDateTime.parse(short.getString("reportDatetime")).toLocalDateTime()
@@ -165,7 +239,7 @@ object Weather {
         // 天気（今日・明日・明後日）
         val ts0 = ts.getJSONObject(0)
         val areas0 = ts0.getJSONArray("areas")
-        val ai = findArea(areas0, areaCode)
+        val ai = findArea(areas0, areaCode, hint)
         val a0 = areas0.getJSONObject(ai)
         val areaName = a0.getJSONObject("area").getString("name")
         val times0 = times(ts0)
@@ -270,7 +344,12 @@ object Weather {
         return (0 until arr.length()).map { OffsetDateTime.parse(arr.getString(it)).toLocalDateTime() }
     }
 
-    private fun findArea(areas: JSONArray, code: String?): Int {
+    private fun findArea(areas: JSONArray, code: String?, hint: String? = null): Int {
+        if (!hint.isNullOrEmpty()) {
+            for (i in 0 until areas.length()) {
+                if (areas.getJSONObject(i).getJSONObject("area").optString("name").contains(hint)) return i
+            }
+        }
         if (code != null) {
             for (i in 0 until areas.length()) {
                 if (areas.getJSONObject(i).getJSONObject("area").optString("code") == code) return i

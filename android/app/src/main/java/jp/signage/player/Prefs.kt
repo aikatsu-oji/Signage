@@ -92,23 +92,15 @@ class Prefs(context: Context) {
         get() = sp.getString("weatherCityName", null)
         set(v) = sp.edit().putString("weatherCityName", v).apply()
 
-    /** 追加で表示する地域（最大 12 件。近畿の各府県など）。JSON 配列で保存 */
-    var weatherExtra: List<WeatherPlace>
-        get() = runCatching {
-            val arr = org.json.JSONArray(sp.getString("weatherExtra", "[]"))
-            (0 until arr.length()).mapNotNull { i ->
-                val o = arr.optJSONObject(i) ?: return@mapNotNull null
-                val office = o.optString("office").ifEmpty { return@mapNotNull null }
-                WeatherPlace(office, o.optString("area").ifEmpty { null }, o.optString("areaName").ifEmpty { null },
-                    o.optString("cityName").ifEmpty { null })
-            }
-        }.getOrDefault(emptyList())
-        set(v) = sp.edit().putString("weatherExtra", org.json.JSONArray().also { arr ->
-            v.take(MAX_WEATHER_EXTRA).forEach {
-                arr.put(org.json.JSONObject().put("office", it.office).put("area", it.area ?: "")
-                    .put("areaName", it.areaName ?: "").put("cityName", it.cityName ?: ""))
-            }
-        }.toString()).apply()
+    /** 地方ごとの一覧（日本地図のようなタイル表示）を出す地方の ID（kinki など）。表（weather_regions.json）の順に表示 */
+    var weatherRegions: List<String>
+        get() = sp.getString("weatherRegions", "")!!.split(",").filter { it.isNotEmpty() }
+        set(v) = sp.edit().putString("weatherRegions", v.joinToString(",")).apply()
+
+    /** 地方ごとの一覧に出す日（0=きょう 1=あした 2=両方） */
+    var weatherRegionDay: Int
+        get() = sp.getInt("weatherRegionDay", 1)
+        set(v) = sp.edit().putInt("weatherRegionDay", v.coerceIn(0, 2)).apply()
 
     /** 天気予報を差し込む間隔（分） */
     var weatherIntervalMin: Int
@@ -369,7 +361,6 @@ class Prefs(context: Context) {
         /** 上下3分割（上・中・下の3段。等分） */
         const val LAYOUT_ROWS3 = 5
         const val MAX_ZONES = 3
-        const val MAX_WEATHER_EXTRA = 12
 
         /** 区画の呼び名（設定画面・管理画面の表示用） */
         fun zoneNames(layout: Int): List<String> = when (layout) {
@@ -398,6 +389,3 @@ class Prefs(context: Context) {
         const val CLOCK_BOTTOM_LEFT = 3
     }
 }
-
-/** 天気予報の地域 1 か所（気象庁の府県予報区コード・地域コードと、表示名） */
-data class WeatherPlace(val office: String, val area: String?, val areaName: String?, val cityName: String?)
