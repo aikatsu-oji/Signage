@@ -236,7 +236,9 @@ class PlayerActivity : Activity() {
                 }
             }
             Prefs.LAYOUT_COLUMNS3, Prefs.LAYOUT_ROWS3 -> box(vertical = prefs.layout == Prefs.LAYOUT_ROWS3).apply {
-                add(v[0], 1f); add(v[1], 1f); add(v[2], 1f)
+                val a = prefs.splitA.toFloat()
+                val b = prefs.splitB.toFloat()
+                add(v[0], a); add(v[1], b); add(v[2], maxOf(10f, 100f - a - b))
             }
             Prefs.LAYOUT_MAIN_SIDE -> box(vertical = !landscape).apply {
                 val main = prefs.mainPercent.toFloat()

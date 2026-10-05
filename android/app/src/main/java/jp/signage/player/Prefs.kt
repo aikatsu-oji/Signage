@@ -239,6 +239,14 @@ class Prefs(context: Context) {
         get() = sp.getInt("layout", LAYOUT_SINGLE)
         set(v) = sp.edit().putInt("layout", v).apply()
 
+    /** 3分割（左右・上下）の、区画1・区画2の大きさ（％）。区画3は、残り */
+    var splitA: Int
+        get() = sp.getInt("splitA", 33)
+        set(v) = sp.edit().putInt("splitA", v.coerceIn(10, 80)).apply()
+    var splitB: Int
+        get() = sp.getInt("splitB", 33)
+        set(v) = sp.edit().putInt("splitB", v.coerceIn(10, 80)).apply()
+
     /** 2分割のときの区画1の割合（%）。残りが区画2 */
     var splitPercent: Int
         get() = sp.getInt("splitPercent", 50)

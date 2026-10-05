@@ -714,6 +714,8 @@ object AdminServer {
         val settings = JSONObject()
             .put("layout", prefs.layout)
             .put("splitPercent", prefs.splitPercent)
+            .put("splitA", prefs.splitA)
+            .put("splitB", prefs.splitB)
             .put("mainPercent", prefs.mainPercent)
             .put("sidePercent", prefs.sidePercent)
             .put("zoneTypes", JSONArray((0 until Prefs.MAX_ZONES).map(prefs::zoneType)))
@@ -780,6 +782,8 @@ object AdminServer {
             }
         }
         if (j.has("splitPercent")) prefs.splitPercent = j.getInt("splitPercent")
+        if (j.has("splitA")) prefs.splitA = j.getInt("splitA")
+        if (j.has("splitB")) prefs.splitB = j.getInt("splitB")
         if (j.has("mainPercent")) prefs.mainPercent = j.getInt("mainPercent")
         if (j.has("sidePercent")) prefs.sidePercent = j.getInt("sidePercent")
         j.optJSONArray("zoneTypes")?.let { a ->
