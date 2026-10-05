@@ -121,13 +121,13 @@
                 android:id="@+id/layoutColumns3"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="縦3分割（左・中・右）" />
+                android:text="左右3分割（左・中・右）" />
 
             <RadioButton
                 android:id="@+id/layoutRows3"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="横3分割（上・中・下）" />
+                android:text="上下3分割（上・中・下）" />
         </RadioGroup>
 
         <!-- 2分割のときの比率 -->

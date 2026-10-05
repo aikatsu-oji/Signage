@@ -41,7 +41,7 @@ mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
 LOCAL_PORT = 18080  # HTTPS のとき、この PC 自身が使う HTTP のポート
-VERSION = "1.8.24"
+VERSION = "1.8.26"
 
 
 def resource_dir() -> Path:
@@ -223,7 +223,7 @@ class Server:
                         z["error"] = "フォルダを読み込めません"
             zones.append(z)
         settings = {k: s.get(k) for k in (
-            "layout", "splitPercent", "mainPercent", "sidePercent", "imageSeconds", "shuffle", "recursive", "videoSound",
+            "layout", "splitPercent", "splitA", "splitB", "mainPercent", "sidePercent", "imageSeconds", "shuffle", "recursive", "videoSound",
             "fitMode", "orientation",
             "clockEnabled", "clockPosition", "clockSize", "timeZone", "timeOffsetSec", "timeFormat", "timeSync", "timeServer", "weatherEnabled", "weatherIntervalMin",
             "weatherSeconds", "weatherTimeSeries",
@@ -335,6 +335,8 @@ class Server:
         u = {}
         if "layout" in j: u["layout"] = clamp(j["layout"], 0, 5)
         if "splitPercent" in j: u["splitPercent"] = clamp(j["splitPercent"], 10, 90)
+        if "splitA" in j: u["splitA"] = clamp(j["splitA"], 10, 80)
+        if "splitB" in j: u["splitB"] = clamp(j["splitB"], 10, 80)
         if "mainPercent" in j: u["mainPercent"] = clamp(j["mainPercent"], 20, 90)
         if "sidePercent" in j: u["sidePercent"] = clamp(j["sidePercent"], 10, 90)
         if isinstance(j.get("zoneTypes"), list):

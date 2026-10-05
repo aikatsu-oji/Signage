@@ -58,6 +58,8 @@ def kind_of(name: str):
 DEFAULTS = {
     "layout": LAYOUT_SINGLE,
     "splitPercent": 50,
+    "splitA": 33,  # 3分割の区画1・区画2の大きさ（％）。区画3は残り
+    "splitB": 33,
     "mainPercent": 70,
     "sidePercent": 50,
     "zoneTypes": [ZONE_FOLDER, ZONE_FOLDER, ZONE_WEATHER],

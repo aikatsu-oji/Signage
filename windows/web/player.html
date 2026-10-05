@@ -648,10 +648,11 @@
     };
     let top;
     const p = cfg.splitPercent || 50;
+    const thirds = () => { const a = cfg.splitA || 33, b = cfg.splitB || 33; return [a, b, Math.max(10, 100 - a - b)]; };
     if (cfg.layout === 1) top = box(false, v, [p, 100 - p]);
     else if (cfg.layout === 2) top = box(true, v, [p, 100 - p]);
-    else if (cfg.layout === 4) top = box(false, v, [1, 1, 1]);
-    else if (cfg.layout === 5) top = box(true, v, [1, 1, 1]);
+    else if (cfg.layout === 4) top = box(false, v, thirds());
+    else if (cfg.layout === 5) top = box(true, v, thirds());
     else if (cfg.layout === 3) {
       const main = cfg.mainPercent || 70, sp = cfg.sidePercent || 50;
       const side = box(landscape, [v[1], v[2]], [sp, 100 - sp]);

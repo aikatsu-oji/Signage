@@ -43,6 +43,7 @@ class MainActivity : Activity() {
         /** メイン＋サイドの比率の選択肢（メインの %・サイド1 の %） */
         private val MAIN_CHOICES = listOf(50, 60, 65, 70, 75, 80)
         private val SIDE_CHOICES = listOf(30, 40, 50, 60, 70)
+        private val THIRD_CHOICES = listOf(20, 25, 30, 33, 34, 40, 50)
 
         /** 選択肢に、いま設定されている値（管理画面で 1% 刻みに決めた値など）も加える。入れないと、画面を開いたときに近い選択肢へ書き換わってしまう */
         private fun withCurrent(base: List<Int>, value: Int) = (base + value).distinct().sorted()
@@ -348,18 +349,29 @@ class MainActivity : Activity() {
 
         // 分割しているときは比率を選ぶ（例: 左 70% : 右 30%、メイン 70% : サイド 30%）
         val equalThirds = prefs.layout == Prefs.LAYOUT_COLUMNS3 || prefs.layout == Prefs.LAYOUT_ROWS3
-        findViewById<View>(R.id.splitRow).visibility = if (count >= 2 && !equalThirds) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.splitRow).visibility = if (count >= 2) View.VISIBLE else View.GONE
         val spinner = findViewById<Spinner>(R.id.splitSpinner)
         val label = findViewById<TextView>(R.id.splitLabel)
-        val threeZones = prefs.layout == Prefs.LAYOUT_MAIN_SIDE
+        val threeZones = prefs.layout == Prefs.LAYOUT_MAIN_SIDE || equalThirds
         findViewById<View>(R.id.splitLabel2).visibility = if (threeZones) View.VISIBLE else View.GONE
         findViewById<View>(R.id.splitSpinner2).visibility = if (threeZones) View.VISIBLE else View.GONE
-        if (count == 2) {
+        if (equalThirds) {
+            label.text = "区画1の大きさ"
+            findViewById<TextView>(R.id.splitLabel2).text = "区画2の大きさ（区画3は残り）"
+            thirdChoices = withCurrent(THIRD_CHOICES, prefs.splitA)
+            spinner.adapter = adapter(thirdChoices.map { "${names[0]} $it%" })
+            spinner.setSelection(thirdChoices.indexOf(prefs.splitA).coerceAtLeast(0))
+            val second = findViewById<Spinner>(R.id.splitSpinner2)
+            thirdChoices2 = withCurrent(THIRD_CHOICES, prefs.splitB)
+            second.adapter = adapter(thirdChoices2.map { "${names[1]} $it%" })
+            second.setSelection(thirdChoices2.indexOf(prefs.splitB).coerceAtLeast(0))
+        } else if (count == 2) {
             label.text = "画面の比率（区画1 : 区画2）"
             splitChoices = withCurrent(SPLIT_CHOICES, prefs.splitPercent)
             spinner.adapter = adapter(splitChoices.map { "${names[0]} $it% : ${names[1]} ${100 - it}%" })
             spinner.setSelection(splitChoices.indexOf(prefs.splitPercent).coerceAtLeast(0))
-        } else if (threeZones) {
+        } else if (prefs.layout == Prefs.LAYOUT_MAIN_SIDE) {
+            findViewById<TextView>(R.id.splitLabel2).text = "サイドの比率（区画2 : 区画3）"
             label.text = "メインとサイドの比率（区画1 : 区画2・3）"
             mainChoices = withCurrent(MAIN_CHOICES, prefs.mainPercent)
             spinner.adapter = adapter(mainChoices.map { "メイン $it% : サイド ${100 - it}%" })
@@ -395,12 +407,18 @@ class MainActivity : Activity() {
     private var splitChoices = SPLIT_CHOICES
     private var mainChoices = MAIN_CHOICES
     private var sideChoices = SIDE_CHOICES
+    private var thirdChoices = THIRD_CHOICES
+    private var thirdChoices2 = THIRD_CHOICES
+
+    private fun isEqualThirds() = prefs.layout == Prefs.LAYOUT_COLUMNS3 || prefs.layout == Prefs.LAYOUT_ROWS3
 
     private fun setupSplit() {
         findViewById<Spinner>(R.id.splitSpinner).onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 if (prefs.layout == Prefs.LAYOUT_MAIN_SIDE) {
                     mainChoices.getOrNull(position)?.let { prefs.mainPercent = it }
+                } else if (isEqualThirds()) {
+                    thirdChoices.getOrNull(position)?.let { prefs.splitA = it }
                 } else {
                     splitChoices.getOrNull(position)?.let { prefs.splitPercent = it }
                 }
@@ -410,7 +428,8 @@ class MainActivity : Activity() {
         }
         findViewById<Spinner>(R.id.splitSpinner2).onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                sideChoices.getOrNull(position)?.let { prefs.sidePercent = it }
+                if (isEqualThirds()) thirdChoices2.getOrNull(position)?.let { prefs.splitB = it }
+                else sideChoices.getOrNull(position)?.let { prefs.sidePercent = it }
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
