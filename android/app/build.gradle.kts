@@ -37,8 +37,8 @@ android {
         applicationId = "jp.signage.player"
         minSdk = 26
         targetSdk = 34
-        versionCode = 60
-        versionName = "1.9.27"
+        versionCode = 61
+        versionName = "1.9.28"
     }
 
     compileOptions {
