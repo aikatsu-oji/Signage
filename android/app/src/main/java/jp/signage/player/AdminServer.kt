@@ -755,11 +755,8 @@ object AdminServer {
             .put("weatherAreaName", prefs.weatherAreaName ?: JSONObject.NULL)
             .put("weatherCity", prefs.weatherCity ?: JSONObject.NULL)
             .put("weatherCityName", prefs.weatherCityName ?: JSONObject.NULL)
-            .put("weatherExtra", org.json.JSONArray().also { arr ->
-                prefs.weatherExtra.forEach {
-                    arr.put(JSONObject().put("office", it.office).put("area", it.area ?: "").put("areaName", it.areaName ?: "").put("cityName", it.cityName ?: ""))
-                }
-            })
+            .put("weatherRegions", org.json.JSONArray(prefs.weatherRegions))
+            .put("weatherRegionDay", prefs.weatherRegionDay)
         val version = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull()
         val ticker = JSONObject()
             .put("standing", Ticker.standing(app)?.toJson() ?: JSONObject.NULL)
@@ -850,17 +847,14 @@ object AdminServer {
         if (j.has("weatherCity")) prefs.weatherCity = code("weatherCity")
         if (j.has("weatherAreaName")) prefs.weatherAreaName = name("weatherAreaName")
         if (j.has("weatherCityName")) prefs.weatherCityName = name("weatherCityName")
-        if (j.has("weatherExtra")) {
-            val arr = j.optJSONArray("weatherExtra") ?: throw HttpError(400, "追加する地域が正しくありません")
-            val digits = Regex("\\d{1,10}")
-            prefs.weatherExtra = (0 until minOf(arr.length(), Prefs.MAX_WEATHER_EXTRA)).map { i ->
-                val o = arr.optJSONObject(i) ?: throw HttpError(400, "追加する地域が正しくありません")
-                val office = o.optString("office")
-                val area = o.optString("area")
-                if (!digits.matches(office) || (area.isNotEmpty() && !digits.matches(area))) throw HttpError(400, "追加する地域が正しくありません")
-                WeatherPlace(office, area.ifEmpty { null }, o.optString("areaName").take(40).ifEmpty { null }, o.optString("cityName").take(40).ifEmpty { null })
-            }
+        if (j.has("weatherRegions")) {
+            val arr = j.optJSONArray("weatherRegions") ?: throw HttpError(400, "地方の指定が正しくありません")
+            val known = Weather.regions(app).map { it.id }
+            val picked = (0 until arr.length()).map { arr.optString(it) }
+            if (picked.any { it !in known }) throw HttpError(400, "地方の指定が正しくありません")
+            prefs.weatherRegions = known.filter { it in picked } // 表の順に並べる
         }
+        if (j.has("weatherRegionDay")) prefs.weatherRegionDay = j.getInt("weatherRegionDay")
     }
 
     private fun json(status: Int, body: JSONObject): Response {

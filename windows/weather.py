@@ -15,7 +15,6 @@ FORECAST_URL = "https://www.jma.go.jp/bosai/forecast/data/forecast/{}.json"
 TIME_SERIES_URL = "https://www.jma.go.jp/bosai/jmatile/data/wdist/VPFD/{}.json"
 AREA_URL = "https://www.jma.go.jp/bosai/common/const/area.json"
 MAX_AGE = 30 * 60
-MAX_EXTRA = 12  # 追加できる地域の数
 CACHE = APP_DIR / "cache"
 JST = timezone(timedelta(hours=9))
 
@@ -106,7 +105,11 @@ def text_icon(text: str, hour: int):
 
 # ---------------------------------------------------------------- 解析
 
-def _find_area(areas, code):
+def _find_area(areas, code, hint=None):
+    if hint:
+        for i, a in enumerate(areas):
+            if hint in a.get("area", {}).get("name", ""):
+                return i
     if code:
         for i, a in enumerate(areas):
             if a.get("area", {}).get("code") == code:
@@ -118,14 +121,14 @@ def _pick(areas, i):
     return areas[min(i, len(areas) - 1)] if areas else {}
 
 
-def parse_forecast(text: str, area_code):
+def parse_forecast(text: str, area_code, hint=None):
     root = json.loads(text)
     short = root[0]
     report = parse_time(short["reportDatetime"])
     ts = short["timeSeries"]
 
     ts0 = ts[0]
-    ai = _find_area(ts0["areas"], area_code)
+    ai = _find_area(ts0["areas"], area_code, hint)
     a0 = ts0["areas"][ai]
     area_name = a0["area"]["name"]
     times0 = [parse_time(t) for t in ts0["timeDefines"]]
@@ -227,12 +230,12 @@ def parse_time_series(text: str):
     return {"pointName": point.get("pointNameJP", ""), "reportTime": report.isoformat(), "slots": slots, "stale": False}
 
 
-def get_forecast(office, area_code):
-    r = cached(f"forecast_{office}.json", FORECAST_URL.format(office), lambda t: parse_forecast(t, area_code))
+def get_forecast(office, area_code, hint=None):
+    r = cached(f"forecast_{office}.json", FORECAST_URL.format(office), lambda t: parse_forecast(t, area_code, hint))
     if not r:
         return None
     try:
-        data = parse_forecast(r[0], area_code)
+        data = parse_forecast(r[0], area_code, hint)
         data["stale"] = r[1]
         return data
     except Exception:
@@ -287,38 +290,100 @@ def _place(office, area, city_name, area_name, with_series):
     }
 
 
+# ---------------------------------------------------------------- 地方ごとの一覧（地図のように、府県の天気をまとめて表示）
+
+def _regions_file():
+    import sys
+    from pathlib import Path
+    base = getattr(sys, "_MEIPASS", None)
+    root = Path(base) if base else Path(__file__).resolve().parent
+    return root / "web" / "weather_regions.json"
+
+
+_REGIONS = None
+
+
+def regions():
+    """[{id, name, tiles:[{label, office, hint, x, y}]}]"""
+    global _REGIONS
+    if _REGIONS is None:
+        try:
+            _REGIONS = json.loads(_regions_file().read_text(encoding="utf-8"))["regions"]
+        except Exception:
+            _REGIONS = []
+    return _REGIONS
+
+
+def clean_regions(items):
+    """管理画面から受け取った地方の ID の一覧を検証して整える。正しくなければ ValueError"""
+    if not isinstance(items, list):
+        raise ValueError("地方の指定が正しくありません")
+    known = [r["id"] for r in regions()]
+    out = []
+    for i in items:
+        if i not in known:
+            raise ValueError("地方の指定が正しくありません")
+        if i not in out:
+            out.append(i)
+    return [i for i in known if i in out]  # 表の順に並べる
+
+
+def _prefetch(tiles):
+    """府県ごとの予報を、並行して取得する（通信できないときに、待ち時間が重ならないように）"""
+    from concurrent.futures import ThreadPoolExecutor
+    keys = sorted({(t["office"], t.get("hint") or None) for t in tiles}, key=str)
+
+    def one(k):
+        try:
+            return k, get_forecast(k[0], None, k[1])
+        except Exception:
+            return k, None
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        return dict(ex.map(one, keys))
+
+
+def region_page(region, day, forecasts=None):
+    """1 つの地方の、day 日目（0=今日・1=明日）の一覧。取得できた府県がなければ None"""
+    tiles, report, stale, date = [], None, False, None
+    forecasts = forecasts if forecasts is not None else _prefetch(region["tiles"])
+    for t in region["tiles"]:
+        d = forecasts.get((t["office"], t.get("hint") or None))
+        if not d or day >= len(d["days"]):
+            tiles.append({"label": t["label"], "x": t["x"], "y": t["y"], "icon": None})
+            continue
+        f = d["days"][day]
+        pops = [int(p) for p in (f.get("pops6h") or []) if p and str(p).isdigit()]
+        tiles.append({"label": t["label"], "x": t["x"], "y": t["y"], "icon": f["icon"], "text": f.get("text"),
+                      "max": f.get("max"), "min": f.get("min"), "pop": max(pops) if pops else None})
+        report = report or d["reportTime"]
+        stale = stale or d["stale"]
+        date = f["date"]
+    if not report:
+        return None
+    return {"id": region["id"], "name": region["name"], "day": day, "date": date, "tiles": tiles, "reportTime": report, "stale": stale}
+
+
 def pages(store):
-    """再生画面に渡す天気予報の一式（設定の地域 + 追加した地域）"""
+    """再生画面に渡す天気予報の一式（設定の地域 + 選んだ地方の一覧）"""
     with_series = bool(store.get("weatherTimeSeries"))
     main = None
     office = store.get("weatherOffice")
     if office:
         main = _place(office, store.get("weatherArea"), store.get("weatherCityName"), store.get("weatherAreaName"), with_series)
-    extra = []
-    for p in (store.get("weatherExtra") or [])[:MAX_EXTRA]:
-        try:
-            r = _place(p["office"], p.get("area") or None, p.get("cityName"), p.get("areaName"), with_series)
-        except Exception:
-            r = None
-        if r:
-            extra.append(r)
-    if not main and not extra:
+    pick = [r for r in regions() if r["id"] in (store.get("weatherRegions") or [])]
+    days = {0: [0], 1: [1], 2: [0, 1]}.get(store.get("weatherRegionDay"), [1])
+    region_pages = []
+    forecasts = _prefetch([t for r in pick for t in r["tiles"]]) if pick else {}
+    for r in pick:
+        for d in days:
+            try:
+                p = region_page(r, d, forecasts)
+            except Exception:
+                p = None
+            if p:
+                region_pages.append(p)
+    if not main and not region_pages:
         return None
     result = dict(main) if main else {"daily": None, "series": None, "cityName": None, "areaName": None}
-    result["extra"] = extra
+    result["regions"] = region_pages
     return result
-
-
-def clean_extra(items):
-    """管理画面から受け取った追加の地域を検証して整える。正しくなければ ValueError"""
-    if not isinstance(items, list):
-        raise ValueError("追加する地域が正しくありません")
-    out = []
-    for o in items[:MAX_EXTRA]:
-        if not isinstance(o, dict):
-            raise ValueError("追加する地域が正しくありません")
-        office, area = str(o.get("office") or ""), str(o.get("area") or "")
-        if not re.fullmatch(r"\d{1,10}", office) or (area and not re.fullmatch(r"\d{1,10}", area)):
-            raise ValueError("追加する地域が正しくありません")
-        out.append({"office": office, "area": area, "areaName": str(o.get("areaName") or "")[:40], "cityName": str(o.get("cityName") or "")[:40]})
-    return out

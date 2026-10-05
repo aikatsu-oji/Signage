@@ -69,7 +69,8 @@ class MediaZone(
     private val messageView: TextView = view.findViewById(R.id.message)
     private val weatherView = WeatherView(activity).apply { visibility = View.INVISIBLE }
     private val timeSeriesView = TimeSeriesView(activity).apply { visibility = View.INVISIBLE }
-    private val layers: List<View> = listOf(playerView, imageA.root, imageB.root, weatherView, timeSeriesView)
+    private val regionView = RegionView(activity).apply { visibility = View.INVISIBLE }
+    private val layers: List<View> = listOf(playerView, imageA.root, imageB.root, weatherView, timeSeriesView, regionView)
     // 端末の動画デコーダーが使えないときは、別のデコーダーに切り替えて再生する
     /**
      * 複数の区画で動画を同時に再生すると、端末のハードウェアデコーダーが足りなくなって止まることがある。
@@ -122,6 +123,7 @@ class MediaZone(
     init {
         view.addView(weatherView, 1, FrameLayout.LayoutParams(-1, -1))
         view.addView(timeSeriesView, 1, FrameLayout.LayoutParams(-1, -1))
+        view.addView(regionView, 1, FrameLayout.LayoutParams(-1, -1))
         playerView.player = player
         // 区画の大きさが変わったら（向きが変わったときなど）、回転の大きさを合わせ直す
         view.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or2, ob ->
@@ -375,7 +377,7 @@ class MediaZone(
     }
 
     private fun isWeatherDue(): Boolean {
-        if (!isMain || (prefs.weatherOffice == null && prefs.weatherExtra.isEmpty())) return false
+        if (!isMain || (prefs.weatherOffice == null && prefs.weatherRegions.isEmpty())) return false
         if (forceWeather) return true
         return prefs.weatherEnabled &&
             System.currentTimeMillis() - lastWeatherAt >= prefs.weatherIntervalMin * 60_000L
@@ -411,6 +413,7 @@ class MediaZone(
         reveal(when (page) {
             is WeatherPage.Daily -> weatherView.also { it.bind(page.data, page.cityName) }
             is WeatherPage.Series -> timeSeriesView.also { it.bind(page.data, page.cityName, page.areaName) }
+            is WeatherPage.Region -> regionView.also { it.bind(page.data) }
         })
         onChanged()
         startImageTimer(prefs.weatherSeconds * 1000L, my)

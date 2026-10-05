@@ -24,6 +24,16 @@
     background: linear-gradient(#1565c0, #0d2a5c); display: flex; flex-direction: column;
     padding: calc(var(--u) * 1.2); box-sizing: border-box; font-size: var(--u); text-shadow: 0 .05em .15em #0006; }
   .panel.show { opacity: 1; }
+  /* 地方ごとの一覧（地図のように、府県のタイルを並べる） */
+  .panel .map { position: relative; flex: 1; min-height: 0; margin: .4em 0; }
+  .panel .tile { position: absolute; transform: translate(-50%, -50%); border-radius: .8em; padding: .35em .7em; text-align: center;
+    color: #fff; background: #78909c; box-shadow: 0 .15em .5em #0005; min-width: 5.2em; }
+  .panel .tile.sun { background: #f57c00; } .panel .tile.cloud { background: #78909c; }
+  .panel .tile.rain { background: #1565c0; border: .1em solid #ffffff88; } .panel .tile.snow { background: #4fa3d9; }
+  .panel .tile .tn { font-size: 1.15em; font-weight: bold; white-space: nowrap; }
+  .panel .tile .icon { line-height: 1.1; }
+  .panel .tile .tt { font-size: .95em; white-space: nowrap; }
+  .panel .tile .tp { font-size: .8em; opacity: .85; }
   .panel .t22 { font-size: 2.2em; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .panel .head { display: flex; align-items: flex-end; gap: 1em; }
   .panel .head .t22 { flex: 1; min-width: 0; }
@@ -220,6 +230,29 @@
     panel.append(el('div', 'foot', '出典：気象庁ホームページ（https://www.jma.go.jp/bosai/forecast/）のデータを加工して表示'));
   }
 
+  /** 地方ごとの一覧（地図のように、府県の天気をタイルで並べる） */
+  function renderRegion(panel, d) {
+    panel.replaceChildren();
+    const { compact } = sizePanel(panel);
+    header(panel, `${d.name}の天気（${d.day === 0 ? 'きょう' : 'あした'}）`, d.reportTime, d.stale, `${dateLabel(d.date)}の予報`);
+    const map = el('div', 'map');
+    const cls = (ic) => !ic ? '' : ic[0] === '☀️' || ic[0] === '🌙' ? 'sun' : ic[0] === '☔' ? 'rain' : ic[0] === '⛄' ? 'snow' : 'cloud';
+    for (const t of d.tiles) {
+      const c = el('div', 'tile ' + cls(t.icon));
+      c.style.left = t.x + '%'; c.style.top = t.y + '%';
+      c.append(el('div', 'tn', t.label));
+      if (t.icon) {
+        c.append(iconEl(t.icon, compact ? 1.7 : 2.3));
+        c.append(el('div', 'tt', `${t.max ? t.max + '℃' : '--'} / ${t.min ? t.min + '℃' : '--'}`));
+        if (t.pop != null) c.append(el('div', 'tp', `☂ ${t.pop}%`));
+      } else {
+        c.append(el('div', 'tt', '--'));
+      }
+      map.append(c);
+    }
+    panel.append(map, el('div', 'foot', '出典：気象庁ホームページ（https://www.jma.go.jp/bosai/forecast/）のデータを加工して表示'));
+  }
+
   function renderSeries(panel, d, city, area) {
     panel.replaceChildren();
     const { landscape, compact } = sizePanel(panel);
@@ -312,10 +345,10 @@
       this.imgA = imageLayer(); this.imgB = imageLayer();
       this.video = el('video', 'layer');
       this.video.playsInline = true;
-      this.daily = el('div', 'panel'); this.series = el('div', 'panel');
+      this.daily = el('div', 'panel'); this.series = el('div', 'panel'); this.region = el('div', 'panel');
       this.msg = el('div', 'msg'); this.msg.hidden = true;
-      this.root.append(this.video, this.imgA, this.imgB, this.daily, this.series, this.msg);
-      this.layers = [this.video, this.imgA, this.imgB, this.daily, this.series];
+      this.root.append(this.video, this.imgA, this.imgB, this.daily, this.series, this.region, this.msg);
+      this.layers = [this.video, this.imgA, this.imgB, this.daily, this.series, this.region];
       this.playlist = []; this.index_ = -1; this.token = 0;
       this.showing = null; this.paused = false;
       this.lastWeatherAt = Date.now(); this.showingWeather = false; this.weatherPages = [];
@@ -345,7 +378,7 @@
       for (const l of this.layers) l.classList.toggle('show', l === target);
       if (target !== this.video) { this.video.pause(); }
       this.showing = target;
-      if (this.isMain) onPanelShown(target === this.daily || target === this.series);
+      if (this.isMain) onPanelShown(target === this.daily || target === this.series || target === this.region);
     }
 
     clearTimers() { clearTimeout(this.timer); clearTimeout(this.watchdog); this.timer = null; }
@@ -357,7 +390,7 @@
     }
 
     weatherDue() {
-      if (!this.isMain || !cfg.weatherOffice) return false;
+      if (!this.isMain || (!cfg.weatherOffice && !(cfg.weatherRegions || []).length)) return false;
       if (forceWeather) return true;
       return cfg.weatherEnabled && Date.now() - this.lastWeatherAt >= cfg.weatherIntervalMin * 60000;
     }
@@ -505,11 +538,13 @@
       if (p?.daily) out.push({ kind: 'daily', d: p.daily, city: p.cityName, area: p.areaName });
       if (p?.series) out.push({ kind: 'series', d: p.series, city: p.cityName, area: p.areaName });
     }
+    for (const r of data?.regions || []) out.push({ kind: 'region', d: r });
     return out;
   }
   /** 画面の 1 ページ分を、区画の部品に描いて、その要素を返す */
   function bindWeatherPage(zone, page) {
     if (page.kind === 'daily') { renderDaily(zone.daily, page.d, page.city); return zone.daily; }
+    if (page.kind === 'region') { renderRegion(zone.region, page.d); return zone.region; }
     renderSeries(zone.series, page.d, page.city, page.area); return zone.series;
   }
 
@@ -519,9 +554,9 @@
     constructor() {
       this.root = el('div', 'zone');
       this.root.style.background = '#0d2a5c';
-      this.daily = el('div', 'panel'); this.series = el('div', 'panel');
+      this.daily = el('div', 'panel'); this.series = el('div', 'panel'); this.region = el('div', 'panel');
       this.msg = el('div', 'msg'); this.msg.hidden = true;
-      this.root.append(this.daily, this.series, this.msg);
+      this.root.append(this.daily, this.series, this.region, this.msg);
       this.token = 0;
     }
 
@@ -548,7 +583,7 @@
     show(i, my) {
       this.cur = i;
       const shown = bindWeatherPage(this, this.pages[i]);
-      [this.daily, this.series].forEach((p) => p.classList.toggle('show', p === shown));
+      [this.daily, this.series, this.region].forEach((p) => p.classList.toggle('show', p === shown));
       setTimeout(() => {
         if (my !== this.token) return;
         if (i + 1 < this.pages.length) this.show(i + 1, my); else this.reload(my);
