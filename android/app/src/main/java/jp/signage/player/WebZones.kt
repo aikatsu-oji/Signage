@@ -184,10 +184,25 @@ class RssZone(private val activity: Activity, private val prefs: Prefs, private 
     /** 見出しを取り出す（RSS 2.0 / RDF の item、Atom の entry の title） */
     private fun fetch(url: String): List<String> {
         require(ZoneUrl.check(url).isEmpty())
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 10_000
-            readTimeout = 10_000
-            setRequestProperty("User-Agent", "SignagePlayer/1.0")
+        // 転送（リダイレクト）は自分で追い、行き先ごとに、端末自身・リンクローカルでないかを確かめる
+        var target = url
+        var conn: HttpURLConnection
+        var hops = 0
+        while (true) {
+            requirePublicHost(target)
+            conn = (URL(target).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 10_000
+                readTimeout = 10_000
+                instanceFollowRedirects = false
+                setRequestProperty("User-Agent", "SignagePlayer/1.0")
+            }
+            val code = conn.responseCode
+            if (code !in 300..399) break
+            val next = conn.getHeaderField("Location")
+            conn.disconnect()
+            if (next == null || ++hops > 5) throw java.io.IOException("too many redirects")
+            target = URL(URL(target), next).toString()
+            require(ZoneUrl.check(target).isEmpty())
         }
         try {
             val bytes = conn.inputStream.use { it.readNBytesLimited(1_000_000) }
@@ -209,6 +224,14 @@ class RssZone(private val activity: Activity, private val prefs: Prefs, private 
             return out.take(30)
         } finally {
             conn.disconnect()
+        }
+    }
+
+    /** この端末自身（127.x・::1）、リンクローカル（169.254.x.x など）、未指定アドレスへは取りに行かない */
+    private fun requirePublicHost(url: String) {
+        val host = URL(url).host
+        for (a in java.net.InetAddress.getAllByName(host)) {
+            require(!(a.isLoopbackAddress || a.isLinkLocalAddress || a.isAnyLocalAddress || a.isMulticastAddress)) { "この端末自身の URL は指定できません" }
         }
     }
 

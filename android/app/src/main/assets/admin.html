@@ -96,6 +96,7 @@
   .lp .div:focus-visible { box-shadow: 0 0 0 3px #fff; }
   .lp .div span { background: #1a73e8; color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 10px; white-space: nowrap; pointer-events: none; }
   .orientRow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 0 16px 10px; }
+  .orientRow[hidden] { display: none; } /* display:flex が hidden を打ち消すのを避ける（テレビ以外では出さない） */
   .orientRow .ol { font-size: 13px; font-weight: bold; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
   .seg button { border: 0; border-radius: 0; padding: 5px 12px; font-size: 13px; background: var(--card); color: var(--text); cursor: pointer; }
@@ -2342,7 +2343,7 @@
     wxCities = !o ? [] : o.cities.length
       ? o.cities.map((c) => ({ code: c.code, name: c.name, areaCode: c.areaCode, areaName: c.areaName, label: `${c.name}　— ${c.areaName}` }))
       : o.areas.map(([code, name]) => ({ code: null, name: null, areaCode: code, areaName: name, label: name }));
-    $('#wxCity').innerHTML = wxCities.map((c, i) => `<option value="${i}">${c.label}</option>`).join('');
+    $('#wxCity').innerHTML = wxCities.map((c, i) => `<option value="${i}">${esc(c.label)}</option>`).join('');
     let i = wxCities.findIndex((c) => c.code && c.code === keepCity);
     if (i < 0) i = wxCities.findIndex((c) => c.areaCode === keepArea);
     $('#wxCity').selectedIndex = Math.max(0, i);
@@ -2357,7 +2358,7 @@
       $('#wxCity').innerHTML = '';
       return;
     }
-    $('#wxOffice').innerHTML = list.map((o) => `<option value="${o.code}">${o.name}</option>`).join('');
+    $('#wxOffice').innerHTML = list.map((o) => `<option value="${esc(o.code)}">${esc(o.name)}</option>`).join('');
     $('#wxOffice').value = st.weatherOffice || '130000';
     if ($('#wxOffice').selectedIndex < 0) $('#wxOffice').selectedIndex = 0;
     fillWxCities(st.weatherCity, st.weatherArea);

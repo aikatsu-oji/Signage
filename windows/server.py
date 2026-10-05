@@ -15,6 +15,7 @@ import mimetypes
 import os
 import queue
 import random
+import secrets
 import re
 import shutil
 import socket
@@ -40,7 +41,7 @@ mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
 LOCAL_PORT = 18080  # HTTPS のとき、この PC 自身が使う HTTP のポート
-VERSION = "1.8.22"
+VERSION = "1.8.24"
 
 
 def resource_dir() -> Path:
@@ -69,6 +70,13 @@ def is_local(addr: str) -> bool:
         ip = ip.ipv4_mapped
     return ip.is_loopback
 
+
+# この PC の設定画面（X-Local-Token が必要）だけが使う API。再生画面が使うもの（config・playlist など）は含めない
+LOCAL_PROTECTED = {"GET /local/settings", "POST /local/settings", "POST /local/access-reset",
+                   "POST /local/pick-folder", "POST /local/open-folder"}
+
+MAX_UPLOAD_BYTES = 4 * 1024 ** 3     # 1 ファイルの上限
+DISK_RESERVE_BYTES = 200 * 1024 ** 2   # 空き容量を、これだけは残す
 
 IPV4 = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 
@@ -117,6 +125,10 @@ class _HTTPServer(ThreadingHTTPServer):
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
         super().server_bind()
 
+    def verify_request(self, request, client_address):
+        """LAN の外からの接続は、何も読まずに切る（接続を占有されないように）"""
+        return is_lan(client_address[0])
+
     def handle_error(self, request, client_address):
         """接続のやり取りの失敗（証明書の警告で切られた、など）は、画面に出さず無視する"""
         pass
@@ -133,11 +145,20 @@ class Server:
         self.store = store
         self.port = 0
         self.httpd = None
-        self.failures = 0
-        self.locked_until = 0
+        # PIN・グループコードの失敗は、接続元の IP ごとに数える（{ip: [失敗回数, 連続ロック回数, ロック解除の時刻, 最後の時刻]}）
+        self.strikes = {}
         self.peers = None  # Peers（端末の検出）
         self.event_queues = []
         self.started = time.time()
+        # この PC の設定画面だけが使う合言葉（起動のたびに作り直す）。127.0.0.1 から来る別のプロセス・
+        # 逆プロキシ経由の接続が、PIN なしで設定（PIN の表示・変更）を操作できないようにする
+        self.local_token = secrets.token_urlsafe(24)
+        try:
+            tf = st.APP_DIR / "local.token"
+            st.APP_DIR.mkdir(parents=True, exist_ok=True)
+            tf.write_text(self.local_token, encoding="utf-8")
+        except OSError:
+            pass
         self.local_port = 0       # この PC 自身が使う HTTP のポート（HTTPS のときは、LAN 向けとは別。HTTPS でないときは port と同じ）
         self.local_httpd = None
         self.player_status = None  # 再生画面が定期的に知らせる、いま再生中の内容
@@ -376,6 +397,13 @@ class Server:
 
         class Handler(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
+            timeout = 30  # 1 バイトずつ細々と送って接続を占有する攻撃（slowloris）を避ける
+
+            def content_length(self):
+                n = int(self.headers.get("Content-Length") or 0)
+                if n < 0:
+                    raise HttpError(400, "不正なリクエスト")
+                return n
 
             def log_message(self, fmt, *args):
                 pass
@@ -428,7 +456,7 @@ class Server:
 
             def body_json(self):
                 self.body_read = True
-                n = int(self.headers.get("Content-Length") or 0)
+                n = self.content_length()
                 if n > 64 * 1024:
                     raise HttpError(413, "データが大きすぎます")
                 raw = self.rfile.read(n) if n else b""
@@ -455,7 +483,7 @@ class Server:
                 if self.body_read or self.close_connection:
                     return
                 try:
-                    n = int(self.headers.get("Content-Length") or 0)
+                    n = self.content_length()
                     if n > 1 << 20:
                         self.close_connection = True
                     elif n > 0:
@@ -525,20 +553,29 @@ class Server:
             def check_pin(self, pin, group_code=None):
                 """グループコード（設定している端末だけ）と PIN を確かめる。どちらを間違えても、失敗の回数に数える"""
                 now = time.time()
+                key = self.client_address[0]
                 with server.store.lock:
-                    if now < server.locked_until:
+                    # 長く来ていない接続元の記録は捨てる（記録が増え続けないように）
+                    if len(server.strikes) > 256:
+                        for k in [k for k, v in server.strikes.items() if now - v[3] > 86400]:
+                            del server.strikes[k]
+                    st_ = server.strikes.setdefault(key, [0, 0, 0.0, now])
+                    st_[3] = now
+                    if now < st_[2]:
                         raise HttpError(429, "PIN またはグループコードを続けて間違えたため、しばらく操作できません")
                     expected_group = server.store.get("groupCode") or ""
                     group_ok = (not expected_group) or bool(group_code and hmac.compare_digest(group_code.encode(), expected_group.encode()))
                     expected = server.store.get("adminPin")
                     pin_ok = bool(pin and hmac.compare_digest(pin.encode(), expected.encode()))
                     if group_ok and pin_ok:
-                        server.failures = 0
+                        server.strikes.pop(key, None)
                         return
-                    server.failures += 1
-                    if server.failures >= 5:
-                        server.failures = 0
-                        server.locked_until = now + 60
+                    st_[0] += 1
+                    if st_[0] >= 5:
+                        # 5 回間違えるたびに、待ち時間を 1 分 → 5 分 → 25 分 → 1 時間 と延ばす
+                        st_[0] = 0
+                        st_[2] = now + min(60 * 5 ** st_[1], 3600)
+                        st_[1] += 1
                 # グループコードを先に判定する（コードを知らない相手に、PIN が合っているかを教えない）
                 raise HttpError(401, "PIN が違います" if group_ok else "グループコードが違います")
 
@@ -585,9 +622,19 @@ class Server:
                     if not name:
                         raise HttpError(400, "画像・動画のファイルのみアップロードできます")
                     self.body_read = True
-                    length = int(self.headers.get("Content-Length") or 0)
+                    length = self.content_length()
                     if length <= 0:
                         raise HttpError(400, "ファイルが空です")
+                    if length > MAX_UPLOAD_BYTES:
+                        self.close_connection = True
+                        raise HttpError(413, "ファイルが大きすぎます（4GB まで）")
+                    try:
+                        free = shutil.disk_usage(folder).free
+                    except OSError:
+                        free = None
+                    if free is not None and length > free - DISK_RESERVE_BYTES:
+                        self.close_connection = True
+                        raise HttpError(413, "空き容量が足りません")
                     final = s.unique_name(folder, name)
                     tmp = folder / f".upload-{time.time_ns()}{os.path.splitext(final)[1]}"
                     try:
@@ -646,7 +693,7 @@ class Server:
                 elif key == "POST /api/voice":
                     # 管理画面のマイクの声（16kHz・モノラル・16bit PCM、0.2秒ぶんほど）。再生画面（Edge）へすぐ流す
                     self.body_read = True
-                    n = int(self.headers.get("Content-Length") or 0)
+                    n = self.content_length()
                     if n > 64 * 1024:
                         raise HttpError(413, "データが大きすぎます")
                     pcm = self.rfile.read(n) if n else b""
@@ -721,6 +768,9 @@ class Server:
                         raise HttpError(404, "見つかりません")
                     return self.send_file(target)
                 key = f"{method} {path}"
+                if key in LOCAL_PROTECTED and not hmac.compare_digest(
+                        (self.headers.get("X-Local-Token") or "").encode(), server.local_token.encode()):
+                    raise HttpError(403, "設定画面を、タスクトレイの「設定を開く」から開き直してください")
                 if key == "GET /local/config":
                     cfg = server.state()["settings"]
                     cfg.update({
@@ -861,6 +911,9 @@ class Server:
                 self.send_header("Content-Length", str(length))
                 self.send_header("Accept-Ranges", "bytes")
                 self.send_header("Cache-Control", "no-cache")
+                # SVG を直接開いても、中のスクリプトが管理画面と同じ場所で動かないようにする
+                self.send_header("Content-Security-Policy", "sandbox")
+                self.send_header("X-Content-Type-Options", "nosniff")
                 for k, v in self.cors().items():
                     self.send_header(k, v)
                 self.end_headers()

@@ -1,13 +1,19 @@
 # GitHub の Releases に、APK・exe を添付して公開する。次のどれかで始まる：
 #  ・タグ（v1.9.1 など）を push する
 #  ・Actions タブから「Run workflow」で、版（tag）と、APK・exe が入っているコミットを指定する
-#  ・.github/release-request.txt（1 行目：タグ、2 行目：APK・exe が入っているコミットの SHA）を push する
+#  ・main に、.github/release-request.txt（1 行目：タグ、2 行目：APK・exe が入っているコミットの SHA、
+#    3 行目：そのコミットの release/SHA256SUMS の SHA-256）を入れる（PR のレビューを通る）
+#
+# 安全のための決まり：
+#  ・公開できるのは「main に取り込み済みのコミット」のファイルだけ（どのブランチからでも公開される、を防ぐ）
+#  ・入力（タグ名など）はシェルに直接埋め込まず、環境変数で渡す
+#  ・チェックサムは、main に入った release-request.txt の値と照合する（ファイルと同じコミットの値だけでは、改ざんを見抜けない）
 name: Release
 
 on:
   push:
     tags: ['v*']
-    branches: ['**']
+    branches: ['main']
     paths: ['.github/release-request.txt']
   workflow_dispatch:
     inputs:
@@ -17,6 +23,9 @@ on:
       binaries_ref:
         description: 'APK・exe が入っているコミット（省略すると、実行したコミット）'
         required: false
+      sums_sha256:
+        description: 'そのコミットの release/SHA256SUMS の SHA-256（sha256sum release/SHA256SUMS）'
+        required: true
 
 permissions:
   contents: write
@@ -26,33 +35,66 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: 公開する版と、ファイルの場所を決める
         id: target
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          IN_TAG: ${{ inputs.tag }}
+          IN_REF: ${{ inputs.binaries_ref }}
+          IN_SUMS: ${{ inputs.sums_sha256 }}
+          SHA: ${{ github.sha }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ inputs.tag }}"; REF="${{ inputs.binaries_ref }}"
-          elif [ "${{ github.ref_type }}" = "tag" ]; then
-            TAG="${{ github.ref_name }}"; REF=""
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            TAG="$IN_TAG"; REF="$IN_REF"; SUMS="$IN_SUMS"
+            # 手動実行は main からだけ
+            [ "$REF_NAME" = "main" ] || { echo "main から実行してください"; exit 1; }
+          elif [ "$REF_TYPE" = "tag" ]; then
+            TAG="$REF_NAME"; REF=""
+            SUMS="$(sed -n 3p .github/release-request.txt | tr -d '\r ')"
           else
             TAG="$(sed -n 1p .github/release-request.txt | tr -d '\r ')"
             REF="$(sed -n 2p .github/release-request.txt | tr -d '\r ')"
+            SUMS="$(sed -n 3p .github/release-request.txt | tr -d '\r ')"
+          fi
+          REF="${REF:-$SHA}"
+          # 形式を確かめる（シェルや後の手順に、想定外の文字を渡さない）
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "タグの形式が違います: $TAG"; exit 1; }
+          [[ "$REF" =~ ^[0-9a-f]{40}$ ]] || { echo "コミットの SHA（40 桁）で指定してください"; exit 1; }
+          [[ "$SUMS" =~ ^[0-9a-f]{64}$ ]] || { echo "SHA256SUMS の SHA-256 が必要です"; exit 1; }
+          # main に取り込み済みのコミットだけ公開できる
+          git merge-base --is-ancestor "$REF" origin/main || { echo "$REF は main に取り込まれていません"; exit 1; }
+          if [ "$REF_TYPE" = "tag" ]; then
+            git merge-base --is-ancestor "$SHA" origin/main || { echo "タグのコミットが main に取り込まれていません"; exit 1; }
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "ref=${REF:-${{ github.sha }}}" >> "$GITHUB_OUTPUT"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "sums=$SUMS" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
         with:
           ref: ${{ steps.target.outputs.ref }}
 
       - name: チェックサムを確認する
-        run: cd release && sha256sum -c SHA256SUMS
+        env:
+          SUMS: ${{ steps.target.outputs.sums }}
+        run: |
+          set -euo pipefail
+          cd release
+          # SHA256SUMS 自体が、main に入っている値と同じか（ファイルとチェックサムを一緒にすり替えられていないか）
+          echo "$SUMS  SHA256SUMS" | sha256sum -c -
+          sha256sum -c SHA256SUMS
 
       - name: Releases に添付して公開する
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.target.outputs.tag }}
-          target_commitish: ${{ github.sha }}
+          target_commitish: ${{ steps.target.outputs.ref }}
           name: ${{ steps.target.outputs.tag }}
           body_path: release/README.md
           files: |

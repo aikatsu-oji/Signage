@@ -3,6 +3,7 @@
 Android 版と同じ「_signage._tcp」で自分を登録し、ほかの端末（Android・Windows）を探す。
 """
 
+import hmac
 import json
 import socket
 import threading
@@ -36,16 +37,22 @@ class Peers:
 
     # ---- UDP ブロードキャスト ----
 
-    def _beacon_message(self):
+    def _beacon_message(self, ip):
         s = self.store
-        return json.dumps({"app": "signage", "id": s.device_id, "name": s.device_name, "port": self.port,
-                           "ver": self.version, "grp": group.ident(s.get("groupCode") or "")}, ensure_ascii=False).encode("utf-8")
+        code = s.get("groupCode") or ""
+        m = {"app": "signage", "id": s.device_id, "name": s.device_name, "port": self.port,
+             "ver": self.version, "grp": group.ident(code)}
+        if code:
+            # 送り元の IP とコードで作った署名を付ける（受け取る側が、なりすましを見抜く）
+            m["ip"] = ip
+            m["sig"] = group.sign(code, s.device_id, self.port, ip)
+        return json.dumps(m, ensure_ascii=False).encode("utf-8")
 
     def _beacon_tx(self, stop):
         while not stop.is_set():
             try:
-                msg = self._beacon_message()
                 for a in self.addresses():
+                    msg = self._beacon_message(a)
                     targets = ["255.255.255.255", ".".join(a.split(".")[:3] + ["255"])]
                     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                     try:
@@ -89,8 +96,20 @@ class Peers:
             return
         name = str(j.get("name") or ip)[:60]
         grp = str(j.get("grp") or "")
-        own = group.ident(self.store.get("groupCode") or "")
+        code = self.store.get("groupCode") or ""
+        own = group.ident(code)
         with self.lock:
+            if grp == own and own:
+                # グループがあるときは、同じコードで署名された知らせだけを信じる。
+                # 信じると、偽の端末に PIN とグループコードを送ってしまう
+                sig = str(j.get("sig") or "")
+                ok = str(j.get("ip") or "") == ip and hmac.compare_digest(sig.encode(), group.sign(code, pid, port, ip).encode())
+                if not ok:
+                    if pid not in self.peers:
+                        self.hidden[pid] = {"name": name, "reason": "古い版、または、署名が合わない知らせ"}
+                    return
+            if len(self.peers) >= 500 and pid not in self.peers:
+                return
             if grp != own:
                 reason = ("グループ未設定、または、古い版" if not grp else "別のグループ") if own else "グループを設定している端末（この端末は未設定）"
                 self.hidden[pid] = {"name": name, "reason": reason}
@@ -196,6 +215,10 @@ class Peers:
             return
         # 別のグループ（組織）の端末は、一覧に出さない
         own = group.ident(self.store.get("groupCode") or "")
+        # mDNS の登録は署名できず、同じ LAN の誰でも「同じグループ」を名乗れる。
+        # グループがあるときは、署名つきの UDP の知らせだけで端末を見つける
+        if own and props.get("grp", "") == own:
+            return
         if props.get("grp", "") != own:
             # 一覧には出さないが、なぜ見えないかを、管理画面で案内できるように、覚えておく
             reason = ("グループ未設定、または、古い版" if not props.get("grp") else "別のグループ") if own else "グループを設定している端末（この端末は未設定）"

@@ -1,4 +1,5 @@
 """RSS 2.0 / Atom の見出しの取得（Web ページ・RSS の区画用）。再生画面からは、この PC を経由して取得する（ブラウザの制限を避けるため）。"""
+import http.client
 import ipaddress
 import re
 import socket
@@ -20,16 +21,65 @@ def check_url(url: str) -> str:
     return ""
 
 
+def _blocked(ip) -> bool:
+    return ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip.is_multicast or ip.is_reserved
+
+
 def _is_internal(host: str) -> bool:
     """この PC 自身や、リンクローカル（169.254.x.x など）のアドレスか。取得先にはしない"""
     try:
         for info in socket.getaddrinfo(host, None):
-            ip = ipaddress.ip_address(info[4][0].split("%")[0])
-            if ip.is_loopback or ip.is_link_local or ip.is_unspecified:
+            if _blocked(ipaddress.ip_address(info[4][0].split("%")[0])):
                 return True
     except OSError:
         return False
     return False
+
+
+def _safe_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None):
+    """接続する瞬間に、名前解決の結果を確かめる（確認のあとで別のアドレスに変わる DNS リバインディングを避ける）"""
+    host, port = address
+    err = OSError("取得先に接続できません")
+    for fam, kind, proto, _, sa in socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM):
+        if _blocked(ipaddress.ip_address(sa[0].split("%")[0])):
+            err = OSError("この PC 自身の URL は指定できません")
+            continue
+        sock = socket.socket(fam, kind, proto)
+        try:
+            if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+                sock.settimeout(timeout)
+            sock.connect(sa)
+            return sock
+        except OSError as e:
+            sock.close()
+            err = e
+    raise err
+
+
+class _HTTP(http.client.HTTPConnection):
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self._create_connection = _safe_connection
+
+
+class _HTTPS(http.client.HTTPSConnection):
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self._create_connection = _safe_connection
+
+
+class _HTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_HTTP, req)
+
+
+class _HTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_HTTPS, req)
+
+
+# 転送（リダイレクト）の先も、同じ接続の関数を通るので、内部のアドレスへは行けない
+_OPENER = urllib.request.build_opener(_HTTPHandler, _HTTPSHandler)
 
 
 def _text(el):
@@ -73,7 +123,7 @@ def fetch(url: str):
         raise ValueError("この PC 自身の URL は指定できません")
     req = urllib.request.Request(url, headers={"User-Agent": "SignagePlayer/1.0", "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*"})
     try:
-        with urllib.request.urlopen(req, timeout=10) as r:
+        with _OPENER.open(req, timeout=10) as r:
             data = r.read(MAX_BYTES + 1)
     except Exception as e:
         raise ValueError(f"取得できません（{e.__class__.__name__}）") from e

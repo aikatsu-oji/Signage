@@ -23,6 +23,7 @@ object Peers {
     const val BEACON_PORT = 48080
     private const val BEACON_INTERVAL_MS = 5_000L
     private const val BEACON_EXPIRE_MS = 20_000L
+    private const val MAX_PEERS = 500
 
     data class Peer(
         val id: String,
@@ -53,6 +54,7 @@ object Peers {
     private var selfId = ""
     /** この端末のグループの識別子（空ならグループなし）。同じ識別子の端末だけを一覧に出す */
     private var selfGroup = ""
+    private var selfCode = ""
 
     // 古い Android では解決を同時に1件しかできないので順番に行う
     private val resolveQueue = ArrayDeque<NsdServiceInfo>()
@@ -73,6 +75,7 @@ object Peers {
         val prefs = Prefs(app)
         selfId = prefs.deviceId
         selfGroup = GroupCode.ident(prefs.groupCode)
+        selfCode = prefs.groupCode
         startBeacon(app, port, prefs)
         val manager = app.getSystemService(NsdManager::class.java) ?: return
         nsd = manager
@@ -189,10 +192,23 @@ object Peers {
             while (beaconSocket === sock && !sock.isClosed) {
                 runCatching {
                     val p = Prefs(app)
-                    val msg = JSONObject().put("app", "signage").put("id", p.deviceId).put("name", p.deviceName)
-                        .put("port", port).put("ver", version).put("grp", GroupCode.ident(p.groupCode)).toString().toByteArray(Charsets.UTF_8)
-                    for (addr in broadcastAddresses()) {
-                        runCatching { sock.send(DatagramPacket(msg, msg.size, addr, BEACON_PORT)) }
+                    val code = p.groupCode
+                    fun message(ip: String?): ByteArray {
+                        val j = JSONObject().put("app", "signage").put("id", p.deviceId).put("name", p.deviceName)
+                            .put("port", port).put("ver", version).put("grp", GroupCode.ident(code))
+                        // グループがあるときは、送り元の IP とコードで作った署名を付ける（受け取る側が、なりすましを見抜く）
+                        if (code.isNotEmpty() && ip != null) j.put("ip", ip).put("sig", GroupCode.sign(code, p.deviceId, port, ip))
+                        return j.toString().toByteArray(Charsets.UTF_8)
+                    }
+                    // ネットワークごとに、そのネットワークでの自分の IP を載せて送る
+                    var sent = false
+                    for ((ip, bcast) in interfaceBroadcasts()) {
+                        val msg = message(ip)
+                        runCatching { sock.send(DatagramPacket(msg, msg.size, bcast, BEACON_PORT)); sent = true }
+                    }
+                    if (!sent && code.isEmpty()) {
+                        val msg = message(null)
+                        runCatching { sock.send(DatagramPacket(msg, msg.size, InetAddress.getByName("255.255.255.255"), BEACON_PORT)) }
                     }
                 }
                 try { Thread.sleep(BEACON_INTERVAL_MS) } catch (e: InterruptedException) { break }
@@ -207,16 +223,20 @@ object Peers {
         multicastLock = null
     }
 
-    private fun broadcastAddresses(): List<InetAddress> {
-        val list = linkedSetOf<InetAddress>()
-        runCatching { list.add(InetAddress.getByName("255.255.255.255")) }
+    /** 使っているネットワークごとの（この端末の IPv4 アドレス, ブロードキャストアドレス） */
+    private fun interfaceBroadcasts(): List<Pair<String, InetAddress>> {
+        val list = mutableListOf<Pair<String, InetAddress>>()
         runCatching {
             for (ni in NetworkInterface.getNetworkInterfaces()) {
                 if (!ni.isUp || ni.isLoopback) continue
-                for (ia in ni.interfaceAddresses) ia.broadcast?.let { list.add(it) }
+                for (ia in ni.interfaceAddresses) {
+                    val b = ia.broadcast ?: continue
+                    val ip = (ia.address as? Inet4Address)?.hostAddress ?: continue
+                    list.add(ip to b)
+                }
             }
         }
-        return list.toList()
+        return list
     }
 
     private fun recordBeacon(text: String, fromIp: String) {
@@ -235,6 +255,19 @@ object Peers {
             peers.remove(id)
             return
         }
+        // グループがあるときは、同じコードで署名された知らせだけを信じる。
+        // 署名の無い・合わない知らせを信じると、偽の端末に PIN とグループコードを送ってしまう
+        if (selfGroup.isNotEmpty()) {
+            val code = selfCode
+            val signedIp = j.optString("ip")
+            val ok = code.isNotEmpty() && signedIp == fromIp &&
+                java.security.MessageDigest.isEqual(j.optString("sig").toByteArray(), GroupCode.sign(code, id, port, signedIp).toByteArray())
+            if (!ok) {
+                if (!peers.containsKey(id)) hidden[id] = Hidden(name, "古い版、または、署名が合わない知らせ")
+                return
+            }
+        }
+        if (peers.size >= MAX_PEERS && !peers.containsKey(id)) return
         hidden.remove(id)
         peers[id] = Peer(id, name, fromIp, port, j.optString("ver").take(20), System.currentTimeMillis(), beacon = true)
     }
@@ -252,6 +285,9 @@ object Peers {
             hidden[id] = Hidden(attr("name").ifEmpty { info.serviceName }, reason)
             return
         }
+        // mDNS の登録は署名できず、同じ LAN の誰でも「同じグループ」を名乗れる。
+        // グループがあるときは、署名つきの UDP の知らせだけで端末を見つける
+        if (selfGroup.isNotEmpty()) return
         @Suppress("DEPRECATION")
         val host = info.host
         // 管理画面の URL に使うので IPv4 のみ（LAN のサイネージ端末は通常 IPv4 を持つ）

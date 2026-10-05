@@ -49,9 +49,11 @@ git add release
 git commit -q -m "リリース用ファイルを追加（Android ${AV} / Windows ${WV}）"
 SRC="$(git rev-parse HEAD)"
 git push -q origin "$BRANCH"
+SUMS="$(sha256sum release/SHA256SUMS | cut -d' ' -f1)"
 git rm -q release/*.apk release/*.exe release/SHA256SUMS
-printf '%s\n%s\n' "$TAG" "$SRC" > .github/release-request.txt
+# 3 行目は SHA256SUMS の SHA-256。Actions はこれと照合する（main に取り込まれる＝レビューを通った値）
+printf '%s\n%s\n%s\n' "$TAG" "$SRC" "$SUMS" > .github/release-request.txt
 git add -A
 git commit -q -m "Release ${TAG} を公開する（ファイルはコミット ${SRC:0:7}）"
 git push -q origin "$BRANCH"
-echo "公開を依頼しました: ${TAG}（Actions が数十秒で Releases に載せます）"
+echo "公開を依頼しました: ${TAG}。Actions が公開するのは main に取り込まれたあとです（PR を作って main へ取り込んでください）"
