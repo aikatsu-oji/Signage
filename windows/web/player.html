@@ -458,26 +458,23 @@
       try { data = await getJson('/local/weather'); } catch (e) {}
       if (my !== this.token) return;
       clearTimeout(this.watchdog);
-      this.weatherPages = [];
+      this.weatherPages = weatherPageList(data);
       this.weatherData = data;
-      if (data?.daily) { renderDaily(this.daily, data.daily, data.cityName); this.weatherPages.push(this.daily); }
-      if (data?.series) { renderSeries(this.series, data.series, data.cityName, data.areaName); this.weatherPages.push(this.series); }
       if (!this.weatherPages.length) return this.goto(1);
       this.showPage(this.weatherPages.shift(), my);
     }
 
     showPage(page, my) {
-      this.reveal(page);
+      this.curWx = page;
+      this.reveal(bindWeatherPage(this, page));
       updateInfo();
       this.startTimer(cfg.weatherSeconds * 1000, my);
     }
 
     /** 大きさが変わったら、表示中の天気予報を描き直す */
     relayout() {
-      const d = this.weatherData;
-      if (!d || !this.showingWeather) return;
-      if (d.daily) renderDaily(this.daily, d.daily, d.cityName);
-      if (d.series) renderSeries(this.series, d.series, d.cityName, d.areaName);
+      if (!this.curWx || !this.showingWeather) return;
+      bindWeatherPage(this, this.curWx);
     }
 
     togglePause() {
@@ -499,6 +496,21 @@
       if (!this.current) return '';
       return `${this.index_ + 1} / ${this.playlist.length}　[${this.current.video ? '動画' : '画像'}] ${this.current.name}${p}`;
     }
+  }
+
+  /** 天気予報の画面の一覧（設定の地域 + 追加した地域の順。日ごと → 3時間ごと） */
+  function weatherPageList(data) {
+    const out = [];
+    for (const p of [data, ...(data?.extra || [])]) {
+      if (p?.daily) out.push({ kind: 'daily', d: p.daily, city: p.cityName, area: p.areaName });
+      if (p?.series) out.push({ kind: 'series', d: p.series, city: p.cityName, area: p.areaName });
+    }
+    return out;
+  }
+  /** 画面の 1 ページ分を、区画の部品に描いて、その要素を返す */
+  function bindWeatherPage(zone, page) {
+    if (page.kind === 'daily') { renderDaily(zone.daily, page.d, page.city); return zone.daily; }
+    renderSeries(zone.series, page.d, page.city, page.area); return zone.series;
   }
 
   // ------------------------------------------------------------ 天気予報の区画
@@ -527,15 +539,16 @@
         return;
       }
       this.msg.hidden = true;
-      this.pages = [];
-      if (data.daily) { renderDaily(this.daily, data.daily, data.cityName); this.pages.push(this.daily); }
-      if (data.series) { renderSeries(this.series, data.series, data.cityName, data.areaName); this.pages.push(this.series); }
+      this.pages = weatherPageList(data);
       this.data = data;
+      if (!this.pages.length) { setTimeout(() => { if (my === this.token) this.reload(my); }, 60000); return; }
       this.show(0, my);
     }
 
     show(i, my) {
-      this.pages.forEach((p, k) => p.classList.toggle('show', k === i));
+      this.cur = i;
+      const shown = bindWeatherPage(this, this.pages[i]);
+      [this.daily, this.series].forEach((p) => p.classList.toggle('show', p === shown));
       setTimeout(() => {
         if (my !== this.token) return;
         if (i + 1 < this.pages.length) this.show(i + 1, my); else this.reload(my);
@@ -544,9 +557,8 @@
 
     /** 大きさが変わったら描き直す */
     relayout() {
-      if (!this.data) return;
-      if (this.data.daily) renderDaily(this.daily, this.data.daily, this.data.cityName);
-      if (this.data.series) renderSeries(this.series, this.data.series, this.data.cityName, this.data.areaName);
+      if (!this.pages?.length) return;
+      bindWeatherPage(this, this.pages[this.cur || 0]);
     }
   }
 

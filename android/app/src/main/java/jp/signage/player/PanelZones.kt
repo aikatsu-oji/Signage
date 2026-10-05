@@ -10,27 +10,35 @@ import android.widget.FrameLayout
 import android.widget.TextView
 import java.util.concurrent.Executors
 
-/** 天気予報の各画面に表示するデータ一式 */
-class WeatherPages(
-    val daily: WeatherData?,
-    val series: TimeSeriesData?,
-    val cityName: String?,
-    val areaName: String?,
-) {
-    val isEmpty get() = daily == null && series == null
+/** 天気予報の 1 画面分（日ごと、または 3 時間ごと）。表示する直前に、画面の部品へ割り当てる */
+sealed class WeatherPage {
+    class Daily(val data: WeatherData, val cityName: String?) : WeatherPage()
+    class Series(val data: TimeSeriesData, val cityName: String?, val areaName: String?) : WeatherPage()
+}
+
+/** 天気予報の各画面に表示するデータ一式（設定の地域 + 追加した地域の順） */
+class WeatherPages(val pages: List<WeatherPage>) {
+    val isEmpty get() = pages.isEmpty()
 
     companion object {
-        /** 設定の地域の予報を読み込む（通信するのでバックグラウンドで呼ぶ） */
+        /** 設定の地域（と追加した地域）の予報を読み込む（通信するのでバックグラウンドで呼ぶ） */
         fun load(context: Context, prefs: Prefs): WeatherPages {
-            val office = prefs.weatherOffice ?: return WeatherPages(null, null, null, null)
-            val area = prefs.weatherArea
-            val daily = Weather.get(context, office, area)
-            val series = if (prefs.weatherTimeSeries && area != null) {
-                Weather.getTimeSeries(context, area)?.takeIf { it.slots.isNotEmpty() }
-            } else {
-                null
+            val places = mutableListOf<WeatherPlace>()
+            prefs.weatherOffice?.let { places += WeatherPlace(it, prefs.weatherArea, prefs.weatherAreaName, prefs.weatherCityName) }
+            places += prefs.weatherExtra
+            val pages = mutableListOf<WeatherPage>()
+            for (p in places) {
+                val daily = runCatching { Weather.get(context, p.office, p.area) }.getOrNull()
+                val series = if (prefs.weatherTimeSeries && p.area != null) {
+                    runCatching { Weather.getTimeSeries(context, p.area) }.getOrNull()?.takeIf { it.slots.isNotEmpty() }
+                } else {
+                    null
+                }
+                val area = daily?.areaName ?: p.areaName
+                daily?.let { pages += WeatherPage.Daily(it, p.cityName) }
+                series?.let { pages += WeatherPage.Series(it, p.cityName, area) }
             }
-            return WeatherPages(daily, series, prefs.weatherCityName, daily?.areaName ?: prefs.weatherAreaName)
+            return WeatherPages(pages)
         }
     }
 }
@@ -49,7 +57,7 @@ class WeatherZone(private val activity: Activity, private val prefs: Prefs) : Zo
     private val handler = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
     private var token = 0
-    private var pages: List<View> = emptyList()
+    private var pages: List<WeatherPage> = emptyList()
     private var page = 0
 
     init {
@@ -76,7 +84,7 @@ class WeatherZone(private val activity: Activity, private val prefs: Prefs) : Zo
 
     /** 予報を読み込み直して先頭の画面から表示（データは30分キャッシュされる） */
     private fun reload(my: Int) {
-        if (prefs.weatherOffice == null) {
+        if (prefs.weatherOffice == null && prefs.weatherExtra.isEmpty()) {
             showMessage("天気予報の地域が設定されていません")
             return
         }
@@ -90,10 +98,7 @@ class WeatherZone(private val activity: Activity, private val prefs: Prefs) : Zo
                     return@post
                 }
                 showMessage(null)
-                val list = mutableListOf<View>()
-                data.daily?.let { weatherView.bind(it, data.cityName); list += weatherView }
-                data.series?.let { timeSeriesView.bind(it, data.cityName, data.areaName); list += timeSeriesView }
-                pages = list
+                pages = data.pages
                 page = 0
                 show(my)
             }
@@ -101,8 +106,11 @@ class WeatherZone(private val activity: Activity, private val prefs: Prefs) : Zo
     }
 
     private fun show(my: Int) {
-        val target = pages[page]
-        pages.filter { it !== target }.forEach { it.animate().alpha(0f).setDuration(prefs.fadeMillis).start() }
+        val target: View = when (val p = pages[page]) {
+            is WeatherPage.Daily -> weatherView.also { it.bind(p.data, p.cityName) }
+            is WeatherPage.Series -> timeSeriesView.also { it.bind(p.data, p.cityName, p.areaName) }
+        }
+        listOf<View>(weatherView, timeSeriesView).filter { it !== target }.forEach { it.animate().alpha(0f).setDuration(prefs.fadeMillis).start() }
         target.visibility = View.VISIBLE
         target.bringToFront()
         target.animate().alpha(1f).setDuration(prefs.fadeMillis).start()

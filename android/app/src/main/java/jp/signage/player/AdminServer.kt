@@ -755,6 +755,11 @@ object AdminServer {
             .put("weatherAreaName", prefs.weatherAreaName ?: JSONObject.NULL)
             .put("weatherCity", prefs.weatherCity ?: JSONObject.NULL)
             .put("weatherCityName", prefs.weatherCityName ?: JSONObject.NULL)
+            .put("weatherExtra", org.json.JSONArray().also { arr ->
+                prefs.weatherExtra.forEach {
+                    arr.put(JSONObject().put("office", it.office).put("area", it.area ?: "").put("areaName", it.areaName ?: "").put("cityName", it.cityName ?: ""))
+                }
+            })
         val version = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull()
         val ticker = JSONObject()
             .put("standing", Ticker.standing(app)?.toJson() ?: JSONObject.NULL)
@@ -845,6 +850,17 @@ object AdminServer {
         if (j.has("weatherCity")) prefs.weatherCity = code("weatherCity")
         if (j.has("weatherAreaName")) prefs.weatherAreaName = name("weatherAreaName")
         if (j.has("weatherCityName")) prefs.weatherCityName = name("weatherCityName")
+        if (j.has("weatherExtra")) {
+            val arr = j.optJSONArray("weatherExtra") ?: throw HttpError(400, "追加する地域が正しくありません")
+            val digits = Regex("\\d{1,10}")
+            prefs.weatherExtra = (0 until minOf(arr.length(), Prefs.MAX_WEATHER_EXTRA)).map { i ->
+                val o = arr.optJSONObject(i) ?: throw HttpError(400, "追加する地域が正しくありません")
+                val office = o.optString("office")
+                val area = o.optString("area")
+                if (!digits.matches(office) || (area.isNotEmpty() && !digits.matches(area))) throw HttpError(400, "追加する地域が正しくありません")
+                WeatherPlace(office, area.ifEmpty { null }, o.optString("areaName").take(40).ifEmpty { null }, o.optString("cityName").take(40).ifEmpty { null })
+            }
+        }
     }
 
     private fun json(status: Int, body: JSONObject): Response {
