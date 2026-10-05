@@ -41,7 +41,7 @@ mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
 LOCAL_PORT = 18080  # HTTPS のとき、この PC 自身が使う HTTP のポート
-VERSION = "1.8.28"
+VERSION = "1.8.29"
 
 
 def resource_dir() -> Path:
@@ -817,6 +817,8 @@ class Server:
                         raise HttpError(502, str(e))
                 if key == "GET /local/weather":
                     return self.json(weather.pages(s))
+                if key == "GET /local/weather_map":
+                    return self.json(weather.map_data())
                 if key == "GET /local/ticker":
                     return self.json(s.next_ticker(take=query.get("take", "1") != "0"))
                 if key == "GET /local/events":

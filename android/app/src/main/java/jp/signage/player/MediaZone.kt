@@ -413,7 +413,7 @@ class MediaZone(
         reveal(when (page) {
             is WeatherPage.Daily -> weatherView.also { it.bind(page.data, page.cityName) }
             is WeatherPage.Series -> timeSeriesView.also { it.bind(page.data, page.cityName, page.areaName) }
-            is WeatherPage.Region -> regionView.also { it.bind(page.data) }
+            is WeatherPage.Region -> regionView.also { it.bind(page.data, Weather.regions(activity).firstOrNull { r -> r.name == page.data.name }) }
         })
         onChanged()
         startImageTimer(prefs.weatherSeconds * 1000L, my)

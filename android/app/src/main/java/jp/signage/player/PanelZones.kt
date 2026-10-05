@@ -115,7 +115,7 @@ class WeatherZone(private val activity: Activity, private val prefs: Prefs) : Zo
         val target: View = when (val p = pages[page]) {
             is WeatherPage.Daily -> weatherView.also { it.bind(p.data, p.cityName) }
             is WeatherPage.Series -> timeSeriesView.also { it.bind(p.data, p.cityName, p.areaName) }
-            is WeatherPage.Region -> regionView.also { it.bind(p.data) }
+            is WeatherPage.Region -> regionView.also { it.bind(p.data, Weather.regions(activity).firstOrNull { r -> r.name == p.data.name }) }
         }
         listOf<View>(weatherView, timeSeriesView, regionView).filter { it !== target }.forEach { it.animate().alpha(0f).setDuration(prefs.fadeMillis).start() }
         target.visibility = View.VISIBLE

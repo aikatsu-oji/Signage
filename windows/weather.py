@@ -314,6 +314,20 @@ def regions():
     return _REGIONS
 
 
+_MAP = None
+
+
+def map_data():
+    """地図の背景に使う、都道府県の境界（weather_map.json）"""
+    global _MAP
+    if _MAP is None:
+        try:
+            _MAP = json.loads(_regions_file().with_name("weather_map.json").read_text(encoding="utf-8"))
+        except Exception:
+            _MAP = {"scale": 100, "prefs": {}}
+    return _MAP
+
+
 def clean_regions(items):
     """管理画面から受け取った地方の ID の一覧を検証して整える。正しくなければ ValueError"""
     if not isinstance(items, list):
@@ -349,18 +363,18 @@ def region_page(region, day, forecasts=None):
     for t in region["tiles"]:
         d = forecasts.get((t["office"], t.get("hint") or None))
         if not d or day >= len(d["days"]):
-            tiles.append({"label": t["label"], "x": t["x"], "y": t["y"], "icon": None})
+            tiles.append({"label": t["label"], "office": t["office"], "lon": t.get("lon"), "lat": t.get("lat"), "pos": t.get("pos"), "icon": None})
             continue
         f = d["days"][day]
         pops = [int(p) for p in (f.get("pops6h") or []) if p and str(p).isdigit()]
-        tiles.append({"label": t["label"], "x": t["x"], "y": t["y"], "icon": f["icon"], "text": f.get("text"),
+        tiles.append({"label": t["label"], "office": t["office"], "lon": t.get("lon"), "lat": t.get("lat"), "pos": t.get("pos"), "icon": f["icon"], "text": f.get("text"),
                       "max": f.get("max"), "min": f.get("min"), "pop": max(pops) if pops else None})
         report = report or d["reportTime"]
         stale = stale or d["stale"]
         date = f["date"]
     if not report:
         return None
-    return {"id": region["id"], "name": region["name"], "day": day, "date": date, "tiles": tiles, "reportTime": report, "stale": stale}
+    return {"id": region["id"], "name": region["name"], "day": day, "date": date, "tiles": tiles, "view": region.get("view"), "stretch": region.get("stretch", 1.0), "reportTime": report, "stale": stale}
 
 
 def pages(store):

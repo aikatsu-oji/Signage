@@ -53,10 +53,14 @@ data class TimeSeriesData(
     val stale: Boolean,
 )
 
-/** 地方ごとの一覧の 1 か所（府県のタイル）。x・y は、地図の中での位置（％） */
-data class RegionTile(val label: String, val office: String, val hint: String?, val x: Float, val y: Float)
+/** 地方ごとの一覧の 1 か所（府県のタイル）。lon・lat は実際の位置。pos があれば、地図の外の決まった位置（％）に置く */
+data class RegionTile(val label: String, val office: String, val hint: String?, val lon: Float, val lat: Float, val pos: Pair<Float, Float>?)
 
-data class Region(val id: String, val name: String, val tiles: List<RegionTile>)
+/** view は地図の表示範囲（経度の最小・最大, 緯度の最小・最大）、stretch は横の引き伸ばし */
+data class Region(val id: String, val name: String, val tiles: List<RegionTile>, val view: FloatArray, val stretch: Float)
+
+/** 地図の背景（都道府県の境界）。経緯度を scale 倍した整数の、外周の点列（x, y, x, y, ...） */
+class MapData(val scale: Int, val prefs: Map<String, List<IntArray>>)
 
 /** 一覧のタイル 1 つ分の予報（day が無いときは取得できなかった） */
 data class TileForecast(val tile: RegionTile, val day: DayForecast?)
@@ -168,13 +172,27 @@ object Weather {
         (0 until arr.length()).map { i ->
             val r = arr.getJSONObject(i)
             val tiles = r.getJSONArray("tiles")
+            val v = r.getJSONArray("view")
             Region(r.getString("id"), r.getString("name"), (0 until tiles.length()).map { k ->
                 val t = tiles.getJSONObject(k)
+                val pos = t.optJSONArray("pos")?.let { Pair(it.getDouble(0).toFloat(), it.getDouble(1).toFloat()) }
                 RegionTile(t.getString("label"), t.getString("office"), t.optString("hint").ifEmpty { null },
-                    t.getDouble("x").toFloat(), t.getDouble("y").toFloat())
-            })
+                    t.getDouble("lon").toFloat(), t.getDouble("lat").toFloat(), pos)
+            }, FloatArray(4) { v.getDouble(it).toFloat() }, r.optDouble("stretch", 1.0).toFloat())
         }
     }.getOrDefault(emptyList())
+
+    @Volatile private var mapCache: MapData? = null
+
+    /** 地図の背景（assets/weather_map.json）。読めなければ null（背景なしで表示する） */
+    fun mapData(context: Context): MapData? = mapCache ?: runCatching {
+        val root = JSONObject(context.assets.open("weather_map.json").bufferedReader(Charsets.UTF_8).use { it.readText() })
+        val prefs = root.getJSONObject("prefs")
+        MapData(root.getInt("scale"), prefs.keys().asSequence().associateWith { code ->
+            val rings = prefs.getJSONArray(code)
+            (0 until rings.length()).map { i -> rings.getJSONArray(i).let { a -> IntArray(a.length()) { a.getInt(it) } } }
+        })
+    }.getOrNull()?.also { mapCache = it }
 
     /** 選んだ地方の一覧の画面を作る（府県ごとの予報を並行して取得する。通信するのでバックグラウンドで呼ぶ） */
     fun regionPages(context: Context, regions: List<Region>, dayMode: Int): List<RegionPageData> {
