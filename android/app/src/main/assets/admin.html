@@ -1846,8 +1846,10 @@
     { id: 1, name: '左右2分割', grid: ['1fr 1fr', '1fr'], cells: [[1, 1, 2, 2], [2, 1, 3, 2]] },
     { id: 2, name: '上下2分割', grid: ['1fr', '1fr 1fr'], cells: [[1, 1, 2, 2], [1, 2, 2, 3]] },
     { id: 3, name: 'メイン＋サイド', grid: ['2fr 1fr', '1fr 1fr'], cells: [[1, 1, 2, 3], [2, 1, 3, 2], [2, 2, 3, 3]] },
+    { id: 4, name: '縦3分割（左・中・右）', grid: ['1fr 1fr 1fr', '1fr'], cells: [[1, 1, 2, 2], [2, 1, 3, 2], [3, 1, 4, 2]] },
+    { id: 5, name: '横3分割（上・中・下）', grid: ['1fr', '1fr 1fr 1fr'], cells: [[1, 1, 2, 2], [1, 2, 2, 3], [1, 3, 2, 4]] },
   ];
-  const ZONE_LABELS = { 0: ['全画面'], 1: ['左', '右'], 2: ['上', '下'], 3: ['メイン', 'サイド1（右上）', 'サイド2（右下）'] };
+  const ZONE_LABELS = { 0: ['全画面'], 1: ['左', '右'], 2: ['上', '下'], 3: ['メイン', 'サイド1（右上）', 'サイド2（右下）'], 4: ['左', '中', '右'], 5: ['上', '中', '下'] };
   // 縦向きのメイン＋サイドは、メインが上、サイドが下に横並び（再生画面と同じ）
   const ZONE_LABELS_PORTRAIT_MAIN_SIDE = ['メイン（上）', 'サイド1（左下）', 'サイド2（右下）'];
   const zoneLabels = (layout, portrait) => (layout === 3 && portrait ? ZONE_LABELS_PORTRAIT_MAIN_SIDE : ZONE_LABELS[layout]);
@@ -2017,6 +2019,8 @@
       0: [[0, 0, 100, 100]],
       1: [[0, 0, sp, 100], [sp, 0, 100 - sp, 100]],
       2: [[0, 0, 100, sp], [0, sp, 100, 100 - sp]],
+      4: [[0, 0, 100 / 3, 100], [100 / 3, 0, 100 / 3, 100], [200 / 3, 0, 100 / 3, 100]],
+      5: [[0, 0, 100, 100 / 3], [0, 100 / 3, 100, 100 / 3], [0, 200 / 3, 100, 100 / 3]],
       3: portrait
         ? [[0, 0, 100, mp], [0, mp, sd, 100 - mp], [sd, mp, 100 - sd, 100 - mp]]           // 縦向き：メインが上、サイドが下に横並び
         : [[0, 0, mp, 100], [mp, 0, 100 - mp, sd], [mp, sd, 100 - mp, 100 - sd]],          // 横向き：メインが左、サイドが右に縦並び
@@ -2041,7 +2045,7 @@
       addDivider(lp, 'h', 'mainPercent', mp, 0, 100, `${mp} : ${100 - mp}`);
       addDivider(lp, 'v', 'sidePercent', sd, mp, 100 - mp, `${sd} : ${100 - sd}`);
     }
-    $('#lpHint').textContent = layout === 0 ? '画面全体に区画1を表示します。'
+    $('#lpHint').textContent = layout === 0 ? '画面全体に区画1を表示します。' : layout >= 4 ? '3つの区画を等分に並べます（比率の変更はありません）。'
       : `青い境界線をドラッグ（またはクリックして ←→↑↓ キー、Shift で 5% ずつ）で比率を変えられます。${layout === 3 ? (portrait ? '縦向きでは、メインが上、サイドが下に横並びになります。' : '横向きでは、メインが左、サイドが右に縦並びになります。') : ''}`;
     renderRatioFit();
     updateLayoutDirty();
@@ -2164,6 +2168,8 @@
     const layout = fval('layout'), sp = fval('splitPercent') / 100, mp = fval('mainPercent') / 100, sd = fval('sidePercent') / 100;
     if (layout === 1) return [[W * sp, H], [W * (1 - sp), H]];
     if (layout === 2) return [[W, H * sp], [W, H * (1 - sp)]];
+    if (layout === 4) return [[W / 3, H], [W / 3, H], [W / 3, H]];
+    if (layout === 5) return [[W, H / 3], [W, H / 3], [W, H / 3]];
     if (layout === 3) {
       return W >= H
         ? [[W * mp, H], [W * (1 - mp), H * sd], [W * (1 - mp), H * (1 - sd)]]            // 横長：メインが左、サイドが右に縦並び

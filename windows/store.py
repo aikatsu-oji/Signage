@@ -21,20 +21,22 @@ MEDIA_ROOT = Path.home() / "Signage"
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif", ".svg"}
 VIDEO_EXTS = {".mp4", ".m4v", ".webm", ".mkv", ".mov", ".ogv"}
 
-LAYOUT_SINGLE, LAYOUT_LEFT_RIGHT, LAYOUT_TOP_BOTTOM, LAYOUT_MAIN_SIDE = 0, 1, 2, 3
+LAYOUT_SINGLE, LAYOUT_LEFT_RIGHT, LAYOUT_TOP_BOTTOM, LAYOUT_MAIN_SIDE, LAYOUT_COLUMNS3, LAYOUT_ROWS3 = 0, 1, 2, 3, 4, 5
 ZONE_FOLDER, ZONE_WEATHER, ZONE_WEB, ZONE_RSS = 0, 1, 2, 3
 ZONE_TYPES = (ZONE_FOLDER, ZONE_WEATHER, ZONE_WEB, ZONE_RSS)
 MAX_ZONES = 3
 
 
 def zone_count(layout: int) -> int:
-    return {LAYOUT_LEFT_RIGHT: 2, LAYOUT_TOP_BOTTOM: 2, LAYOUT_MAIN_SIDE: 3}.get(layout, 1)
+    return {LAYOUT_LEFT_RIGHT: 2, LAYOUT_TOP_BOTTOM: 2, LAYOUT_MAIN_SIDE: 3, LAYOUT_COLUMNS3: 3, LAYOUT_ROWS3: 3}.get(layout, 1)
 
 
 def zone_names(layout: int) -> list:
     return {
         LAYOUT_LEFT_RIGHT: ["左", "右"],
         LAYOUT_TOP_BOTTOM: ["上", "下"],
+        LAYOUT_COLUMNS3: ["左", "中", "右"],
+        LAYOUT_ROWS3: ["上", "中", "下"],
         LAYOUT_MAIN_SIDE: ["メイン", "サイド1：横長画面では右上、縦長画面では左下", "サイド2：右下"],
     }.get(layout, ["全画面"])
 

@@ -338,19 +338,25 @@ class Prefs(context: Context) {
         const val LAYOUT_TOP_BOTTOM = 2
         /** 大きなメイン区画＋小さなサイド区画2つ */
         const val LAYOUT_MAIN_SIDE = 3
+        /** 縦3分割（左・中・右の3列。等分） */
+        const val LAYOUT_COLUMNS3 = 4
+        /** 横3分割（上・中・下の3段。等分） */
+        const val LAYOUT_ROWS3 = 5
         const val MAX_ZONES = 3
 
         /** 区画の呼び名（設定画面・管理画面の表示用） */
         fun zoneNames(layout: Int): List<String> = when (layout) {
             LAYOUT_LEFT_RIGHT -> listOf("左", "右")
             LAYOUT_TOP_BOTTOM -> listOf("上", "下")
+            LAYOUT_COLUMNS3 -> listOf("左", "中", "右")
+            LAYOUT_ROWS3 -> listOf("上", "中", "下")
             LAYOUT_MAIN_SIDE -> listOf("メイン", "サイド1：横長画面では右上、縦長画面では左下", "サイド2：右下")
             else -> listOf("全画面")
         }
 
         fun zoneCount(layout: Int) = when (layout) {
             LAYOUT_LEFT_RIGHT, LAYOUT_TOP_BOTTOM -> 2
-            LAYOUT_MAIN_SIDE -> 3
+            LAYOUT_MAIN_SIDE, LAYOUT_COLUMNS3, LAYOUT_ROWS3 -> 3
             else -> 1
         }
 
