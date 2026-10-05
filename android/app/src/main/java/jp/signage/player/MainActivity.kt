@@ -261,6 +261,8 @@ class MainActivity : Activity() {
                 Prefs.LAYOUT_LEFT_RIGHT to R.id.layoutLeftRight,
                 Prefs.LAYOUT_TOP_BOTTOM to R.id.layoutTopBottom,
                 Prefs.LAYOUT_MAIN_SIDE to R.id.layoutMainSide,
+                Prefs.LAYOUT_COLUMNS3 to R.id.layoutColumns3,
+                Prefs.LAYOUT_ROWS3 to R.id.layoutRows3,
             ),
         ) {
             prefs.layout = it
@@ -345,10 +347,11 @@ class MainActivity : Activity() {
         }
 
         // 分割しているときは比率を選ぶ（例: 左 70% : 右 30%、メイン 70% : サイド 30%）
-        findViewById<View>(R.id.splitRow).visibility = if (count >= 2) View.VISIBLE else View.GONE
+        val equalThirds = prefs.layout == Prefs.LAYOUT_COLUMNS3 || prefs.layout == Prefs.LAYOUT_ROWS3
+        findViewById<View>(R.id.splitRow).visibility = if (count >= 2 && !equalThirds) View.VISIBLE else View.GONE
         val spinner = findViewById<Spinner>(R.id.splitSpinner)
         val label = findViewById<TextView>(R.id.splitLabel)
-        val threeZones = count == 3
+        val threeZones = prefs.layout == Prefs.LAYOUT_MAIN_SIDE
         findViewById<View>(R.id.splitLabel2).visibility = if (threeZones) View.VISIBLE else View.GONE
         findViewById<View>(R.id.splitSpinner2).visibility = if (threeZones) View.VISIBLE else View.GONE
         if (count == 2) {
@@ -396,7 +399,7 @@ class MainActivity : Activity() {
     private fun setupSplit() {
         findViewById<Spinner>(R.id.splitSpinner).onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                if (Prefs.zoneCount(prefs.layout) == 3) {
+                if (prefs.layout == Prefs.LAYOUT_MAIN_SIDE) {
                     mainChoices.getOrNull(position)?.let { prefs.mainPercent = it }
                 } else {
                     splitChoices.getOrNull(position)?.let { prefs.splitPercent = it }

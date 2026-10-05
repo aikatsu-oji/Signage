@@ -41,7 +41,7 @@ mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
 LOCAL_PORT = 18080  # HTTPS のとき、この PC 自身が使う HTTP のポート
-VERSION = "1.8.23"
+VERSION = "1.8.24"
 
 
 def resource_dir() -> Path:
@@ -333,7 +333,7 @@ class Server:
         def clamp(v, lo, hi):
             return max(lo, min(hi, int(v)))
         u = {}
-        if "layout" in j: u["layout"] = clamp(j["layout"], 0, 3)
+        if "layout" in j: u["layout"] = clamp(j["layout"], 0, 5)
         if "splitPercent" in j: u["splitPercent"] = clamp(j["splitPercent"], 10, 90)
         if "mainPercent" in j: u["mainPercent"] = clamp(j["mainPercent"], 20, 90)
         if "sidePercent" in j: u["sidePercent"] = clamp(j["sidePercent"], 10, 90)

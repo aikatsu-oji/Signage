@@ -770,7 +770,7 @@ object AdminServer {
 
     private fun applySettings(prefs: Prefs, j: JSONObject) {
         if (j.has("screenRotate") && PlayerActivity.isTv(app)) prefs.screenRotate = j.getInt("screenRotate")
-        if (j.has("layout")) prefs.layout = j.getInt("layout").coerceIn(0, 3)
+        if (j.has("layout")) prefs.layout = j.getInt("layout").coerceIn(0, 5)
         // 画面の向き（0=端末の向きに従う / 1=横向きに固定 / 2=縦向きに固定）
         if (j.has("orientation")) {
             prefs.orientation = when (j.getInt("orientation")) {
