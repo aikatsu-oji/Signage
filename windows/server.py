@@ -41,7 +41,7 @@ mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
 LOCAL_PORT = 18080  # HTTPS のとき、この PC 自身が使う HTTP のポート
-VERSION = "1.8.26"
+VERSION = "1.8.27"
 
 
 def resource_dir() -> Path:
@@ -227,7 +227,7 @@ class Server:
             "fitMode", "orientation",
             "clockEnabled", "clockPosition", "clockSize", "timeZone", "timeOffsetSec", "timeFormat", "timeSync", "timeServer", "weatherEnabled", "weatherIntervalMin",
             "weatherSeconds", "weatherTimeSeries",
-            "weatherOffice", "weatherArea", "weatherAreaName", "weatherCity", "weatherCityName")}
+            "weatherOffice", "weatherArea", "weatherAreaName", "weatherCity", "weatherCityName", "weatherExtra")}
         settings["timeOffsetMs"] = s.time_offset_ms()  # 再生画面が使う、アプリの時刻のずれの合計
         settings["timeSyncInfo"] = s.time_sync_info()
         settings["appTime"] = s.app_now().strftime("%Y-%m-%d %H:%M:%S")  # 管理画面での確認用（アプリが、いま何時と考えているか）
@@ -390,6 +390,11 @@ class Server:
         for k in ("weatherAreaName", "weatherCityName"):
             if k in j:
                 u[k] = str(j[k])[:40] if j[k] else None
+        if "weatherExtra" in j:
+            try:
+                u["weatherExtra"] = weather.clean_extra(j["weatherExtra"])
+            except ValueError as e:
+                raise HttpError(400, str(e))
         self.store.update(u)
 
     # ------------------------------------------------------------ ハンドラー

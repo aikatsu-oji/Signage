@@ -85,6 +85,7 @@ DEFAULTS = {
     "weatherEnabled": False,
     "weatherIntervalMin": 10,
     "weatherSeconds": 15,
+    "weatherExtra": [],  # 追加で表示する地域（[{office, area, areaName, cityName}]。最大 12）
     "weatherTimeSeries": True,
     "weatherOffice": "130000",
     "weatherArea": "130010",

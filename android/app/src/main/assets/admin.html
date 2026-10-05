@@ -470,6 +470,16 @@
               <label class="field"><span>地方（都道府県）</span><select id="wxOffice"><option>読み込み中…</option></select></label>
               <label class="field"><span>市区町村・地域</span><select id="wxCity"></select></label>
             </div>
+            <div id="wxExtraBox" hidden>
+              <p class="sub" style="margin:10px 0 4px"><b>追加の地域</b>（上の地域のあとに、順に表示します。最大 12 か所）</p>
+              <div class="chips" id="wxExtraList"></div>
+              <p class="sub" id="wxExtraNone" style="margin:4px 0">追加している地域はありません。</p>
+              <div class="dlgrow" style="margin-top:6px">
+                <button type="button" class="small" id="wxAddCur">上で選んでいる地域を追加</button>
+                <select id="wxRegion" aria-label="地方"></select>
+                <button type="button" class="small" id="wxAddRegion">この地方の府県をまとめて追加</button>
+              </div>
+            </div>
             <p class="sub" id="wxNote">予報は「東京地方」などの地域単位で、画面の見出しには市区町村名を表示します。地域の一覧は、端末がインターネットに接続できるときに取得されます。</p>
           </fieldset>
           <button class="primary">この端末に保存</button>
@@ -2365,6 +2375,7 @@
 
   async function renderWeatherRegion(dev) {
     const st = dev.state?.settings || {};
+    wxExtra = (st.weatherExtra || []).map((p) => ({ office: p.office, area: p.area || '', areaName: p.areaName || '', cityName: p.cityName || '' }));
     const list = await loadWxOffices(dev);
     if (selected() !== dev) return; // 読み込み中に別の端末へ切り替わった
     if (!list) {
@@ -2376,11 +2387,73 @@
     $('#wxOffice').value = st.weatherOffice || '130000';
     if ($('#wxOffice').selectedIndex < 0) $('#wxOffice').selectedIndex = 0;
     fillWxCities(st.weatherCity, st.weatherArea);
+    renderWxExtra();
     if (!st.weatherPlace) {
       const c = wxCities[Number($('#wxCity').value)];
       $('#weatherPlace').textContent = c ? `（地域：${c.name || c.areaName}　※未保存・「この端末に保存」で反映）` : '（地域：未設定）';
     }
   }
+  // ---- 追加の地域（近畿の各府県など、複数の地域の予報を順に表示する）
+  const WX_MAX_EXTRA = 12;
+  const WX_REGIONS = {
+    '北海道': ['016000', '017000', '015000', '014100', '014030', '013000', '012000', '011000'],
+    '東北': ['020000', '030000', '040000', '050000', '060000', '070000'],
+    '関東甲信': ['130000', '140000', '110000', '120000', '080000', '090000', '100000', '190000', '200000'],
+    '北陸': ['150000', '160000', '170000', '180000'],
+    '東海': ['210000', '220000', '230000', '240000'],
+    '近畿': ['250000', '260000', '270000', '280000', '290000', '300000'],
+    '中国': ['310000', '320000', '330000', '340000', '350000'],
+    '四国': ['360000', '370000', '380000', '390000'],
+    '九州': ['400000', '410000', '420000', '430000', '440000', '450000', '460100'],
+    '沖縄': ['471000', '473000', '474000'],
+  };
+  let wxExtra = [];
+  const wxSupported = () => Array.isArray(selected()?.state?.settings?.weatherExtra);
+  const wxLabel = (p) => p.cityName || p.areaName || (wxOffices || []).find((o) => o.code === p.office)?.name || p.office;
+
+  function renderWxExtra() {
+    const ok = wxSupported() && !!wxOffices;
+    $('#wxExtraBox').hidden = !ok;
+    if (!ok) return;
+    $('#wxExtraList').innerHTML = wxExtra.map((p, i) => `<span class="chip" style="border:1px solid var(--line, #ccc)">${esc(wxLabel(p))}<button type="button" class="small" data-i="${i}" aria-label="${esc(wxLabel(p))}を外す" style="padding:0 6px">✕</button></span>`).join('');
+    $('#wxExtraList').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { wxExtra.splice(Number(b.dataset.i), 1); renderWxExtra(); markWxDirty(); }));
+    $('#wxExtraNone').hidden = wxExtra.length > 0;
+    const full = wxExtra.length >= WX_MAX_EXTRA;
+    $('#wxAddCur').disabled = full; $('#wxAddRegion').disabled = full;
+  }
+  function markWxDirty() { $('#wxNote').textContent = '追加した地域は、「この端末に保存」で反映されます。'; }
+  /** すでに入っている（設定の地域・追加済み）府県は、重ねて追加しない */
+  function wxHas(office, area) {
+    const st = selected()?.state?.settings || {};
+    return (st.weatherOffice === office && st.weatherArea === area)
+      || wxExtra.some((p) => p.office === office && (p.area || '') === (area || ''));
+  }
+  function wxAdd(p) {
+    if (wxExtra.length >= WX_MAX_EXTRA || wxHas(p.office, p.area)) return false;
+    wxExtra.push(p); return true;
+  }
+  $('#wxAddCur').addEventListener('click', () => {
+    const c = wxCities[Number($('#wxCity').value)];
+    if (!c || !$('#wxOffice').value) return;
+    if (wxAdd({ office: $('#wxOffice').value, area: c.areaCode, areaName: c.areaName, cityName: c.name || '' })) { renderWxExtra(); markWxDirty(); }
+    else toast('すでに追加済みか、追加できる数の上限です');
+  });
+  $('#wxAddRegion').addEventListener('click', () => {
+    const codes = WX_REGIONS[$('#wxRegion').value] || [];
+    let n = 0;
+    for (const code of codes) {
+      const o = (wxOffices || []).find((x) => x.code === code);
+      if (!o) continue;
+      const [area, areaName] = o.areas[0] || [code, o.name];
+      if (wxAdd({ office: code, area, areaName, cityName: o.areas.length > 1 ? areaName : o.name })) n++;
+    }
+    renderWxExtra();
+    if (n) markWxDirty();
+    toast(n ? `${$('#wxRegion').value}の ${n} か所を追加しました（「この端末に保存」で反映）` : '追加できる地域がありません（追加済みか、上限です）');
+  });
+  $('#wxRegion').innerHTML = Object.keys(WX_REGIONS).map((r) => `<option>${r}</option>`).join('');
+  $('#wxRegion').value = '近畿';
+
   $('#wxOffice').addEventListener('change', () => { fillWxCities(null, null); previewWxPlace(); });
   $('#wxCity').addEventListener('change', previewWxPlace);
 
@@ -2397,7 +2470,8 @@
   function wxBody() {
     const c = wxCities[Number($('#wxCity').value)];
     if (!wxOffices || !c || !$('#wxOffice').value) return {};
-    return { weatherOffice: $('#wxOffice').value, weatherArea: c.areaCode, weatherAreaName: c.areaName, weatherCity: c.code, weatherCityName: c.name };
+    return { weatherOffice: $('#wxOffice').value, weatherArea: c.areaCode, weatherAreaName: c.areaName, weatherCity: c.code, weatherCityName: c.name,
+      ...(wxSupported() ? { weatherExtra: wxExtra } : {}) };
   }
 
   function formSettings() {

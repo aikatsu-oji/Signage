@@ -4,6 +4,7 @@
 """
 
 import json
+import re
 import time
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -14,6 +15,7 @@ FORECAST_URL = "https://www.jma.go.jp/bosai/forecast/data/forecast/{}.json"
 TIME_SERIES_URL = "https://www.jma.go.jp/bosai/jmatile/data/wdist/VPFD/{}.json"
 AREA_URL = "https://www.jma.go.jp/bosai/common/const/area.json"
 MAX_AGE = 30 * 60
+MAX_EXTRA = 12  # 追加できる地域の数
 CACHE = APP_DIR / "cache"
 JST = timezone(timedelta(hours=9))
 
@@ -272,19 +274,51 @@ def offices():
     return result
 
 
-def pages(store):
-    """再生画面に渡す天気予報の一式"""
-    office = store.get("weatherOffice")
-    area = store.get("weatherArea")
-    if not office:
-        return None
+def _place(office, area, city_name, area_name, with_series):
     daily = get_forecast(office, area)
-    series = get_time_series(area) if store.get("weatherTimeSeries") and area else None
+    series = get_time_series(area) if with_series and area else None
     if not daily and not series:
         return None
     return {
         "daily": daily,
         "series": series,
-        "cityName": store.get("weatherCityName"),
-        "areaName": (daily or {}).get("areaName") or store.get("weatherAreaName"),
+        "cityName": city_name,
+        "areaName": (daily or {}).get("areaName") or area_name,
     }
+
+
+def pages(store):
+    """再生画面に渡す天気予報の一式（設定の地域 + 追加した地域）"""
+    with_series = bool(store.get("weatherTimeSeries"))
+    main = None
+    office = store.get("weatherOffice")
+    if office:
+        main = _place(office, store.get("weatherArea"), store.get("weatherCityName"), store.get("weatherAreaName"), with_series)
+    extra = []
+    for p in (store.get("weatherExtra") or [])[:MAX_EXTRA]:
+        try:
+            r = _place(p["office"], p.get("area") or None, p.get("cityName"), p.get("areaName"), with_series)
+        except Exception:
+            r = None
+        if r:
+            extra.append(r)
+    if not main and not extra:
+        return None
+    result = dict(main) if main else {"daily": None, "series": None, "cityName": None, "areaName": None}
+    result["extra"] = extra
+    return result
+
+
+def clean_extra(items):
+    """管理画面から受け取った追加の地域を検証して整える。正しくなければ ValueError"""
+    if not isinstance(items, list):
+        raise ValueError("追加する地域が正しくありません")
+    out = []
+    for o in items[:MAX_EXTRA]:
+        if not isinstance(o, dict):
+            raise ValueError("追加する地域が正しくありません")
+        office, area = str(o.get("office") or ""), str(o.get("area") or "")
+        if not re.fullmatch(r"\d{1,10}", office) or (area and not re.fullmatch(r"\d{1,10}", area)):
+            raise ValueError("追加する地域が正しくありません")
+        out.append({"office": office, "area": area, "areaName": str(o.get("areaName") or "")[:40], "cityName": str(o.get("cityName") or "")[:40]})
+    return out

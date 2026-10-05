@@ -117,7 +117,7 @@ class MediaZone(
     /** 次の切り替わりで天気予報を表示する（プレビュー用） */
     var forceWeather = false
     /** 天気予報の、これから表示する画面（日ごと → 3時間ごと） */
-    private val weatherPages = ArrayDeque<View>()
+    private val weatherPages = ArrayDeque<WeatherPage>()
 
     init {
         view.addView(weatherView, 1, FrameLayout.LayoutParams(-1, -1))
@@ -375,7 +375,7 @@ class MediaZone(
     }
 
     private fun isWeatherDue(): Boolean {
-        if (!isMain || prefs.weatherOffice == null) return false
+        if (!isMain || (prefs.weatherOffice == null && prefs.weatherExtra.isEmpty())) return false
         if (forceWeather) return true
         return prefs.weatherEnabled &&
             System.currentTimeMillis() - lastWeatherAt >= prefs.weatherIntervalMin * 60_000L
@@ -396,8 +396,7 @@ class MediaZone(
                 if (my != token) return@post
                 cancelWatchdog()
                 weatherPages.clear()
-                pages.daily?.let { weatherView.bind(it, pages.cityName); weatherPages += weatherView }
-                pages.series?.let { timeSeriesView.bind(it, pages.cityName, pages.areaName); weatherPages += timeSeriesView }
+                weatherPages += pages.pages
                 if (weatherPages.isEmpty()) {
                     // 一度も取得できていない（未接続など）ときは飛ばして再生を続ける
                     goto(1)
@@ -408,8 +407,11 @@ class MediaZone(
         }
     }
 
-    private fun showWeatherPage(page: View, my: Int) {
-        reveal(page)
+    private fun showWeatherPage(page: WeatherPage, my: Int) {
+        reveal(when (page) {
+            is WeatherPage.Daily -> weatherView.also { it.bind(page.data, page.cityName) }
+            is WeatherPage.Series -> timeSeriesView.also { it.bind(page.data, page.cityName, page.areaName) }
+        })
         onChanged()
         startImageTimer(prefs.weatherSeconds * 1000L, my)
     }
