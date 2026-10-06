@@ -73,9 +73,14 @@
   .palette .pitem .thumb { width: 56px; height: 36px; border-radius: 4px; }
   .palette .pitem .pn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .week { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-  .week .wh { display: grid; grid-template-columns: 44px repeat(7, 1fr); background: var(--brand-weak); font-size: 13px; font-weight: bold; text-align: center; }
+  .week .wh { display: grid; grid-template-columns: 44px repeat(var(--cols, 7), minmax(0, 1fr)); background: var(--brand-weak); font-size: 13px; font-weight: bold; text-align: center; }
   .week .wh div { padding: 4px 0; }
-  .week .wb { display: grid; grid-template-columns: 44px repeat(7, 1fr); position: relative; }
+  .week .wb { display: grid; grid-template-columns: 44px repeat(var(--cols, 7), minmax(0, 1fr)); position: relative; }
+  .week .wh .sat { color: #1565c0; } .week .wh .sun { color: #c62828; }
+  .week .wh .today { background: var(--brand); color: #fff; }
+  .week .wh small { display: block; font-weight: normal; font-size: 11px; }
+  .week .now { position: absolute; left: 0; right: 0; height: 0; border-top: 2px solid #c62828; z-index: 2; pointer-events: none; }
+  .schedbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; }
   .week .axis { position: relative; font-size: 11px; color: var(--sub); }
   .week .axis span { position: absolute; right: 4px; transform: translateY(-50%); }
   .week .dcol { position: relative; border-left: 1px solid var(--line); background-image: repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--hp) - 1px), var(--line) calc(var(--hp) - 1px), var(--line) var(--hp)); }
@@ -375,7 +380,7 @@
           <div class="head">
             <div>
               <h2>スケジュール<span class="sub" id="schedDevName"></span></h2>
-              <p class="sub">区画ごとに、どの画像・動画を、いつ流すかを決めます。右のライブラリから、週間表にドラッグすると、その曜日・時間に配置できます（条件を付けない配置は「常時」）。</p>
+              <p class="sub">区画ごとに、どの画像・動画を、いつ流すかを決めます。表の横軸は、今日からの日付です。右のライブラリから、表の日付・時間にドラッグすると配置できます（条件を付けない配置は「常時」）。</p>
             </div>
           </div>
           <div class="warn" id="schedWarn" hidden></div>
@@ -645,6 +650,8 @@
       <label class="field"><span>画像の表示秒数（空欄＝共通の秒数）</span><input type="number" id="plSeconds" min="1" max="3600" placeholder="共通"></label>
     </div>
     <label class="check"><input type="checkbox" id="plExclusive"> 専用（この配置が有効な間は、専用の配置だけを流します。キャンペーン用）</label>
+    <div class="dlgrow" id="plDateNote" hidden style="margin-top:8px"><span class="sub" id="plDateText"></span>
+      <button type="button" class="small" id="plOnlyDay">この日だけにする</button></div>
     <h4 style="margin:12px 0 4px">再生する条件</h4>
     <p class="sub">条件は複数追加できます。<b>どれか1つに合うとき</b>に再生します（例：「土日の終日」と「12/24〜12/25 の 18:00〜22:00」）。1つの条件の中では、設定した項目のすべてに合うときだけ合います。空欄の項目は条件なし、中身のない条件は無視されます。条件がひとつも無ければ、いつでも再生します。</p>
     <div id="ruleSlots"></div>
@@ -1815,6 +1822,8 @@
     $('#plSeconds').value = p?.seconds || '';
     $('#plExclusive').checked = !!p?.exclusive;
     $('#plRemove').hidden = !p;
+    $('#plDateNote').hidden = !t.date;
+    if (t.date) $('#plDateText').textContent = `${t.date.replace(/-/g, '/')} に配置しました。初めは、毎週この曜日にくりかえす条件です。`;
     $('#ruleSlots').replaceChildren();
     const slots = p ? slotsOf(p.rule) : (t.slot ? [t.slot] : []);
     (slots.length ? slots : [{}]).forEach(addSlot);
@@ -1839,6 +1848,14 @@
       refreshDevice(t.dev);
     } catch (err) { toast(err.message); }
   });
+  // ドロップした日だけにする：最初の条件の曜日を外し、期間をその日にする
+  $('#plOnlyDay').addEventListener('click', () => {
+    const t = plTarget; const el = $('#ruleSlots').firstElementChild;
+    if (!t?.date || !el) return;
+    el.querySelectorAll('.days input').forEach((c) => { c.checked = false; });
+    $('.rf', el).value = t.date; $('.rt', el).value = t.date;
+    toast(`${t.date.replace(/-/g, '/')} の 1 日だけにしました`);
+  });
   $('#ruleAdd').addEventListener('click', () => addSlot());
   $('#ruleClear').addEventListener('click', () => { $('#ruleSlots').replaceChildren(); addSlot(); });
   $('#ruleCancel').addEventListener('click', () => $('#ruleDialog').close());
@@ -1855,28 +1872,37 @@
   // ------------------------------------------------------------ スケジュール（週間表）
 
   const HP = 22;                     // 1 時間の高さ（px）
-  const WEEK = [1, 2, 3, 4, 5, 6, 0]; // 表の列の曜日（月曜はじまり。0=日）
-  const sched = { zone: null };
+  const sched = { zone: null, span: 7, offset: 0 };   // span：表示する日数、offset：今日から何日ずらすか
 
   const toMin = (t) => (t ? Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5)) : null);
   const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const isoDate = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 
-  /** 配置の条件を、週間表の帯（曜日・開始分・終了分）にする。時間も曜日も指定がない（期間だけの）ものは、帯にしない */
-  function bandsOf(p) {
+  /** 端末（アプリ）が、いま何日何時と考えているか。取得できなければ、この画面を開いているパソコンの時刻 */
+  function deviceNow(dev) {
+    const m = /^(\d{4})-(\d\d)-(\d\d) (\d\d):(\d\d)/.exec(dev.state?.settings?.appTime || '');
+    return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : new Date();
+  }
+
+  /** ある日（date）に、その配置が流れる時間帯（分）の一覧。日をまたぐ時間帯は、前日の分の後半も含む。
+   *  時間も曜日も指定がなく、期間だけの条件は、期間内の終日。条件がない（常時）配置は、帯にしない */
+  function bandsForDate(p, date) {
     const out = [];
+    const iso = isoDate(date), dow = date.getDay();
+    const prev = addDays(date, -1), pIso = isoDate(prev), pDow = prev.getDay();
     for (const sl of slotsOf(p.rule)) {
-      const days = sl.days?.length ? sl.days : [0, 1, 2, 3, 4, 5, 6];
-      if (!sl.days?.length && !sl.start && !sl.end) continue;   // 期間だけの条件
-      const s = toMin(sl.start) ?? 0, e = toMin(sl.end) ?? 1440;
+      const s = toMin(sl.start), e = toMin(sl.end);
+      const overnight = s != null && e != null && s > e;
+      const daysOk = (d) => !sl.days?.length || sl.days.includes(d);
+      const inPeriod = (x) => (!sl.from || x >= sl.from) && (!sl.to || x <= sl.to);
       const period = !!(sl.from || sl.to);
-      for (const d of days) {
-        if (s < e || (sl.start && !sl.end) || (!sl.start && sl.end)) {
-          out.push({ day: d, s, e: Math.max(e, s + 15), period });
-        } else {   // 日をまたぐ（例 22:00〜02:00）
-          out.push({ day: d, s, e: 1440, period });
-          out.push({ day: (d + 1) % 7, s: 0, e, period });
-        }
+      if (daysOk(dow) && inPeriod(iso)) {
+        const S = s ?? 0, E = overnight ? 1440 : (e ?? 1440);
+        out.push({ s: S, e: Math.max(E, S + 15), period });
       }
+      if (overnight && daysOk(pDow) && inPeriod(pIso)) out.push({ s: 0, e: Math.max(e, 15), period });
     }
     return out;
   }
@@ -1895,18 +1921,25 @@
       <div class="always" id="alwaysRow"></div>
       <div class="schedgrid">
         <div>
-          <div class="week" style="--hp:${HP}px"><div class="wh"><div></div>${WEEK.map((d) => `<div>${RULE_DAYS[d]}</div>`).join('')}</div>
+          <div class="schedbar">
+            <button type="button" class="small" id="schPrev" title="前の期間">◀</button>
+            <button type="button" class="small" id="schToday">今日から</button>
+            <button type="button" class="small" id="schNext" title="次の期間">▶</button>
+            <span class="seg" id="schSpan"></span>
+            <span class="sub" id="schRange"></span>
+          </div>
+          <div class="week" style="--hp:${HP}px"><div class="wh" id="weekHead"></div>
             <div class="wb" id="weekBody"></div></div>
           <h3 style="margin:16px 0 4px">この区画の再生順（上から順に流れます）</h3>
           <ul class="playlist" id="plList"></ul>
         </div>
-        <div class="palette"><strong style="font-size:13px">ライブラリ</strong><div class="sub" style="margin:2px 0 6px">週間表にドラッグして配置</div><div id="palList"></div></div>
+        <div class="palette"><strong style="font-size:13px">ライブラリ</strong><div class="sub" style="margin:2px 0 6px">日付の表にドラッグして配置</div><div id="palList"></div></div>
       </div>`;
     $('#schedZones').innerHTML = zones.map((z) => `<button type="button" class="chip" data-z="${z.index}" aria-pressed="${z.index === zone}" style="border:1px solid var(--line, #ccc); cursor:pointer">${esc(z.label)}</button>`).join('');
     $('#schedZones').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { sched.zone = Number(b.dataset.z); renderSchedule(dev); }));
 
-    // 常時（条件なし、または期間だけの条件）
-    const always = plist.filter((p) => !bandsOf(p).length);
+    // 常時（条件のない配置）
+    const always = plist.filter((p) => !slotsOf(p.rule).length);
     $('#alwaysRow').innerHTML = `<strong style="font-size:13px">常時</strong>` + (always.length ? '' : '<span class="sub">なし</span>');
     for (const p of always) {
       const c = document.createElement('span');
@@ -1922,28 +1955,51 @@
       $('#alwaysRow').append(c);
     }
 
-    // 週間表
+    // 日付の表（今日を基準に、span 日ぶん）
+    const now = deviceNow(dev);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const first = addDays(today, sched.offset);
+    const dates = Array.from({ length: sched.span }, (_, i) => addDays(first, i));
+    const REL = { 0: '今日', 1: '明日', 2: '明後日' };
+    $('#weekHead').style.setProperty('--cols', dates.length);
+    $('#weekBody').style.setProperty('--cols', dates.length);
+    $('#weekHead').innerHTML = '<div></div>' + dates.map((d, i) => {
+      const rel = REL[sched.offset + i];
+      const cls = d.getDay() === 6 ? 'sat' : d.getDay() === 0 ? 'sun' : '';
+      return `<div class="${cls} ${sched.offset + i === 0 ? 'today' : ''}">${rel ? `<small>${rel}</small>` : '<small>&nbsp;</small>'}${d.getMonth() + 1}/${d.getDate()}(${RULE_DAYS[d.getDay()]})</div>`;
+    }).join('');
+    $('#schRange').textContent = `${isoDate(dates[0]).replace(/-/g, '/')} 〜 ${isoDate(dates[dates.length - 1]).replace(/-/g, '/')}（端末の日付）`;
+    $('#schPrev').addEventListener('click', () => { sched.offset -= sched.span; renderSchedule(dev); });
+    $('#schNext').addEventListener('click', () => { sched.offset += sched.span; renderSchedule(dev); });
+    $('#schToday').addEventListener('click', () => { sched.offset = 0; renderSchedule(dev); });
+    $('#schSpan').innerHTML = [3, 7, 14].map((n) => `<button type="button" class="small" data-n="${n}" aria-pressed="${sched.span === n}">${n}日</button>`).join('');
+    $('#schSpan').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { sched.span = Number(b.dataset.n); renderSchedule(dev); }));
+
     const wb = $('#weekBody');
     const axis = document.createElement('div'); axis.className = 'axis'; axis.style.height = `${HP * 24}px`;
     for (let h = 0; h < 24; h += 2) { const sp = document.createElement('span'); sp.style.top = `${h * HP}px`; sp.textContent = `${h}時`; axis.append(sp); }
     wb.append(axis);
-    const cols = WEEK.map((d) => {
-      const c = document.createElement('div'); c.className = 'dcol'; c.style.height = `${HP * 24}px`; c.dataset.day = d; wb.append(c); return c;
+    const cols = dates.map((d) => {
+      const c = document.createElement('div'); c.className = 'dcol'; c.style.height = `${HP * 24}px`; c.dataset.date = isoDate(d); c.dataset.day = d.getDay(); wb.append(c); return c;
     });
-    const byDay = new Map(WEEK.map((d) => [d, []]));
-    for (const p of plist) for (const b of bandsOf(p)) byDay.get(b.day).push({ p, ...b });
-    for (const d of WEEK) layBands(dev, cols[WEEK.indexOf(d)], byDay.get(d));
-    // 予約テロップの時刻（参考表示）
-    for (const sc of dev.state.ticker?.schedules || []) {
-      if (!sc.enabled || !sc.time) continue;
-      const days = sc.days?.length ? sc.days : [0, 1, 2, 3, 4, 5, 6];
-      for (const d of days) {
+    dates.forEach((d, i) => {
+      const bands = [];
+      for (const p of plist) for (const b of bandsForDate(p, d)) bands.push({ p, ...b });
+      layBands(dev, cols[i], bands);
+      // 予約テロップの時刻（参考表示）
+      for (const sc of dev.state.ticker?.schedules || []) {
+        if (!sc.enabled || !sc.time) continue;
+        if (sc.days?.length && !sc.days.includes(d.getDay())) continue;
         const tk = document.createElement('div'); tk.className = 'tk'; tk.style.top = `${toMin(sc.time) / 60 * HP}px`;
         tk.innerHTML = `<span>🔔${esc(sc.time)}</span>`; tk.title = `予約テロップ ${sc.time}：${sc.message || ''}`;
-        cols[WEEK.indexOf(d)]?.append(tk);
+        cols[i].append(tk);
       }
-    }
-    // ドロップで配置（ドロップした位置の時刻から 1 時間）
+      if (sched.offset + i === 0) {   // いまの時刻の線
+        const nl = document.createElement('div'); nl.className = 'now'; nl.style.top = `${(now.getHours() * 60 + now.getMinutes()) / 60 * HP}px`; nl.title = '端末のいまの時刻';
+        cols[i].append(nl);
+      }
+    });
+    // ドロップで配置（ドロップした位置の時刻から 1 時間。毎週くりかえす条件で、編集画面を開く）
     cols.forEach((c) => {
       c.addEventListener('dragover', (e) => { if (dragName) { e.preventDefault(); c.classList.add('over'); } });
       c.addEventListener('dragleave', () => c.classList.remove('over'));
@@ -1952,7 +2008,8 @@
         if (!dragName) return;
         const y = e.clientY - c.getBoundingClientRect().top;
         const start = Math.min(23 * 60, Math.floor(y / HP * 2) * 30);   // 30 分きざみ
-        openPlacementDialog({ dev, mode: 'add', name: dragName, zone, slot: { days: [Number(c.dataset.day)], start: hhmm(start), end: hhmm(Math.min(start + 60, 1439)) } });
+        openPlacementDialog({ dev, mode: 'add', name: dragName, zone, date: c.dataset.date,
+          slot: { days: [Number(c.dataset.day)], start: hhmm(start), end: hhmm(Math.min(start + 60, 1439)) } });
         dragName = null;
       });
     });
