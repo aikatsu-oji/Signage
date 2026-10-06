@@ -48,7 +48,6 @@ interface Zone {
 class MediaZone(
     private val activity: Activity,
     private val prefs: Prefs,
-    private val folder: Uri?,
     private val isMain: Boolean,
     /** 表示内容が変わったとき（情報表示の更新用） */
     private val onChanged: () -> Unit = {},
@@ -229,19 +228,13 @@ class MediaZone(
         }
         val wrapBack = index + step < 0
 
-        val folder = folder
-        if (folder == null) {
-            showMessage("この区画のフォルダが設定されていません\n長押しで設定画面を開きます")
-            return
-        }
-        val recursive = prefs.recursive
         io.execute {
-            val result = runCatching { MediaScanner.scan(activity.contentResolver, folder, recursive) }
+            val result = runCatching { Library.entries(activity, zoneIndex) }
             handler.post {
                 if (my != token || activity.isFinishing) return@post
                 val items = result.getOrNull()
                 if (items == null) {
-                    showMessage("フォルダを読み込めません。\nUSBメモリ等が外れていないか確認してください。\n\n5秒後に再試行します（長押しで設定）")
+                    showMessage("画像・動画を読み込めません。\n\n5秒後に再試行します（長押しで設定）")
                     handler.postDelayed({ if (my == token) goto(step) }, 5000)
                     return@post
                 }
@@ -251,7 +244,7 @@ class MediaZone(
                     currentIsVideo = false
                     layers.forEach(::hideLayer)
                     showing = null
-                    showMessage("再生できる画像・動画がありません\n${MediaScanner.describe(folder)}\n\n5秒ごとに再確認します（長押しで設定）")
+                    showMessage("この区画に配置された画像・動画がありません\n管理画面から、画像・動画を追加してください\n\n5秒ごとに再確認します")
                     handler.postDelayed({ if (my == token) goto(1) }, 5000)
                     return@post
                 }

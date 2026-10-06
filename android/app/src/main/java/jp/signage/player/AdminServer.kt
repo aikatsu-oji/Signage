@@ -386,30 +386,28 @@ object AdminServer {
             }
             "POST /api/access" -> json(200, applyAccess(prefs, req.json(), from))
             "PUT /api/upload" -> {
-                val folder = writableFolder(prefs, req.query["zone"])
-                val name = FolderStore.sanitize(req.query["name"] ?: "")
+                val zone = zoneIndex(prefs, req.query["zone"])
+                val name = Library.sanitize(req.query["name"] ?: "")
                     ?: throw HttpError(400, "画像・動画のファイルのみアップロードできます")
                 if (req.contentLength <= 0) throw HttpError(400, "ファイルが空です")
                 if (req.contentLength > MAX_UPLOAD_BYTES) throw HttpError(413, "ファイルが大きすぎます（4GB まで）")
-                // 空き容量を使い切らない（フォルダが通常のパスのときだけ確かめられる）
-                if (folder.scheme == "file") {
-                    val free = runCatching { File(folder.path ?: "").usableSpace }.getOrDefault(Long.MAX_VALUE)
-                    if (req.contentLength > free - DISK_RESERVE_BYTES) throw HttpError(413, "空き容量が足りません")
-                }
-                val saved = FolderStore.upload(app, folder, name, req.contentLength, req.body)
+                // 空き容量を使い切らない
+                val free = runCatching { Library.dir(app).usableSpace }.getOrDefault(Long.MAX_VALUE)
+                if (req.contentLength > free - DISK_RESERVE_BYTES) throw HttpError(413, "空き容量が足りません")
+                val saved = Library.upload(app, zone, name, req.contentLength, req.body)
                 json(200, JSONObject().put("ok", true).put("name", saved))
             }
             "POST /api/delete" -> {
                 val body = req.json()
-                val folder = writableFolder(prefs, body.optString("zone"))
-                FolderStore.delete(app, folder, body.getString("name"), prefs.recursive)
-                prefs.setFileRule(body.optString("zone").toIntOrNull() ?: 0, body.getString("name"), null)
-                prefs.setFileRotation(body.optString("zone").toIntOrNull() ?: 0, body.getString("name"), 0)
+                val zone = zoneIndex(prefs, body.optString("zone"))
+                try { Library.find(app, zone, body.getString("name")) } catch (e: IOException) { throw HttpError(404, e.message ?: "ファイルが見つかりません") }
+                Library.remove(app, zone, body.getString("name"))
+                notify(EVENT_CONTENT)
                 json(200, JSONObject().put("ok", true))
             }
             "POST /api/filerotate" -> {
                 val body = req.json()
-                writableFolder(prefs, body.optString("zone")) // 区画の確認
+                zoneIndex(prefs, body.optString("zone")) // 区画の確認
                 val degrees = body.optInt("degrees", 0)
                 if (degrees !in listOf(0, 90, 180, 270)) throw HttpError(400, "回転は 0・90・180・270 のどれかにしてください")
                 prefs.setFileRotation(body.optString("zone").toInt(), body.getString("name"), degrees)
@@ -418,7 +416,7 @@ object AdminServer {
             }
             "POST /api/filerule" -> {
                 val body = req.json()
-                writableFolder(prefs, body.optString("zone")) // 区画の確認
+                zoneIndex(prefs, body.optString("zone")) // 区画の確認
                 val zone = body.optString("zone").toInt()
                 val rule = try {
                     FileRule.normalize(body.optJSONObject("rule"))
@@ -430,8 +428,8 @@ object AdminServer {
                 json(200, JSONObject().put("ok", true))
             }
             "GET /api/file" -> {
-                val folder = folderOf(prefs, req.query["zone"])
-                val (stream, entry) = FolderStore.open(app, folder, req.query["name"] ?: "", prefs.recursive)
+                val zone = zoneIndex(prefs, req.query["zone"])
+                val (stream, entry) = try { Library.open(app, zone, req.query["name"] ?: "") } catch (e: IOException) { throw HttpError(404, e.message ?: "ファイルが見つかりません") }
                 val type = android.webkit.MimeTypeMap.getSingleton()
                     .getMimeTypeFromExtension(entry.name.substringAfterLast('.', "").lowercase()) ?: "application/octet-stream"
                 Response(200, type, entry.size) { out -> stream.use { it.copyTo(out, 256 * 1024) } }
@@ -664,17 +662,6 @@ object AdminServer {
         return i
     }
 
-    private fun folderOf(prefs: Prefs, raw: String?): Uri =
-        prefs.zoneFolder(zoneIndex(prefs, raw)) ?: throw HttpError(400, "この区画のフォルダが未設定です")
-
-    private fun writableFolder(prefs: Prefs, raw: String?): Uri {
-        val folder = folderOf(prefs, raw)
-        if (!FolderStore.isWritable(app, folder)) {
-            throw HttpError(403, "このフォルダには書き込めません。端末の設定画面でフォルダを選び直すか、「アプリ専用フォルダ」を使ってください")
-        }
-        return folder
-    }
-
     // ---------------------------------------------------------------- 状態と設定
 
     private fun state(prefs: Prefs): JSONObject {
@@ -690,24 +677,20 @@ object AdminServer {
                 z.put("url", prefs.zoneUrl(i)).put("refreshMin", prefs.zoneRefreshMin(i))
             }
             if (type == Prefs.ZONE_FOLDER) {
-                val folder = prefs.zoneFolder(i)
-                z.put("folder", folder?.let(MediaScanner::describe) ?: "")
-                if (folder != null) {
-                    z.put("writable", FolderStore.isWritable(app, folder))
-                    val files = JSONArray()
-                    val rules = prefs.fileRulesOf(i)
-                    val rotations = prefs.fileRotationsOf(i)
-                    runCatching { MediaScanner.scan(app.contentResolver, folder, prefs.recursive) }
-                        .onFailure { z.put("error", "フォルダを読み込めません") }
-                        .getOrDefault(emptyList())
-                        .forEach {
-                            files.put(JSONObject().put("name", it.name).put("video", it.isVideo).put("size", it.size).apply {
-                                rules[it.name]?.let { r -> put("rule", r) }
-                                rotations[it.name]?.takeIf { r -> r != 0 }?.let { r -> put("rotation", r) }
-                            })
-                        }
-                    z.put("files", files)
-                }
+                z.put("folder", "ライブラリ（アプリ専用の保存場所）").put("writable", true)
+                val files = JSONArray()
+                val rules = prefs.fileRulesOf(i)
+                val rotations = prefs.fileRotationsOf(i)
+                runCatching { Library.entries(app, i) }
+                    .onFailure { z.put("error", "画像・動画を読み込めません") }
+                    .getOrDefault(emptyList())
+                    .forEach {
+                        files.put(JSONObject().put("name", it.name).put("video", it.isVideo).put("size", it.size).apply {
+                            rules[it.name]?.let { r -> put("rule", r) }
+                            rotations[it.name]?.takeIf { r -> r != 0 }?.let { r -> put("rotation", r) }
+                        })
+                    }
+                z.put("files", files)
             }
             zones.put(z)
         }

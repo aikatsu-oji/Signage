@@ -291,19 +291,57 @@ class Prefs(context: Context) {
 
     fun setZoneRefreshMin(i: Int, min: Int) = sp.edit().putInt("zoneRefreshMin$i", min.coerceIn(1, 1440)).apply()
 
-    /** 区画 i のフォルダ。区画0 は従来の「再生フォルダ」 */
-    fun zoneFolder(i: Int): Uri? =
-        (if (i == 0) folderUri else sp.getString("zoneFolder$i", null)?.let(Uri::parse)) ?: appFolder(i)
+    /** 旧バージョンの区画ごとのフォルダ（ライブラリへの移行にだけ使う）。区画0 は従来の「再生フォルダ」 */
+    fun legacyZoneFolder(i: Int): Uri? =
+        (if (i == 0) folderUri else sp.getString("zoneFolder$i", null)?.let(Uri::parse)) ?: legacyAppFolder(i)
 
-    /**
-     * まだフォルダを選んでいない区画の初期値は、アプリ専用のフォルダ（Android/data/…/files/zoneN）。
-     * 権限なしで読み書きでき、管理画面からすぐ画像・動画を追加できる（アプリを削除すると中身も消える）
-     */
-    fun appFolder(i: Int): Uri? = runCatching {
+    private fun legacyAppFolder(i: Int): Uri? = runCatching {
         val dir = appContext.getExternalFilesDir("zone${i + 1}") ?: File(appContext.filesDir, "zone${i + 1}")
-        dir.mkdirs()
+        if (!dir.isDirectory) return null
         Uri.fromFile(dir)
     }.getOrNull()
+
+    /** ライブラリ（アプリ専用の保存場所）への移行が済んだか */
+    var libraryMigrated: Boolean
+        get() = sp.getBoolean("libraryMigrated", false)
+        set(v) = sp.edit().putBoolean("libraryMigrated", v).apply()
+
+    /** 配置（区画, ライブラリのファイル名）。区画ごとの順番は、この並び順 */
+    @Synchronized
+    fun placements(): List<Pair<Int, String>> = runCatching {
+        val arr = org.json.JSONArray(sp.getString("placements", "[]") ?: "[]")
+        (0 until arr.length()).mapNotNull { i -> arr.optJSONObject(i)?.let { it.getInt("zone") to it.getString("name") } }
+    }.getOrDefault(emptyList())
+
+    fun placementsOf(zone: Int): List<String> = placements().filter { it.first == zone }.map { it.second }
+
+    @Synchronized
+    fun replacePlacements(list: List<Pair<Int, String>>) {
+        val arr = org.json.JSONArray()
+        list.forEach { arr.put(JSONObject().put("zone", it.first).put("name", it.second)) }
+        sp.edit().putString("placements", arr.toString()).apply()
+    }
+
+    @Synchronized
+    fun addPlacement(zone: Int, name: String) {
+        val list = placements()
+        if (list.none { it.first == zone && it.second == name }) replacePlacements(list + (zone to name))
+    }
+
+    /** 区画から外す。同じファイルが、ほかの区画で使われていれば true */
+    @Synchronized
+    fun removePlacement(zone: Int, name: String): Boolean {
+        val rest = placements().filterNot { it.first == zone && it.second == name }
+        replacePlacements(rest)
+        return rest.any { it.second == name }
+    }
+
+    @Synchronized
+    fun replaceFileRulesAndRotations(rules: Map<String, JSONObject>, rotations: Map<String, Int>) {
+        val r = JSONObject(); rules.forEach { (k, v) -> r.put(k, v) }
+        val o = JSONObject(); rotations.forEach { (k, v) -> o.put(k, v) }
+        sp.edit().putString("fileRules", r.toString()).putString("fileRotations", o.toString()).apply()
+    }
 
     /** 画像・動画ごとの表示の回転（キーは「区画|ファイル名」、値は 90・180・270）。回転なしは 0 */
     private fun fileRotations(): JSONObject = runCatching { JSONObject(sp.getString("fileRotations", "{}") ?: "{}") }.getOrDefault(JSONObject())
@@ -340,13 +378,6 @@ class Prefs(context: Context) {
         return all.keys().asSequence().filter { it.startsWith(prefix) }
             .mapNotNull { k -> all.optJSONObject(k)?.let { k.removePrefix(prefix) to it } }.toMap()
     }
-
-    fun setZoneFolder(i: Int, uri: Uri?) {
-        if (i == 0) folderUri = uri else sp.edit().putString("zoneFolder$i", uri?.toString()).apply()
-    }
-
-    /** 使用中の全区画のフォルダ（フォルダへのアクセス権を残すため） */
-    fun allZoneFolders(): Set<Uri> = (0 until MAX_ZONES).mapNotNull(::zoneFolder).toSet()
 
     companion object {
         const val LAYOUT_SINGLE = 0

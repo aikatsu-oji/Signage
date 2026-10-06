@@ -420,7 +420,6 @@
                   <option value="0">全体を表示（余白は黒）</option>
                 </select></label>
               <label class="check"><input type="checkbox" name="shuffle"> シャッフル再生</label>
-              <label class="check"><input type="checkbox" name="recursive"> サブフォルダも含める</label>
               <label class="check"><input type="checkbox" name="videoSound"> 動画の音声を再生</label>
               <label class="check" title="動画が途中で止まる・固まる機種（業務用サイネージのボードなど）向け。Android 版のみ">
                 <input type="checkbox" name="videoCompat"> 動画の互換モード（Android のみ）</label>
@@ -1509,7 +1508,7 @@
         <ul class="queue"></ul>
         <div class="grid"></div>`;
       $('h2', sec).textContent = `${z.label}　${files.length} 件`;
-      $('.folder', sec).textContent = 'フォルダ：' + (z.folder || '未設定');
+      $('.folder', sec).textContent = '保存場所：' + (z.folder || 'ライブラリ');
       const warn = $('.warn', sec);
       const drop = $('.drop', sec);
       if (!z.folder) {
@@ -2704,7 +2703,7 @@
   // ------------------------------------------------------------ 設定のエクスポート・一括反映
 
   /** 設定ファイルに含める設定の項目（端末ごとに違うフォルダ・端末名・PIN・天気の地域は含めない） */
-  const EXPORT_KEYS = ['layout', 'splitPercent', 'splitA', 'splitB', 'mainPercent', 'sidePercent', 'zoneTypes', 'imageSeconds', 'shuffle', 'recursive',
+  const EXPORT_KEYS = ['layout', 'splitPercent', 'splitA', 'splitB', 'mainPercent', 'sidePercent', 'zoneTypes', 'imageSeconds', 'shuffle',
     'videoSound', 'videoCompat', 'videoMultiSoft', 'fitMode', 'clockEnabled', 'clockPosition', 'clockSize', 'timeZone', 'timeFormat', 'timeSync', 'timeServer',
     'weatherEnabled', 'weatherIntervalMin', 'weatherSeconds', 'weatherTimeSeries'];
   const EXPORT_KIND = 'signage-settings';

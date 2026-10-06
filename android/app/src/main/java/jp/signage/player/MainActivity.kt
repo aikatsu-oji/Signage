@@ -34,8 +34,6 @@ import java.util.concurrent.Executors
 class MainActivity : Activity() {
     companion object {
         const val EXTRA_FROM_PLAYER = "fromPlayer"
-        private const val REQ_FOLDER = 1
-        private const val REQ_STORAGE = 2
         private const val REQ_NOTIFICATION = 3
         private const val DEFAULT_OFFICE = "130000" // 東京都
         /** 2分割の比率の選択肢（区画1 の %） */
@@ -63,8 +61,6 @@ class MainActivity : Activity() {
     private lateinit var areaSpinner: Spinner
     private var offices: List<Office> = emptyList()
     /** フォルダを選択中の区画 */
-    private var pendingZone = 0
-    private val zoneFolderTexts = mutableMapOf<Int, TextView>()
     private val zoneRows = mutableListOf<View>()
     private val io = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -81,15 +77,11 @@ class MainActivity : Activity() {
         secondsEdit = findViewById(R.id.secondsEdit)
         secondsEdit.setText(prefs.imageSeconds.toString())
 
-        findViewById<Button>(R.id.pickFolder).setOnClickListener { pickFolder(0) }
-        findViewById<Button>(R.id.pickFolderDirect).setOnClickListener { pickFolderDirect(0) }
-        findViewById<Button>(R.id.useAppFolder).setOnClickListener { useAppFolder(0) }
         setupLayout()
         findViewById<Button>(R.id.startButton).setOnClickListener { startPlayer() }
 
         bindSwitch(R.id.shuffleSwitch, prefs.shuffle) { prefs.shuffle = it }
         setupFitMode()
-        bindSwitch(R.id.recursiveSwitch, prefs.recursive) { prefs.recursive = it; refreshFolder() }
         bindSwitch(R.id.soundSwitch, prefs.videoSound) { prefs.videoSound = it }
         bindSwitch(R.id.videoCompatSwitch, prefs.videoCompat) { prefs.videoCompat = it }
         bindSwitch(R.id.videoMultiSoftSwitch, prefs.videoMultiSoft) { prefs.videoMultiSoft = it }
@@ -216,42 +208,6 @@ class MainActivity : Activity() {
         weatherSecondsEdit.setText(prefs.weatherSeconds.toString())
     }
 
-    private fun pickFolder(zone: Int) {
-        pendingZone = zone
-        // 管理画面からのアップロード・削除のため、書き込みの許可も求める
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(
-            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
-                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-        )
-        prefs.zoneFolder(zone)?.takeIf { it.scheme == "content" }
-            ?.let { intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, it) }
-        try {
-            @Suppress("DEPRECATION")
-            startActivityForResult(intent, REQ_FOLDER)
-        } catch (e: ActivityNotFoundException) {
-            Toast.makeText(this, "フォルダ選択画面が無いため、端末内を直接参照します", Toast.LENGTH_LONG).show()
-            pickFolderDirect(zone)
-        }
-    }
-
-    /**
-     * アプリ専用のフォルダ（Android/data/…/files/zoneN）を使う。
-     * 権限なしで読み書きできるので、管理画面からのアップロード先に向く（アプリを削除すると中身も消える）
-     */
-    private fun useAppFolder(zone: Int) {
-        val dir = getExternalFilesDir("zone${zone + 1}") ?: File(filesDir, "zone${zone + 1}")
-        dir.mkdirs()
-        setZoneFolder(zone, Uri.fromFile(dir))
-        Toast.makeText(this, "アプリ専用フォルダを設定しました。管理画面から画像・動画を追加できます", Toast.LENGTH_LONG).show()
-    }
-
-    private fun setZoneFolder(zone: Int, uri: Uri) {
-        prefs.setZoneFolder(zone, uri)
-        releaseUnusedTreePermissions()
-        refreshFolder()
-        refreshZoneFolders()
-    }
-
     // ---------------------------------------------------------------- 画面分割
 
     private fun setupLayout() {
@@ -291,42 +247,9 @@ class MainActivity : Activity() {
             }
             row.addView(spinner)
 
-            // 区画2・3 はここでフォルダを選ぶ（区画1 は下の「再生フォルダ」）
-            val folderRow = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            if (i > 0) {
-                val folderText = TextView(this).apply { textSize = 14f }
-                zoneFolderTexts[i] = folderText
-                folderRow.addView(folderText)
-                val buttons = LinearLayout(this)
-                buttons.addView(Button(this).apply {
-                    text = "フォルダを選択"
-                    setOnClickListener { pickFolder(i) }
-                })
-                buttons.addView(Button(this, null, android.R.attr.borderlessButtonStyle).apply {
-                    text = "直接選択"
-                    setOnClickListener { pickFolderDirect(i) }
-                })
-                buttons.addView(Button(this, null, android.R.attr.borderlessButtonStyle).apply {
-                    text = "アプリ専用"
-                    setOnClickListener { useAppFolder(i) }
-                })
-                folderRow.addView(buttons)
-            } else {
-                folderRow.addView(TextView(this).apply {
-                    text = "フォルダは下の「再生フォルダ（区画1・メイン）」で選びます。動画の音声と天気予報の差し込みは、最初のフォルダ区画で行います。"
-                    textSize = 12f
-                    setTextColor(0xFF9E9E9E.toInt())
-                })
-            }
-            row.addView(folderRow)
-            fun syncFolderRow() {
-                folderRow.visibility = if (prefs.zoneType(i) == Prefs.ZONE_FOLDER) View.VISIBLE else View.GONE
-            }
-            syncFolderRow()
             spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                     prefs.setZoneType(i, position)
-                    syncFolderRow()
                 }
 
                 override fun onNothingSelected(parent: AdapterView<*>?) {}
@@ -335,7 +258,6 @@ class MainActivity : Activity() {
             container.addView(row)
         }
         updateZoneRows()
-        refreshZoneFolders()
     }
 
     /** 分割方法に合わせて、区画の名前と表示する区画数を切り替える */
@@ -434,65 +356,6 @@ class MainActivity : Activity() {
 
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
-    }
-
-    private fun refreshZoneFolders() {
-        zoneFolderTexts.forEach { (i, view) ->
-            view.text = prefs.zoneFolder(i)?.let { "フォルダ: " + MediaScanner.describe(it) } ?: "フォルダ: 未選択"
-        }
-    }
-
-    // ---------------------------------------------------------------- 端末内を直接参照
-
-    private fun storagePermissions(): Array<String> =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
-        } else {
-            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
-
-    private fun hasStoragePermission() =
-        storagePermissions().all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
-
-    /** システムのフォルダ選択画面を使わず、アプリ内のブラウザでフォルダを選ぶ */
-    private fun pickFolderDirect(zone: Int) {
-        pendingZone = zone
-        if (!hasStoragePermission()) {
-            requestPermissions(storagePermissions(), REQ_STORAGE)
-            return
-        }
-        val current = prefs.zoneFolder(zone)?.takeIf { it.scheme == "file" }?.path?.let(::File)
-        FolderBrowser(this) { dir -> setZoneFolder(zone, Uri.fromFile(dir)) }.show(current)
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode != REQ_STORAGE) return
-        if (hasStoragePermission()) {
-            pickFolderDirect(pendingZone)
-            return
-        }
-        AlertDialog.Builder(this)
-            .setTitle("写真と動画へのアクセス")
-            .setMessage(
-                "端末内の画像・動画を読み込むには、写真と動画へのアクセスを「すべて許可」してください。\n\n" +
-                    "許可の画面が出ない場合は、端末の設定 → アプリ → サイネージ → 権限 から許可できます。"
-            )
-            .setPositiveButton("アプリの設定を開く") { _, _ ->
-                runCatching {
-                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
-                }
-            }
-            .setNegativeButton("閉じる", null)
-            .show()
-    }
-
-    /** どの区画でも使っていないフォルダの永続アクセス権を解放 */
-    private fun releaseUnusedTreePermissions() {
-        val used = prefs.allZoneFolders()
-        contentResolver.persistedUriPermissions
-            .filter { it.uri !in used }
-            .forEach { contentResolver.releasePersistableUriPermission(it.uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
     }
 
     // ---------------------------------------------------------------- 管理画面
@@ -846,43 +709,21 @@ class MainActivity : Activity() {
             setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         }
 
-    @Deprecated("Deprecated in Java")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQ_FOLDER || resultCode != RESULT_OK) return
-        val uri: Uri = data?.data ?: return
-        // 再起動後も読めるように権限を永続化し、使わなくなったフォルダの権限は解放
-        FolderStore.takePermission(this, uri, data.flags)
-        setZoneFolder(pendingZone, uri)
-    }
-
-    /** 選択中フォルダの表示と、中身の件数・一覧の更新 */
+    /** ライブラリ（アプリ専用の保存場所）の状況の表示 */
     private fun refreshFolder() {
-        val uri = prefs.zoneFolder(0)
         val gen = ++scanGeneration
-        if (uri == null) {
-            folderText.text = "未選択"
-            scanResult.text = ""
-            return
-        }
-        folderText.text = MediaScanner.describe(uri)
+        folderText.text = "アプリ専用の保存場所（管理画面から、登録・削除と、区画への配置を行います）"
         scanResult.text = "読み込み中…"
-        val recursive = prefs.recursive
         io.execute {
-            val result = runCatching { MediaScanner.scan(contentResolver, uri, recursive) }
+            val result = runCatching { Library.summary(this) }
+            val zones = runCatching { (0 until Prefs.zoneCount(prefs.layout)).map { Library.entries(this, it).size } }.getOrNull()
             main.post {
                 if (gen != scanGeneration || isDestroyed) return@post
-                val items = result.getOrNull()
-                scanResult.text = when {
-                    items == null -> "フォルダを読み込めません。もう一度選択してください。"
-                    items.isEmpty() -> "再生できる画像・動画がありません"
-                    else -> buildString {
-                        append("画像 ${items.count { !it.isVideo }} 件 / 動画 ${items.count { it.isVideo }} 件\n")
-                        items.take(100).forEachIndexed { i, it ->
-                            append("${i + 1}. [${if (it.isVideo) "動画" else "画像"}] ${it.name}\n")
-                        }
-                        if (items.size > 100) append("… ほか ${items.size - 100} 件")
-                    }
+                val (total, unused) = result.getOrNull() ?: run { scanResult.text = "読み込めません"; return@post }
+                scanResult.text = buildString {
+                    append("ライブラリ：画像・動画 ${total} 件")
+                    if (unused > 0) append("（どの区画にも配置していないもの ${unused} 件）")
+                    zones?.forEachIndexed { i, n -> append("\n区画${i + 1}：${n} 件を配置") }
                 }
             }
         }
@@ -890,13 +731,6 @@ class MainActivity : Activity() {
 
     private fun startPlayer() {
         saveSeconds()
-        val missing = (0 until Prefs.zoneCount(prefs.layout))
-            .filter { prefs.zoneType(it) == Prefs.ZONE_FOLDER && prefs.zoneFolder(it) == null }
-        if (missing.isNotEmpty()) {
-            val names = missing.joinToString("・") { "${it + 1}" }
-            Toast.makeText(this, "区画$names のフォルダを選択してください", Toast.LENGTH_SHORT).show()
-            return
-        }
         startActivity(Intent(this, PlayerActivity::class.java))
     }
 

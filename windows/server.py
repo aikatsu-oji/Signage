@@ -41,7 +41,7 @@ mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
 LOCAL_PORT = 18080  # HTTPS のとき、この PC 自身が使う HTTP のポート
-VERSION = "1.8.29"
+VERSION = "1.9.0"
 
 
 def resource_dir() -> Path:
@@ -73,7 +73,7 @@ def is_local(addr: str) -> bool:
 
 # この PC の設定画面（X-Local-Token が必要）だけが使う API。再生画面が使うもの（config・playlist など）は含めない
 LOCAL_PROTECTED = {"GET /local/settings", "POST /local/settings", "POST /local/access-reset",
-                   "POST /local/pick-folder", "POST /local/open-folder"}
+                   "POST /local/open-folder"}
 
 MAX_UPLOAD_BYTES = 4 * 1024 ** 3     # 1 ファイルの上限
 DISK_RESERVE_BYTES = 200 * 1024 ** 2   # 空き容量を、これだけは残す
@@ -203,24 +203,18 @@ class Server:
                 z["url"] = s.zone_url(i)
                 z["refreshMin"] = s.zone_refresh(i)
             if z["type"] == st.ZONE_FOLDER:
-                folder = s.zone_folder(i)
-                z["folder"] = str(folder) if folder else ""
-                if folder:
-                    z["writable"] = s.is_writable(folder)
-                    try:
-                        z["files"] = []
-                        for f in s.scan(folder):
-                            e = {"name": f["name"], "video": f["video"], "size": f["size"]}
-                            rule = s.file_rule(i, f["name"])
-                            if rule:
-                                e["rule"] = rule
-                            rot = s.file_rotation(i, f["name"])
-                            if rot:
-                                e["rotation"] = rot
-                            z["files"].append(e)
-                    except OSError:
-                        z["files"] = []
-                        z["error"] = "フォルダを読み込めません"
+                z["folder"] = "ライブラリ（アプリ専用の保存場所）"
+                z["writable"] = True
+                z["files"] = []
+                for f in s.zone_items(i):
+                    e = {"name": f["name"], "video": f["video"], "size": f["size"]}
+                    rule = s.file_rule(i, f["name"])
+                    if rule:
+                        e["rule"] = rule
+                    rot = s.file_rotation(i, f["name"])
+                    if rot:
+                        e["rotation"] = rot
+                    z["files"].append(e)
             zones.append(z)
         settings = {k: s.get(k) for k in (
             "layout", "splitPercent", "splitA", "splitB", "mainPercent", "sidePercent", "imageSeconds", "shuffle", "recursive", "videoSound",
@@ -267,8 +261,7 @@ class Server:
         running = self.player_status is not None and now - self.player_beat < self.PLAYER_ALIVE_SECONDS
         disk = None
         try:
-            folder = s.zone_folder(0)
-            u = shutil.disk_usage(str(folder) if folder else str(st.APP_DIR))
+            u = shutil.disk_usage(str(s.library_dir()))
             disk = {"free": u.free, "total": u.total}
         except Exception:
             pass
@@ -588,7 +581,8 @@ class Server:
                 # グループコードを先に判定する（コードを知らない相手に、PIN が合っているかを教えない）
                 raise HttpError(401, "PIN が違います" if group_ok else "グループコードが違います")
 
-            def folder_of(self, raw, writable=False):
+            def zone_of(self, raw):
+                """区画の番号を確認して返す（画像・動画の区画のみ）"""
                 s = server.store
                 try:
                     i = int(raw)
@@ -596,12 +590,7 @@ class Server:
                     raise HttpError(400, "区画が指定されていません")
                 if not (0 <= i < st.zone_count(s.get("layout"))) or s.zone_type(i) != st.ZONE_FOLDER:
                     raise HttpError(400, "フォルダの区画ではありません")
-                folder = s.zone_folder(i)
-                if not folder:
-                    raise HttpError(400, "この区画のフォルダが未設定です")
-                if writable and not s.is_writable(folder):
-                    raise HttpError(403, "このフォルダには書き込めません")
-                return folder
+                return i
 
             # -------- 管理画面の API（Android 版と同じ）
 
@@ -626,7 +615,8 @@ class Server:
                 elif key == "POST /api/access":
                     self.json(server.apply_access(self.body_json(), self.client_address[0]))
                 elif key == "PUT /api/upload":
-                    folder = self.folder_of(query.get("zone"), writable=True)
+                    zone = self.zone_of(query.get("zone"))
+                    folder = s.library_dir()
                     name = s.sanitize(query.get("name", ""))
                     if not name:
                         raise HttpError(400, "画像・動画のファイルのみアップロードできます")
@@ -656,23 +646,24 @@ class Server:
                                 f.write(chunk)
                                 remaining -= len(chunk)
                         os.replace(tmp, folder / final)
+                        s.add_placement(zone, final)
                     finally:
                         if tmp.exists():
                             tmp.unlink()
                     self.json({"ok": True, "name": final})
                 elif key == "POST /api/delete":
                     j = self.body_json()
-                    folder = self.folder_of(j.get("zone"), writable=True)
+                    zone = self.zone_of(j.get("zone"))
                     try:
-                        s.find(folder, j.get("name", ""))["path"].unlink()
+                        s.find_item(zone, j.get("name", ""))
                     except FileNotFoundError as e:
                         raise HttpError(404, str(e))
-                    s.set_file_rule(j.get("zone"), j.get("name", ""), None)
-                    s.set_file_rotation(j.get("zone"), j.get("name", ""), 0)
+                    s.remove_placement(zone, j.get("name", ""))
+                    s.notify("content")
                     self.json({"ok": True})
                 elif key == "POST /api/filerotate":
                     j = self.body_json()
-                    self.folder_of(j.get("zone"), writable=True)  # 区画の確認
+                    self.zone_of(j.get("zone"))  # 区画の確認
                     try:
                         deg = int(j.get("degrees", 0))
                     except (TypeError, ValueError):
@@ -684,7 +675,7 @@ class Server:
                     self.json({"ok": True})
                 elif key == "POST /api/filerule":
                     j = self.body_json()
-                    self.folder_of(j.get("zone"), writable=True)  # 区画の確認
+                    self.zone_of(j.get("zone"))  # 区画の確認
                     try:
                         rule = s.normalize_rule(j.get("rule"))
                     except ValueError as e:
@@ -693,9 +684,9 @@ class Server:
                     s.notify("content")
                     self.json({"ok": True})
                 elif key in ("GET /api/file", "HEAD /api/file"):
-                    folder = self.folder_of(query.get("zone"))
+                    zone = self.zone_of(query.get("zone"))
                     try:
-                        item = s.find(folder, query.get("name", ""))
+                        item = s.find_item(zone, query.get("name", ""))
                     except FileNotFoundError as e:
                         raise HttpError(404, str(e))
                     self.send_file(item["path"])
@@ -771,11 +762,12 @@ class Server:
                     parts = path[len("/media/"):].split("/", 1)
                     if len(parts) != 2:
                         raise HttpError(404, "見つかりません")
-                    folder = self.folder_of(parts[0])
-                    target = (folder / parts[1]).resolve()
-                    if folder.resolve() not in target.parents or not target.is_file():
+                    zone = self.zone_of(parts[0])
+                    try:
+                        item = s.find_item(zone, parts[1])
+                    except FileNotFoundError:
                         raise HttpError(404, "見つかりません")
-                    return self.send_file(target)
+                    return self.send_file(item["path"])
                 key = f"{method} {path}"
                 if key in LOCAL_PROTECTED and not hmac.compare_digest(
                         (self.headers.get("X-Local-Token") or "").encode(), server.local_token.encode()):
@@ -785,18 +777,14 @@ class Server:
                     cfg.update({
                         "version": VERSION,
                         "zoneCount": st.zone_count(s.get("layout")),
-                        "zoneFolders": [bool(s.zone_folder(i)) for i in range(st.MAX_ZONES)],
+                        "zoneFolders": [True] * st.MAX_ZONES,  # 保存場所は、ライブラリ 1 か所（区画ごとのフォルダは廃止）
                         "weatherOffice": s.get("weatherOffice"),
                         "weatherRegions": s.get("weatherRegions") or [],
                     })
                     return self.json(cfg)
                 if key == "GET /local/playlist":
-                    folder = self.folder_of(query.get("zone"))
-                    try:
-                        items = s.scan(folder)
-                    except OSError as e:
-                        raise HttpError(404, str(e))
-                    zone = query.get("zone")
+                    zone = self.zone_of(query.get("zone"))
+                    items = s.zone_items(zone)
                     return self.json([{
                         "name": it["name"],
                         "video": it["video"],
@@ -824,7 +812,7 @@ class Server:
                 if key == "GET /local/events":
                     return self.events()
                 if key == "GET /local/settings":
-                    d = {k: s.get(k) for k in ("zoneFolders", "weatherOffice", "weatherArea", "weatherCity",
+                    d = {k: s.get(k) for k in ("weatherOffice", "weatherArea", "weatherCity",
                                               "adminEnabled", "adminPin", "monitor", "autoStart", "layout", "macLock", "allowedMacs")}
                     d["group"] = server.group_info()
                     d.update({
@@ -858,16 +846,12 @@ class Server:
                     return self.json({"ok": True})
                 if key == "POST /local/settings":
                     return self.json(server.local_settings(self.body_json()))
-                if key == "POST /local/pick-folder":
-                    return self.json({"path": server.pick_folder(self.body_json().get("zone", 0))})
                 if key == "POST /local/open-player":
                     if hasattr(server, "open_player"):
                         server.open_player()
                     return self.json({"ok": True})
                 if key == "POST /local/open-folder":
-                    folder = s.zone_folder(int(self.body_json().get("zone", 0)))
-                    if folder and folder.is_dir():
-                        os.startfile(folder)
+                    os.startfile(s.library_dir())
                     return self.json({"ok": True})
                 raise HttpError(404, "見つかりません")
 
@@ -951,15 +935,6 @@ class Server:
     def local_settings(self, j: dict):
         s = self.store
         u = {}
-        if isinstance(j.get("zoneFolders"), list):
-            folders = list(s.get("zoneFolders"))
-            for i, f in enumerate(j["zoneFolders"][:st.MAX_ZONES]):
-                if isinstance(f, str) and f.strip():
-                    p = Path(f.strip())
-                    if not p.is_dir():
-                        raise HttpError(400, f"フォルダが見つかりません: {p}")
-                    folders[i] = str(p)
-            u["zoneFolders"] = folders
         for k in ("weatherOffice", "weatherArea", "weatherAreaName", "weatherCity", "weatherCityName"):
             if k in j:
                 u[k] = j[k] or None
@@ -991,25 +966,3 @@ class Server:
             # 表示するモニターを変えたら、開いている再生画面を新しいモニターで開き直す
             threading.Thread(target=self.on_monitor_changed, daemon=True).start()
         return {"ok": True, "adminPin": s.get("adminPin")}
-
-    def pick_folder(self, zone):
-        """Windows のフォルダ選択ダイアログを開く"""
-        result = {}
-
-        def run():
-            import tkinter as tk
-            from tkinter import filedialog
-            root = tk.Tk()
-            root.withdraw()
-            root.attributes("-topmost", True)
-            current = self.store.zone_folder(int(zone))
-            result["path"] = filedialog.askdirectory(
-                parent=root, title=f"区画{int(zone) + 1} のフォルダを選択",
-                initialdir=str(current) if current else str(Path.home()))
-            root.destroy()
-
-        t = threading.Thread(target=run)
-        t.start()
-        t.join()
-        path = result.get("path")
-        return str(Path(path)) if path else None

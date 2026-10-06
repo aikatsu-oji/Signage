@@ -7,6 +7,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import socket
 import threading
 import time
@@ -17,6 +18,7 @@ from pathlib import Path
 APP_DIR = Path(os.environ.get("APPDATA", Path.home())) / "Signage"
 CONFIG_FILE = APP_DIR / "config.json"
 MEDIA_ROOT = Path.home() / "Signage"
+LIBRARY_DIR = MEDIA_ROOT / "library"  # 画像・動画の保存場所（端末に 1 つ）。どの区画で・いつ流すかは「配置」で決める
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif", ".svg"}
 VIDEO_EXTS = {".mp4", ".m4v", ".webm", ".mkv", ".mov", ".ogv"}
@@ -63,7 +65,9 @@ DEFAULTS = {
     "mainPercent": 70,
     "sidePercent": 50,
     "zoneTypes": [ZONE_FOLDER, ZONE_FOLDER, ZONE_WEATHER],
-    "zoneFolders": ["", "", ""],
+    "zoneFolders": ["", "", ""],  # 旧バージョンの区画ごとのフォルダ（ライブラリへの移行にだけ使う）
+    "placements": [],  # 配置（[{zone, name}]。name はライブラリのファイル名。区画ごとの順番は、この並び順）
+    "libraryMigrated": False,
     "imageSeconds": 10,
     "shuffle": False,
     "recursive": True,
@@ -137,15 +141,9 @@ class Store:
         if not self.data["adminPin"]:
             self.data["adminPin"] = "%06d" % secrets.randbelow(1_000_000)
             changed = True
-        # 初めて起動したときは、ホームフォルダの Signage\zone1〜3 を区画のフォルダにする
-        folders = list(self.data["zoneFolders"]) + [""] * MAX_ZONES
-        for i in range(MAX_ZONES):
-            if not folders[i]:
-                d = MEDIA_ROOT / f"zone{i + 1}"
-                d.mkdir(parents=True, exist_ok=True)
-                folders[i] = str(d)
-                changed = True
-        self.data["zoneFolders"] = folders[:MAX_ZONES]
+        if not self.data["libraryMigrated"]:
+            self._migrate_library()
+            changed = True
         if changed:
             self.save()
 
@@ -198,10 +196,116 @@ class Store:
         except (IndexError, TypeError, ValueError):
             return 10
 
-    def zone_folder(self, i):
-        folders = self.get("zoneFolders")
-        f = folders[i] if i < len(folders) else ""
-        return Path(f) if f else None
+    # ------------------------------------------------------------ ライブラリと配置
+
+    def library_dir(self) -> Path:
+        LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
+        return LIBRARY_DIR
+
+    def _migrate_library(self):
+        """旧バージョンの区画ごとのフォルダ（サブフォルダ含む）の画像・動画を、ライブラリに集めて、配置にする。
+        元のファイルは消さない（同じドライブなら、ハードリンクで、容量は増えない）。再生条件・回転は、新しい名前に付け替える"""
+        lib = self.library_dir()
+        placements, rules, rots = [], dict(self.data.get("fileRules") or {}), dict(self.data.get("fileRotations") or {})
+        new_rules, new_rots = {}, {}
+        known = {}  # (名前, 大きさ) → ライブラリ内の名前（同じファイルは 1 つにまとめる）
+        folders = list(self.data.get("zoneFolders") or []) + [""] * MAX_ZONES
+        recursive = bool(self.data.get("recursive", True))
+        for i in range(MAX_ZONES):
+            if not folders[i]:
+                continue
+            folder = Path(folders[i])
+            if not folder.is_dir():
+                continue
+            try:
+                items = self.scan(folder, recursive)
+            except OSError:
+                continue
+            for it in items:
+                base = Path(it["name"]).name
+                key = (base, it["size"])
+                name = known.get(key)
+                if name is None and (lib / base).is_file() and (lib / base).stat().st_size == it["size"]:
+                    name = base  # 前回の移行が途中で止まった場合など、すでに同じファイルがあれば、それを使う
+                    known[key] = name
+                if name is None:
+                    name = self.unique_name(lib, base)
+                    try:
+                        os.link(it["path"], lib / name)
+                    except OSError:
+                        try:
+                            shutil.copy2(it["path"], lib / name)
+                        except OSError:
+                            continue
+                    known[key] = name
+                placements.append({"zone": i, "name": name})
+                old = f"{i}|{it['name']}"
+                if old in rules:
+                    new_rules[f"{i}|{name}"] = rules[old]
+                if old in rots:
+                    new_rots[f"{i}|{name}"] = rots[old]
+        self.data["placements"] = placements
+        self.data["fileRules"] = new_rules
+        self.data["fileRotations"] = new_rots
+        self.data["libraryMigrated"] = True
+
+    def placements_of(self, zone):
+        return [p["name"] for p in (self.get("placements") or []) if p.get("zone") == zone]
+
+    def zone_items(self, zone):
+        """区画に配置されている画像・動画を、配置の順に返す [{name, path, video, size}]（ライブラリに無いものは除く）"""
+        lib = self.library_dir()
+        items = []
+        for name in self.placements_of(zone):
+            p = lib / name
+            kind = kind_of(name)
+            try:
+                if kind and p.is_file():
+                    items.append({"name": name, "path": p, "video": kind == "video", "size": p.stat().st_size})
+            except OSError:
+                continue
+        return items
+
+    def find_item(self, zone, name):
+        for it in self.zone_items(zone):
+            if it["name"] == name:
+                return it
+        raise FileNotFoundError(f"ファイルが見つかりません: {name}")
+
+    def add_placement(self, zone, name):
+        with self.lock:
+            lst = list(self.data.get("placements") or [])
+            if not any(p.get("zone") == zone and p.get("name") == name for p in lst):
+                lst.append({"zone": zone, "name": name})
+            self.data["placements"] = lst
+        self.save()
+
+    def remove_placement(self, zone, name):
+        """区画から外す。どの区画にも使われなくなったファイルは、ライブラリからも消す。再生条件・回転も消す"""
+        with self.lock:
+            lst = [p for p in (self.data.get("placements") or []) if not (p.get("zone") == zone and p.get("name") == name)]
+            self.data["placements"] = lst
+            still_used = any(p.get("name") == name for p in lst)
+        self.set_file_rule(zone, name, None)
+        self.set_file_rotation(zone, name, 0)
+        if not still_used:
+            try:
+                (self.library_dir() / name).unlink()
+            except OSError:
+                pass
+        self.save()
+
+    def library_files(self):
+        """ライブラリの全ファイル [{name, size, video, zones:[区画…]}]"""
+        used = {}
+        for p in (self.get("placements") or []):
+            used.setdefault(p.get("name"), []).append(p.get("zone"))
+        out = []
+        for p in sorted(self.library_dir().iterdir(), key=lambda x: natural_key(x.name)):
+            kind = kind_of(p.name)
+            if kind and p.is_file() and not p.name.startswith("."):
+                out.append({"name": p.name, "size": p.stat().st_size, "video": kind == "video", "zones": used.get(p.name, [])})
+        return out
 
     # ------------------------------------------------------------ フォルダ
 
