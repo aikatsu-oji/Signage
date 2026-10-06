@@ -86,7 +86,11 @@
   .week .tk { position: absolute; left: 2px; right: 2px; height: 0; border-top: 1px dotted var(--sub); font-size: 10px; color: var(--sub); pointer-events: none; }
   .week .tk span { position: absolute; right: 0; top: -9px; background: var(--bg, #fff); padding: 0 2px; }
   .always { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; align-items: center; }
-  .always .achip { border: 1px solid #0003; border-radius: 999px; padding: 2px 10px; font-size: 12px; cursor: pointer; color: #111; }
+  .always .achip { border: 1px solid #0003; border-radius: 999px; padding: 2px 4px 2px 10px; font-size: 12px; cursor: pointer; color: #111; display: inline-flex; align-items: center; gap: 4px; }
+  .achip .x, .uchip .x { border: 0; background: #0002; color: inherit; border-radius: 50%; width: 18px; height: 18px; line-height: 16px; padding: 0; cursor: pointer; font-size: 11px; }
+  .achip .x:hover, .uchip .x:hover { background: #c62828; color: #fff; }
+  .lcard .uses { display: flex; flex-wrap: wrap; gap: 4px; min-height: 20px; }
+  .uchip { display: inline-flex; align-items: center; gap: 2px; border: 1px solid var(--line); border-radius: 999px; padding: 0 2px 0 8px; font-size: 11px; background: var(--brand-weak); cursor: pointer; }
   .playlist { list-style: none; margin: 8px 0 0; padding: 0; }
   .playlist li { display: grid; grid-template-columns: 24px 64px 1fr auto; gap: 8px; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; margin-bottom: 6px; background: var(--bg, #fff); }
   .playlist li.dragging { opacity: .4; }
@@ -1668,8 +1672,28 @@
     $('.fname', card).textContent = f.name;
     $('.row span', card).textContent = (f.video ? '動画・' : '画像・') + fmtSize(f.size);
     const use = $('.use', card);
-    use.textContent = usageText(dev, f);
-    use.classList.toggle('none', !f.placements.length);
+    if (!f.placements.length) {
+      use.textContent = '未使用（どの区画にも配置していません）';
+      use.classList.add('none');
+    } else {
+      // 配置ごとの札。名前をクリックで編集、✕ で外す
+      use.classList.add('uses');
+      for (const ref of f.placements) {
+        const p = placementsOf(dev).find((x) => x.id === ref.id);
+        if (!p) continue;
+        const chip = document.createElement('span');
+        chip.className = 'uchip';
+        const lab = document.createElement('span');
+        lab.textContent = `${zoneLabel(dev, p.zone).replace(/（.*$/, '')}・${p.rule ? '条件あり' : '常時'}${p.exclusive ? '★' : ''}`;
+        lab.title = p.rule ? describeRule(p.rule) : '時間の指定なし（常時）';
+        lab.addEventListener('click', () => openPlacementDialog({ dev, mode: 'edit', placement: p }));
+        const x = document.createElement('button');
+        x.type = 'button'; x.className = 'x'; x.textContent = '✕'; x.title = 'この配置を外す（ファイルは残ります）';
+        x.addEventListener('click', () => removePlacement(dev, p));
+        chip.append(lab, x);
+        use.append(chip);
+      }
+    }
     const sel = $('.sel', card);
     sel.checked = lib.sel.has(f.name);
     sel.addEventListener('change', () => { sel.checked ? lib.sel.add(f.name) : lib.sel.delete(f.name); card.classList.toggle('picked', sel.checked); renderSelBar(dev); });
@@ -1761,6 +1785,17 @@
       if (ok && $('#autoReload').checked) await post(t, '/api/reload', {}).catch(() => {});
       setTimeout(() => refreshDevice(t), 800);
     }
+  }
+
+  /** 配置を外す（ファイルは、ライブラリに残る） */
+  async function removePlacement(dev, p) {
+    if (!confirm(`「${p.name}」を、${zoneLabel(dev, p.zone)}から外しますか？\n（ファイルは、コンテンツに残ります）`)) return;
+    try {
+      await post(dev, '/api/placement', { op: 'remove', id: p.id });
+      toast('配置を外しました');
+      if ($('#autoReload').checked) await post(dev, '/api/reload', {}).catch(() => {});
+      await refreshDevice(dev);
+    } catch (e) { toast(e.message); }
   }
 
   // ---- 配置の編集ダイアログ（追加・変更・外す）
@@ -1876,8 +1911,14 @@
     for (const p of always) {
       const c = document.createElement('span');
       c.className = 'achip'; c.style.background = nameColor(p.name);
-      c.textContent = (p.exclusive ? '★ ' : '') + p.name + (p.rule ? ' ' + describeRule(p.rule) : '');
-      c.addEventListener('click', () => openPlacementDialog({ dev, mode: 'edit', placement: p }));
+      const lab = document.createElement('span');
+      lab.textContent = (p.exclusive ? '★ ' : '') + p.name + (p.rule ? ' ' + describeRule(p.rule) : '');
+      lab.title = 'クリックで、条件などを編集';
+      lab.addEventListener('click', () => openPlacementDialog({ dev, mode: 'edit', placement: p }));
+      const x = document.createElement('button');
+      x.type = 'button'; x.className = 'x'; x.textContent = '✕'; x.title = '常時の配置を外す（ファイルは、コンテンツに残ります）';
+      x.addEventListener('click', () => removePlacement(dev, p));
+      c.append(lab, x);
       $('#alwaysRow').append(c);
     }
 
