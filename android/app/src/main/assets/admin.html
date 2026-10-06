@@ -91,6 +91,21 @@
   .week .tk { position: absolute; left: 2px; right: 2px; height: 0; border-top: 1px dotted var(--sub); font-size: 10px; color: var(--sub); pointer-events: none; }
   .week .tk span { position: absolute; right: 0; top: -9px; background: var(--bg, #fff); padding: 0 2px; }
   .always { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; align-items: center; }
+  .blk .tip { position: absolute; right: 2px; bottom: 1px; background: #000b; color: #fff; border-radius: 4px; padding: 0 4px; font-size: 10px; pointer-events: none; }
+  .blk.dragging { opacity: .85; box-shadow: 0 2px 8px #0006; z-index: 5; cursor: grabbing; }
+  .blk .hd { position: absolute; left: 0; right: 0; height: 6px; cursor: ns-resize; }
+  .blk .hd.t { top: 0; } .blk .hd.b { bottom: 0; }
+  .blk { touch-action: none; }
+  .rsel { position: absolute; left: 2px; right: 2px; background: var(--brand); opacity: .25; border: 2px solid var(--brand); border-radius: 4px; pointer-events: none; z-index: 4; }
+  .week .dcol { cursor: crosshair; }
+  .pstat { display: inline-block; font-size: 11px; border-radius: 999px; padding: 0 8px; margin-right: 4px; color: #fff; }
+  .pstat.on { background: #2e7d32; } .pstat.off { background: #757575; } .pstat.blocked { background: #e65100; }
+  .playlist li.inactive { opacity: .6; }
+  .always .achip.inactive { opacity: .55; }
+  .nowinfo { font-size: 13px; margin: 6px 0; }
+  #pickList { max-height: 50vh; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 8px 0; }
+  #pickList .pitem { border: 1px solid var(--line); border-radius: 8px; grid-template-columns: 1fr; }
+  #pickList .pitem .thumb { width: 100%; height: 70px; }
   .always .achip { border: 1px solid #0003; border-radius: 999px; padding: 2px 4px 2px 10px; font-size: 12px; cursor: pointer; color: #111; display: inline-flex; align-items: center; gap: 4px; }
   .achip .x, .uchip .x { border: 0; background: #0002; color: inherit; border-radius: 50%; width: 18px; height: 18px; line-height: 16px; padding: 0; cursor: pointer; font-size: 11px; }
   .achip .x:hover, .uchip .x:hover { background: #c62828; color: #fff; }
@@ -207,6 +222,7 @@
   #login input { width: 100%; font-size: 22px; letter-spacing: 6px; text-align: center; margin: 12px 0; }
   #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #333; color: #fff; padding: 10px 18px; border-radius: 10px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px); z-index: 10; }
   #toast.show { opacity: 1; }
+  #toast.act { pointer-events: auto; }
   .empty { color: var(--sub); font-size: 14px; padding: 8px 0; }
   .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
   textarea { font: inherit; width: 100%; min-height: 64px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); resize: vertical; }
@@ -380,7 +396,7 @@
           <div class="head">
             <div>
               <h2>スケジュール<span class="sub" id="schedDevName"></span></h2>
-              <p class="sub">区画ごとに、どの画像・動画を、いつ流すかを決めます。表の横軸は、今日からの日付です。右のライブラリから、表の日付・時間にドラッグすると配置できます（条件を付けない配置は「常時」）。</p>
+              <p class="sub">区画ごとに、どの画像・動画を、いつ流すかを決めます。表の横軸は、今日からの日付です。表の空きをクリック（またはドラッグ）して時間帯を選び、流すファイルを選んで配置します。右のライブラリから、表にドラッグしても配置できます（条件を付けない配置は「常時」）。</p>
             </div>
           </div>
           <div class="warn" id="schedWarn" hidden></div>
@@ -641,6 +657,14 @@
   </div>
 </div>
 
+<dialog id="pickDialog">
+  <h3>どの画像・動画を流しますか？</h3>
+  <p class="sub" id="pickWhen"></p>
+  <input type="search" id="pickQ" placeholder="ファイル名で探す" style="width:100%">
+  <div id="pickList"></div>
+  <div class="dlgrow" style="justify-content: flex-end"><button type="button" id="pickCancel">キャンセル</button></div>
+</dialog>
+
 <dialog id="ruleDialog">
   <form id="ruleForm" method="dialog">
     <h3 id="plTitle">配置の編集</h3>
@@ -650,6 +674,8 @@
       <label class="field"><span>画像の表示秒数（空欄＝共通の秒数）</span><input type="number" id="plSeconds" min="1" max="3600" placeholder="共通"></label>
     </div>
     <label class="check"><input type="checkbox" id="plExclusive"> 専用（この配置が有効な間は、専用の配置だけを流します。キャンペーン用）</label>
+    <div class="dlgrow" id="plCopyRow" hidden style="margin-top:8px"><span class="sub">この内容を、別の区画にも配置：</span>
+      <select id="plCopyZone"></select><button type="button" class="small" id="plCopy">コピー</button></div>
     <div class="dlgrow" id="plDateNote" hidden style="margin-top:8px"><span class="sub" id="plDateText"></span>
       <button type="button" class="small" id="plOnlyDay">この日だけにする</button></div>
     <h4 style="margin:12px 0 4px">再生する条件</h4>
@@ -748,12 +774,20 @@
   let selectedKey = store.get('signage-selected', null);
   const blobUrls = [];
 
-  function toast(msg) {
+  /** 画面下のお知らせ。act = { label, run } を渡すと、「元に戻す」などのボタンが付く（8 秒間） */
+  function toast(msg, act) {
     const t = $('#toast');
     t.textContent = msg;
+    if (act) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'small'; b.textContent = act.label; b.style.marginLeft = '12px';
+      b.addEventListener('click', () => { t.classList.remove('show', 'act'); act.run(); });
+      t.append(b);
+    }
+    t.classList.toggle('act', !!act);
     t.classList.add('show');
     clearTimeout(toast.timer);
-    toast.timer = setTimeout(() => t.classList.remove('show'), 3500);
+    toast.timer = setTimeout(() => t.classList.remove('show', 'act'), act ? 8000 : 3500);
   }
 
   class ApiError extends Error { constructor(msg, status) { super(msg); this.status = status; } }
@@ -1579,7 +1613,7 @@
   const placementsOf = (dev) => dev.state?.placements || [];
 
   // ライブラリ画面の、画面上の状態（端末を切り替えても、検索・選択は保つ）
-  const lib = { q: '', mode: 'all', sel: new Set(), autoZone: 'none' };
+  const lib = { q: '', mode: 'all', sel: new Set(), autoZone: String(store.get('signage-lib-auto', 'none')) };
 
   function notSupported(boxId, warnId, dev, what) {
     $('#' + boxId).replaceChildren();
@@ -1627,7 +1661,7 @@
       : `${targets[0]?.name || dev.name}　※ 複数の端末に同時に登録するときは、上の端末一覧でチェックしてください`;
     const auto = $('#libAuto');
     auto.value = zones.some((z) => String(z.index) === lib.autoZone) ? lib.autoZone : 'none';
-    auto.addEventListener('change', () => { lib.autoZone = auto.value; });
+    auto.addEventListener('change', () => { lib.autoZone = auto.value; store.set('signage-lib-auto', auto.value); });
     const drop = $('.drop', body);
     const input = $('input', drop);
     const go = (fl) => uploadToLibrary(dev, [...fl]);
@@ -1794,12 +1828,22 @@
     }
   }
 
-  /** 配置を外す（ファイルは、ライブラリに残る） */
-  async function removePlacement(dev, p) {
-    if (!confirm(`「${p.name}」を、${zoneLabel(dev, p.zone)}から外しますか？\n（ファイルは、コンテンツに残ります）`)) return;
+  const plFields = (p) => ({ rule: p.rule || null, exclusive: !!p.exclusive, seconds: p.seconds || null });
+
+  /** 外した配置を、同じ内容・同じ位置に戻す */
+  async function restorePlacement(dev, p, order) {
+    const r = await post(dev, '/api/placement', { op: 'add', zone: p.zone, name: p.name, ...plFields(p) });
+    await post(dev, '/api/placement', { op: 'reorder', zone: p.zone, ids: order.map((i) => (i === p.id ? r.id : i)) });
+    await refreshDevice(dev);
+  }
+
+  /** 配置を外す（ファイルは、ライブラリに残る）。外した直後は「元に戻す」ができる */
+  async function removePlacement(dev, p, ask = true) {
+    if (ask && !confirm(`「${p.name}」を、${zoneLabel(dev, p.zone)}から外しますか？\n（ファイルは、コンテンツに残ります。外した直後は、元に戻せます）`)) return;
+    const order = placementsOf(dev).filter((x) => x.zone === p.zone).map((x) => x.id);
     try {
       await post(dev, '/api/placement', { op: 'remove', id: p.id });
-      toast('配置を外しました');
+      toast(`「${p.name}」の配置を外しました`, { label: '元に戻す', run: () => restorePlacement(dev, p, order).then(() => toast('元に戻しました')).catch((e) => toast(e.message)) });
       if ($('#autoReload').checked) await post(dev, '/api/reload', {}).catch(() => {});
       await refreshDevice(dev);
     } catch (e) { toast(e.message); }
@@ -1822,6 +1866,9 @@
     $('#plSeconds').value = p?.seconds || '';
     $('#plExclusive').checked = !!p?.exclusive;
     $('#plRemove').hidden = !p;
+    const others = zones.filter((z) => z.index !== (p ? p.zone : -1));
+    $('#plCopyRow').hidden = !p || !others.length;
+    $('#plCopyZone').innerHTML = others.map((z) => `<option value="${z.index}">${esc(z.label)}</option>`).join('');
     $('#plDateNote').hidden = !t.date;
     if (t.date) $('#plDateText').textContent = `${t.date.replace(/-/g, '/')} に配置しました。初めは、毎週この曜日にくりかえす条件です。`;
     $('#ruleSlots').replaceChildren();
@@ -1841,10 +1888,16 @@
     const t = plTarget; if (!t) return;
     const body = { rule: collectRule(), exclusive: $('#plExclusive').checked, seconds: $('#plSeconds').value ? Number($('#plSeconds').value) : null, zone: Number($('#plZone').value) };
     try {
-      if (t.mode === 'edit') await post(t.dev, '/api/placement', { op: 'update', id: t.placement.id, ...body });
-      else await post(t.dev, '/api/placement', { op: 'add', name: t.name, ...body });
-      $('#ruleDialog').close();
-      toast('保存しました');
+      if (t.mode === 'edit') {
+        const before = { ...plFields(t.placement), zone: t.placement.zone };
+        await post(t.dev, '/api/placement', { op: 'update', id: t.placement.id, ...body });
+        $('#ruleDialog').close();
+        toast('保存しました', { label: '元に戻す', run: () => post(t.dev, '/api/placement', { op: 'update', id: t.placement.id, ...before }).then(() => { toast('元に戻しました'); return refreshDevice(t.dev); }).catch((e) => toast(e.message)) });
+      } else {
+        const r = await post(t.dev, '/api/placement', { op: 'add', name: t.name, ...body });
+        $('#ruleDialog').close();
+        toast('配置しました', { label: '元に戻す', run: () => post(t.dev, '/api/placement', { op: 'remove', id: r.id }).then(() => { toast('元に戻しました'); return refreshDevice(t.dev); }).catch((e) => toast(e.message)) });
+      }
       refreshDevice(t.dev);
     } catch (err) { toast(err.message); }
   });
@@ -1859,20 +1912,25 @@
   $('#ruleAdd').addEventListener('click', () => addSlot());
   $('#ruleClear').addEventListener('click', () => { $('#ruleSlots').replaceChildren(); addSlot(); });
   $('#ruleCancel').addEventListener('click', () => $('#ruleDialog').close());
-  $('#plRemove').addEventListener('click', async () => {
+  $('#plCopy').addEventListener('click', async () => {
     const t = plTarget; if (!t || t.mode !== 'edit') return;
+    const body = { rule: collectRule(), exclusive: $('#plExclusive').checked, seconds: $('#plSeconds').value ? Number($('#plSeconds').value) : null, zone: Number($('#plCopyZone').value) };
     try {
-      await post(t.dev, '/api/placement', { op: 'remove', id: t.placement.id });
-      $('#ruleDialog').close();
-      toast('配置を外しました（ファイルは、コンテンツに残っています）');
+      await post(t.dev, '/api/placement', { op: 'add', name: t.placement.name, ...body });
+      toast(`${zoneLabel(t.dev, body.zone)}にも配置しました`);
       refreshDevice(t.dev);
     } catch (err) { toast(err.message); }
+  });
+  $('#plRemove').addEventListener('click', () => {
+    const t = plTarget; if (!t || t.mode !== 'edit') return;
+    $('#ruleDialog').close();
+    removePlacement(t.dev, t.placement, false);
   });
 
   // ------------------------------------------------------------ スケジュール（週間表）
 
   const HP = 22;                     // 1 時間の高さ（px）
-  const sched = { zone: null, span: 7, offset: 0 };   // span：表示する日数、offset：今日から何日ずらすか
+  const sched = { zone: store.get('signage-sched-zone', null), span: Number(store.get('signage-sched-span', 7)) || 7, offset: 0 };   // span：表示する日数、offset：今日から何日ずらすか
 
   const toMin = (t) => (t ? Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5)) : null);
   const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
@@ -1886,13 +1944,40 @@
     return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : new Date();
   }
 
+  /** 条件 1 つに、いま合うか（再生側と同じ判定） */
+  function slotActiveAt(rule, now) {
+    const mins = (x) => (/^\d\d:\d\d$/.test(x || '') ? +x.slice(0, 2) * 60 + +x.slice(3) : null);
+    const m = now.getHours() * 60 + now.getMinutes();
+    const start = mins(rule.start), end = mins(rule.end);
+    const overnight = start !== null && end !== null && start > end && m < end;   // 日またぎの 0 時以降は前日の分
+    const day = overnight ? addDays(now, -1) : now;
+    if (rule.days && rule.days.length && !rule.days.includes(day.getDay())) return false;
+    const date = isoDate(day);
+    if (rule.from && date < rule.from) return false;
+    if (rule.to && date > rule.to) return false;
+    if (start !== null && end !== null) return start <= end ? (m >= start && m < end) : (m >= start || m < end);
+    if (start !== null) return m >= start;
+    if (end !== null) return m < end;
+    return true;
+  }
+  const ruleActiveAt = (rule, now) => { const sl = slotsOf(rule); return !sl.length || sl.some((x) => slotActiveAt(x, now)); };
+
+  /** 区画の各配置の、いまの状態：on＝流れる／off＝時間外／blocked＝専用が優先されて止まっている */
+  function placementStatus(plist, now) {
+    const active = plist.filter((p) => ruleActiveAt(p.rule, now));
+    const only = active.some((p) => p.exclusive);
+    const st = new Map();
+    for (const p of plist) st.set(p.id, !active.includes(p) ? 'off' : (only && !p.exclusive ? 'blocked' : 'on'));
+    return st;
+  }
+
   /** ある日（date）に、その配置が流れる時間帯（分）の一覧。日をまたぐ時間帯は、前日の分の後半も含む。
    *  時間も曜日も指定がなく、期間だけの条件は、期間内の終日。条件がない（常時）配置は、帯にしない */
   function bandsForDate(p, date) {
     const out = [];
     const iso = isoDate(date), dow = date.getDay();
     const prev = addDays(date, -1), pIso = isoDate(prev), pDow = prev.getDay();
-    for (const sl of slotsOf(p.rule)) {
+    slotsOf(p.rule).forEach((sl, slotIdx) => {
       const s = toMin(sl.start), e = toMin(sl.end);
       const overnight = s != null && e != null && s > e;
       const daysOk = (d) => !sl.days?.length || sl.days.includes(d);
@@ -1900,10 +1985,10 @@
       const period = !!(sl.from || sl.to);
       if (daysOk(dow) && inPeriod(iso)) {
         const S = s ?? 0, E = overnight ? 1440 : (e ?? 1440);
-        out.push({ s: S, e: Math.max(E, S + 15), period });
+        out.push({ s: S, e: Math.max(E, S + 15), period, slotIdx, part: 'main', overnight, sl });
       }
-      if (overnight && daysOk(pDow) && inPeriod(pIso)) out.push({ s: 0, e: Math.max(e, 15), period });
-    }
+      if (overnight && daysOk(pDow) && inPeriod(pIso)) out.push({ s: 0, e: Math.max(e, 15), period, slotIdx, part: 'spill', overnight, sl });
+    });
     return out;
   }
 
@@ -1913,9 +1998,12 @@
     const zones = folderZones(dev);
     const body = $('#schedBody');
     if (!zones.length) { body.innerHTML = '<p class="empty">画像・動画を表示する区画がありません。「端末の設定」→「画面分割」で、区画の表示内容を「フォルダの画像・動画」にしてください。</p>'; return; }
+    sched.zone = Number(sched.zone);
     if (!zones.some((z) => z.index === sched.zone)) sched.zone = zones[0].index;
     const zone = sched.zone;
     const plist = placementsOf(dev).filter((p) => p.zone === zone && dev.state.library.some((f) => f.name === p.name));
+    const nowT = deviceNow(dev);
+    const stat = placementStatus(plist, nowT);
     body.innerHTML = `
       <div class="chips" id="schedZones" role="tablist"></div>
       <div class="always" id="alwaysRow"></div>
@@ -1931,19 +2019,21 @@
           <div class="week" style="--hp:${HP}px"><div class="wh" id="weekHead"></div>
             <div class="wb" id="weekBody"></div></div>
           <h3 style="margin:16px 0 4px">この区画の再生順（上から順に流れます）</h3>
+          <div class="nowinfo" id="nowInfo"></div>
           <ul class="playlist" id="plList"></ul>
         </div>
         <div class="palette"><strong style="font-size:13px">ライブラリ</strong><div class="sub" style="margin:2px 0 6px">日付の表にドラッグして配置</div><div id="palList"></div></div>
       </div>`;
     $('#schedZones').innerHTML = zones.map((z) => `<button type="button" class="chip" data-z="${z.index}" aria-pressed="${z.index === zone}" style="border:1px solid var(--line, #ccc); cursor:pointer">${esc(z.label)}</button>`).join('');
-    $('#schedZones').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { sched.zone = Number(b.dataset.z); renderSchedule(dev); }));
+    $('#schedZones').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { sched.zone = Number(b.dataset.z); store.set('signage-sched-zone', sched.zone); renderSchedule(dev); }));
 
     // 常時（条件のない配置）
     const always = plist.filter((p) => !slotsOf(p.rule).length);
     $('#alwaysRow').innerHTML = `<strong style="font-size:13px">常時</strong>` + (always.length ? '' : '<span class="sub">なし</span>');
     for (const p of always) {
       const c = document.createElement('span');
-      c.className = 'achip'; c.style.background = nameColor(p.name);
+      c.className = 'achip' + (stat.get(p.id) === 'blocked' ? ' inactive' : ''); c.style.background = nameColor(p.name);
+      if (stat.get(p.id) === 'blocked') c.title = '専用の配置が有効なため、いまは流れません';
       const lab = document.createElement('span');
       lab.textContent = (p.exclusive ? '★ ' : '') + p.name + (p.rule ? ' ' + describeRule(p.rule) : '');
       lab.title = 'クリックで、条件などを編集';
@@ -1973,7 +2063,7 @@
     $('#schNext').addEventListener('click', () => { sched.offset += sched.span; renderSchedule(dev); });
     $('#schToday').addEventListener('click', () => { sched.offset = 0; renderSchedule(dev); });
     $('#schSpan').innerHTML = [3, 7, 14].map((n) => `<button type="button" class="small" data-n="${n}" aria-pressed="${sched.span === n}">${n}日</button>`).join('');
-    $('#schSpan').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { sched.span = Number(b.dataset.n); renderSchedule(dev); }));
+    $('#schSpan').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { sched.span = Number(b.dataset.n); store.set('signage-sched-span', sched.span); renderSchedule(dev); }));
 
     const wb = $('#weekBody');
     const axis = document.createElement('div'); axis.className = 'axis'; axis.style.height = `${HP * 24}px`;
@@ -2001,6 +2091,7 @@
     });
     // ドロップで配置（ドロップした位置の時刻から 1 時間。毎週くりかえす条件で、編集画面を開く）
     cols.forEach((c) => {
+      c.addEventListener('pointerdown', (ev) => startRangeSelect(ev, dev, c, zone));
       c.addEventListener('dragover', (e) => { if (dragName) { e.preventDefault(); c.classList.add('over'); } });
       c.addEventListener('dragleave', () => c.classList.remove('over'));
       c.addEventListener('drop', (e) => {
@@ -2029,7 +2120,10 @@
       it.title = 'ダブルクリックで、この区画に配置（条件の設定）';
       pal.append(it);
     }
-    renderPlaylist(dev, plist, zone);
+    const onNow = plist.filter((p) => stat.get(p.id) === 'on');
+    const blocked = plist.some((p) => stat.get(p.id) === 'blocked');
+    $('#nowInfo').textContent = `いま（${nowT.getMonth() + 1}/${nowT.getDate()} ${hhmm(nowT.getHours() * 60 + nowT.getMinutes())}）流れる配置：${onNow.length} 件` + (blocked ? '　※ 専用の配置が有効なため、通常の配置は止まっています' : '') + (!onNow.length && plist.length ? '　※ 流れるものがありません（黒い画面になります）' : '');
+    renderPlaylist(dev, plist, zone, stat);
     document.querySelectorAll('.thumb[data-name]').forEach((el) => thumbs.observe(el));
   }
 
@@ -2059,15 +2153,132 @@
       el.style.background = nameColor(b.p.name);
       el.textContent = (b.p.exclusive ? '★' : '') + b.p.name;
       el.title = `${b.p.name}\n${describeRule(b.p.rule)}${b.p.exclusive ? '\n専用' : ''}${b.p.seconds ? `\n${b.p.seconds} 秒` : ''}`;
-      el.addEventListener('click', () => openPlacementDialog({ dev, mode: 'edit', placement: b.p }));
+      const movable = b.part === 'main' && !!b.sl?.start && !!b.sl?.end;
+      if (movable) {
+        el.title += '\nドラッグで時間を移動、上下の端で開始・終了を変更（この条件の、すべての曜日に反映されます）';
+        for (const k of ['t', 'b']) { if (k === 'b' && b.overnight) continue; const hd = document.createElement('div'); hd.className = 'hd ' + k; el.append(hd); }
+      }
+      el.addEventListener('pointerdown', (ev) => startBlockDrag(ev, dev, b, el, movable));
       col.append(el);
     }
   }
 
+  /** 帯のドラッグ：本体で時間を移動、上端・下端で開始・終了を変更（15 分きざみ）。動かさずに離したら、編集画面を開く */
+  function startBlockDrag(ev, dev, b, el, movable) {
+    if (ev.button !== 0) return;
+    const y0 = ev.clientY;
+    const rect = el.getBoundingClientRect();
+    const mode = !movable ? 'click' : (ev.target.classList.contains('hd') ? (ev.target.classList.contains('t') ? 'top' : 'bottom') : 'move');
+    const s0 = toMin(b.sl.start), e0 = toMin(b.sl.end);
+    let ns = s0, ne = e0, moved = false;
+    const top0 = parseFloat(el.style.top), h0 = parseFloat(el.style.height);
+    const tip = document.createElement('span'); tip.className = 'tip';
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    const move = (e2) => {
+      const dy = e2.clientY - y0;
+      if (!moved && Math.abs(dy) < 4) return;
+      if (mode === 'click') return;
+      if (!moved) { moved = true; el.classList.add('dragging'); el.setPointerCapture?.(ev.pointerId); el.append(tip); }
+      const dm = Math.round(dy / HP * 4) * 15;
+      const over = b.overnight;
+      if (mode === 'move') {
+        if (over) { ns = (s0 + dm + 1440) % 1440; ne = (e0 + dm + 1440) % 1440; }
+        else { const len = e0 - s0; ns = clamp(s0 + dm, 0, 1439 - len); ne = ns + len; }
+      } else if (mode === 'top') {
+        ns = over ? (s0 + dm + 1440) % 1440 : clamp(s0 + dm, 0, e0 - 15);
+      } else {
+        ne = clamp(e0 + dm, s0 + 15, 1439);
+      }
+      // 見た目（日をまたぐ帯は、開始の側だけ動かして見せる）
+      const vs = over ? ns : ns, ve = over ? 1440 : ne;
+      el.style.top = `${vs / 60 * HP}px`; el.style.height = `${Math.max(14, (ve - vs) / 60 * HP - 1)}px`;
+      tip.textContent = `${hhmm(ns)}〜${hhmm(ne)}`;
+    };
+    const up = async () => {
+      el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up);
+      el.classList.remove('dragging'); tip.remove();
+      if (!moved) { if (Math.abs(0) === 0) openPlacementDialog({ dev, mode: 'edit', placement: b.p }); return; }
+      if (ns === s0 && ne === e0) { renderSchedule(dev); return; }
+      const slots = slotsOf(b.p.rule).map((x) => ({ ...x }));
+      slots[b.slotIdx] = { ...slots[b.slotIdx], start: hhmm(ns), end: hhmm(ne) };
+      const before = b.p.rule;
+      try {
+        await post(dev, '/api/placement', { op: 'update', id: b.p.id, rule: { slots } });
+        toast(`「${b.p.name}」の時間を ${hhmm(ns)}〜${hhmm(ne)} に変更しました`, { label: '元に戻す', run: () => post(dev, '/api/placement', { op: 'update', id: b.p.id, rule: before }).then(() => refreshDevice(dev)).catch((e) => toast(e.message)) });
+        refreshDevice(dev);
+      } catch (e) { toast(e.message); renderSchedule(dev); }
+    };
+    el.setPointerCapture?.(ev.pointerId);
+    el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+    ev.preventDefault();
+  }
+
+  /** 空いている所をドラッグ（またはクリック）して時間帯を選び、流すファイルを選ぶ */
+  function startRangeSelect(ev, dev, col, zone) {
+    if (ev.button !== 0 || ev.target !== col) return;
+    const rect = col.getBoundingClientRect();
+    const yOf = (e) => Math.min(24 * HP, Math.max(0, e.clientY - rect.top));
+    const snap = (y) => Math.round(y / HP * 4) * 15;
+    const m0 = snap(yOf(ev));
+    const box = document.createElement('div'); box.className = 'rsel'; col.append(box);
+    let m1 = m0, moved = false;
+    const draw = () => { const a = Math.min(m0, m1), z = Math.max(m0, m1) || a + 60; box.style.top = `${a / 60 * HP}px`; box.style.height = `${Math.max(8, (z - a) / 60 * HP)}px`; };
+    draw();
+    const move = (e2) => { m1 = snap(yOf(e2)); if (Math.abs(m1 - m0) >= 15) moved = true; draw(); };
+    const up = () => {
+      col.removeEventListener('pointermove', move); col.removeEventListener('pointerup', up); col.removeEventListener('pointercancel', up);
+      box.remove();
+      let a = Math.min(m0, m1), z = Math.max(m0, m1);
+      if (!moved || z - a < 15) { a = Math.min(Math.floor(m0 / 30) * 30, 23 * 60); z = Math.min(a + 60, 1439); }
+      z = Math.min(z, 1439);
+      openPicker(dev, { zone, date: col.dataset.date, day: Number(col.dataset.day), start: a, end: z });
+    };
+    col.setPointerCapture?.(ev.pointerId);
+    col.addEventListener('pointermove', move); col.addEventListener('pointerup', up); col.addEventListener('pointercancel', up);
+    ev.preventDefault();
+  }
+
+  /** 時間帯を選んだあと、流すファイルを選ぶ小さな画面 */
+  function openPicker(dev, t) {
+    const d = new Date(t.date + 'T00:00:00');
+    $('#pickWhen').textContent = `${zoneLabel(dev, t.zone)}　${d.getMonth() + 1}/${d.getDate()}(${RULE_DAYS[d.getDay()]}) ${hhmm(t.start)}〜${hhmm(t.end)}`;
+    const list = $('#pickList'); const q = $('#pickQ');
+    const draw = () => {
+      list.replaceChildren();
+      const kw = q.value.trim().toLowerCase();
+      for (const f of dev.state.library.filter((x) => !kw || x.name.toLowerCase().includes(kw))) {
+        const it = document.createElement('div');
+        it.className = 'pitem'; it.tabIndex = 0;
+        it.innerHTML = '<div class="thumb"><div class="timg"></div></div><div class="pn"></div>';
+        $('.pn', it).textContent = f.name;
+        const th = $('.thumb', it); th.dataset.zone = -1; th.dataset.name = f.name; th.dataset.dev = dev.key;
+        if (f.video) { th.dataset.video = '1'; th.dataset.size = f.size || 0; }
+        const choose = () => { $('#pickDialog').close(); openPlacementDialog({ dev, mode: 'add', name: f.name, zone: t.zone, date: t.date, slot: { days: [t.day], start: hhmm(t.start), end: hhmm(t.end) } }); };
+        it.addEventListener('click', choose);
+        it.addEventListener('keydown', (e) => { if (e.key === 'Enter') choose(); });
+        list.append(it);
+      }
+      if (!list.children.length) list.innerHTML = '<p class="empty">該当する画像・動画がありません</p>';
+      list.querySelectorAll('.thumb[data-name]').forEach((el) => thumbs.observe(el));
+    };
+    q.value = ''; q.oninput = draw; draw();
+    $('#pickDialog').showModal();
+    q.focus();
+  }
+  $('#pickCancel').addEventListener('click', () => $('#pickDialog').close());
+
   /** この区画の再生順（ドラッグまたは ↑↓ で並べ替え） */
-  function renderPlaylist(dev, plist, zone) {
+  function renderPlaylist(dev, plist, zone, stat) {
     const ul = $('#plList');
-    if (!plist.length) { ul.innerHTML = '<li style="display:block" class="sub">配置されている画像・動画がありません。右のライブラリから、週間表にドラッグするか、ダブルクリックして配置してください。</li>'; return; }
+    if (!plist.length) {
+      const n = dev.state.library.length;
+      ul.innerHTML = '<li style="display:block"><div class="sub">配置されている画像・動画がありません。表の空きをクリック（またはドラッグ）して時間帯を選ぶか、右のライブラリからドラッグして配置してください。</div>' +
+        (n ? `<button type="button" class="primary" id="placeAll" style="margin-top:8px">ライブラリの ${n} 件すべてを、この区画に常時で配置する</button>` : '') + '</li>';
+      $('#placeAll')?.addEventListener('click', async () => {
+        try { for (const f of dev.state.library) await post(dev, '/api/placement', { op: 'add', zone, name: f.name }); toast(`${n} 件を配置しました`); await refreshDevice(dev); } catch (e) { toast(e.message); }
+      });
+      return;
+    }
     const save = async () => {
       const ids = [...ul.children].map((li) => li.dataset.id);
       try { await post(dev, '/api/placement', { op: 'reorder', zone, ids }); toast('再生順を保存しました'); refreshDevice(dev); } catch (e) { toast(e.message); }
@@ -2079,6 +2290,14 @@
       li.innerHTML = '<div class="grip" title="ドラッグで並べ替え">⋮⋮</div><div class="thumb"><div class="timg"></div></div><div class="pm"><div class="pn"></div><div class="pr"></div></div><div class="btns"><button class="small up" type="button" title="上へ">↑</button><button class="small dn" type="button" title="下へ">↓</button><button class="small ed" type="button">編集</button><button class="small danger rm" type="button">外す</button></div>';
       $('.pn', li).textContent = (p.exclusive ? '★ ' : '') + p.name;
       $('.pr', li).textContent = [p.rule ? '🕒 ' + describeRule(p.rule) : '常時', p.seconds ? `${p.seconds} 秒` : '', p.exclusive ? '専用' : ''].filter(Boolean).join('　');
+      const stt = stat?.get(p.id);
+      if (stt) {
+        const badge = document.createElement('span');
+        badge.className = 'pstat ' + stt;
+        badge.textContent = stt === 'on' ? '● いま流れる' : stt === 'blocked' ? '専用が優先中' : '時間外';
+        $('.pr', li).prepend(badge);
+        li.classList.toggle('inactive', stt !== 'on');
+      }
       const th = $('.thumb', li); th.dataset.zone = -1; th.dataset.name = p.name; th.dataset.dev = dev.key;
       if (f?.video) { th.dataset.video = '1'; th.dataset.size = f.size || 0; }
       $('.ed', li).addEventListener('click', () => openPlacementDialog({ dev, mode: 'edit', placement: p }));
