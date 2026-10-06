@@ -386,7 +386,7 @@ object AdminServer {
             }
             "POST /api/access" -> json(200, applyAccess(prefs, req.json(), from))
             "PUT /api/upload" -> {
-                val zone = zoneIndex(prefs, req.query["zone"])
+                val zone = req.query["zone"]?.takeIf { it.isNotEmpty() && it != "-1" }?.let { zoneIndex(prefs, it) } // 区画なし＝ライブラリにだけ保存
                 val name = Library.sanitize(req.query["name"] ?: "")
                     ?: throw HttpError(400, "画像・動画のファイルのみアップロードできます")
                 if (req.contentLength <= 0) throw HttpError(400, "ファイルが空です")
@@ -395,6 +395,7 @@ object AdminServer {
                 val free = runCatching { Library.dir(app).usableSpace }.getOrDefault(Long.MAX_VALUE)
                 if (req.contentLength > free - DISK_RESERVE_BYTES) throw HttpError(413, "空き容量が足りません")
                 val saved = Library.upload(app, zone, name, req.contentLength, req.body)
+                notify(EVENT_CONTENT)
                 json(200, JSONObject().put("ok", true).put("name", saved))
             }
             "POST /api/delete" -> {
@@ -407,32 +408,43 @@ object AdminServer {
             }
             "POST /api/filerotate" -> {
                 val body = req.json()
-                zoneIndex(prefs, body.optString("zone")) // 区画の確認
                 val degrees = body.optInt("degrees", 0)
                 if (degrees !in listOf(0, 90, 180, 270)) throw HttpError(400, "回転は 0・90・180・270 のどれかにしてください")
-                prefs.setFileRotation(body.optString("zone").toInt(), body.getString("name"), degrees)
+                val name = body.getString("name")
+                try { Library.libraryFile(app, name) } catch (e: IOException) { throw HttpError(404, e.message ?: "ファイルが見つかりません") }
+                prefs.setFileRotation(name, degrees)
                 notify(EVENT_CONTENT)
                 json(200, JSONObject().put("ok", true))
             }
-            "POST /api/filerule" -> {
+            "POST /api/filerule" -> { // 旧 API：区画のその名前の配置すべてに、同じ条件を設定する
                 val body = req.json()
-                zoneIndex(prefs, body.optString("zone")) // 区画の確認
-                val zone = body.optString("zone").toInt()
+                val zone = zoneIndex(prefs, body.optString("zone"))
                 val rule = try {
                     FileRule.normalize(body.optJSONObject("rule"))
                 } catch (e: IllegalArgumentException) {
                     throw HttpError(400, e.message ?: "条件が正しくありません")
                 }
-                prefs.setFileRule(zone, body.getString("name"), rule)
+                val name = body.getString("name")
+                prefs.placementsOf(zone).filter { it.name == name }.forEach {
+                    Library.updatePlacement(app, it.id, JSONObject().put("rule", rule ?: JSONObject.NULL))
+                }
+                notify(EVENT_CONTENT)
+                json(200, JSONObject().put("ok", true))
+            }
+            "POST /api/placement" -> placementOp(prefs, req.json())
+            "POST /api/library/delete" -> {
+                val name = req.json().getString("name")
+                try { Library.libraryFile(app, name) } catch (e: IOException) { throw HttpError(404, e.message ?: "ファイルが見つかりません") }
+                Library.deleteLibraryFile(app, name)
                 notify(EVENT_CONTENT)
                 json(200, JSONObject().put("ok", true))
             }
             "GET /api/file" -> {
-                val zone = zoneIndex(prefs, req.query["zone"])
-                val (stream, entry) = try { Library.open(app, zone, req.query["name"] ?: "") } catch (e: IOException) { throw HttpError(404, e.message ?: "ファイルが見つかりません") }
+                val name = req.query["name"] ?: ""
+                val (stream, size) = try { Library.openFile(app, name) } catch (e: IOException) { throw HttpError(404, e.message ?: "ファイルが見つかりません") }
                 val type = android.webkit.MimeTypeMap.getSingleton()
-                    .getMimeTypeFromExtension(entry.name.substringAfterLast('.', "").lowercase()) ?: "application/octet-stream"
-                Response(200, type, entry.size) { out -> stream.use { it.copyTo(out, 256 * 1024) } }
+                    .getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase()) ?: "application/octet-stream"
+                Response(200, type, size) { out -> stream.use { it.copyTo(out, 256 * 1024) } }
             }
             "GET /api/devices" -> {
                 val list = JSONArray()
@@ -662,6 +674,58 @@ object AdminServer {
         return i
     }
 
+    // ---------------------------------------------------------------- ライブラリと配置
+
+    private fun placementJson(p: Prefs.Placement) = JSONObject().put("id", p.id).put("zone", p.zone).put("name", p.name).apply {
+        p.rule?.let { put("rule", it) }
+        if (p.exclusive) put("exclusive", true)
+        p.seconds?.let { put("seconds", it) }
+    }
+
+    private fun placementsJson(prefs: Prefs) = JSONArray(prefs.placements().map(::placementJson))
+
+    private fun libraryJson() = JSONArray(runCatching { Library.items(app) }.getOrDefault(emptyList()).map { f ->
+        JSONObject().put("name", f.name).put("size", f.size).put("video", f.video).apply {
+            if (f.rotation != 0) put("rotation", f.rotation)
+            put("placements", JSONArray(f.placements.map { (id, zone) -> JSONObject().put("id", id).put("zone", zone) }))
+        }
+    })
+
+    /** 配置の追加・変更・削除・並べ替え（管理画面のスケジュール画面・ライブラリ画面が使う） */
+    private fun placementOp(prefs: Prefs, j: JSONObject): Response {
+        try {
+            when (j.optString("op")) {
+                "add" -> {
+                    val zone = zoneIndex(prefs, j.optString("zone"))
+                    val name = j.getString("name")
+                    try { Library.libraryFile(app, name) } catch (e: IOException) { throw HttpError(404, e.message ?: "ファイルが見つかりません") }
+                    val rule = FileRule.normalize(j.optJSONObject("rule"))
+                    val seconds = if (j.has("seconds") && !j.isNull("seconds")) j.optInt("seconds", 0).takeIf { it > 0 }?.coerceIn(1, 3600) else null
+                    val id = Library.addPlacement(app, zone, name, rule, j.optBoolean("exclusive", false), seconds)
+                    notify(EVENT_CONTENT)
+                    return json(200, JSONObject().put("ok", true).put("id", id))
+                }
+                "update" -> {
+                    val fields = JSONObject()
+                    for (k in listOf("rule", "exclusive", "seconds", "zone")) if (j.has(k)) fields.put(k, j.get(k))
+                    if (fields.has("zone")) zoneIndex(prefs, fields.get("zone").toString())
+                    if (!Library.updatePlacement(app, j.optString("id"), fields)) throw HttpError(404, "見つかりません")
+                }
+                "remove" -> Library.removePlacementById(app, j.optString("id"))
+                "reorder" -> {
+                    val zone = zoneIndex(prefs, j.optString("zone"))
+                    val arr = j.optJSONArray("ids") ?: JSONArray()
+                    Library.reorder(app, zone, (0 until arr.length()).map { arr.optString(it) })
+                }
+                else -> throw HttpError(400, "操作が正しくありません")
+            }
+        } catch (e: IllegalArgumentException) {
+            throw HttpError(400, e.message ?: "指定が正しくありません")
+        }
+        notify(EVENT_CONTENT)
+        return json(200, JSONObject().put("ok", true))
+    }
+
     // ---------------------------------------------------------------- 状態と設定
 
     private fun state(prefs: Prefs): JSONObject {
@@ -679,15 +743,15 @@ object AdminServer {
             if (type == Prefs.ZONE_FOLDER) {
                 z.put("folder", "ライブラリ（アプリ専用の保存場所）").put("writable", true)
                 val files = JSONArray()
-                val rules = prefs.fileRulesOf(i)
-                val rotations = prefs.fileRotationsOf(i)
                 runCatching { Library.entries(app, i) }
                     .onFailure { z.put("error", "画像・動画を読み込めません") }
                     .getOrDefault(emptyList())
                     .forEach {
-                        files.put(JSONObject().put("name", it.name).put("video", it.isVideo).put("size", it.size).apply {
-                            rules[it.name]?.let { r -> put("rule", r) }
-                            rotations[it.name]?.takeIf { r -> r != 0 }?.let { r -> put("rotation", r) }
+                        files.put(JSONObject().put("id", it.id).put("name", it.name).put("video", it.isVideo).put("size", it.size).apply {
+                            it.rule?.let { r -> put("rule", r) }
+                            if (it.exclusive) put("exclusive", true)
+                            it.seconds?.let { s -> put("seconds", s) }
+                            if (it.rotation != 0) put("rotation", it.rotation)
                         })
                     }
                 z.put("files", files)
@@ -746,6 +810,8 @@ object AdminServer {
             .put("schedules", JSONArray(Ticker.schedules(app).map { it.toJson() }))
         return JSONObject()
             .put("ticker", ticker)
+            .put("library", libraryJson())
+            .put("placements", placementsJson(prefs))
             .put("id", prefs.deviceId)
             .put("name", prefs.deviceName)
             .put("device", android.os.Build.MODEL)

@@ -268,9 +268,12 @@ class MediaZone(
     /** start から dir 方向へ、いま再生してよい最初のファイルの位置。範囲内に無ければ null */
     private fun nextActive(start: Int, dir: Int): Int? {
         val now = AppTime.calendar(prefs)
+        // 「専用」の配置が、いま有効なら、その時間帯は、専用のものだけを流す
+        val only = playlist.any { it.exclusive && FileRule.isActive(it.rule, now) }
         var i = start
         while (i in playlist.indices) {
-            if (FileRule.isActive(prefs.fileRule(zoneIndex, playlist[i].name), now)) return i
+            val it = playlist[i]
+            if (FileRule.isActive(it.rule, now) && (!only || it.exclusive)) return i
             i += dir
         }
         return null
@@ -323,7 +326,7 @@ class MediaZone(
     }
 
     private fun play(item: MediaEntry, my: Int) {
-        applyRotation(prefs.fileRotation(zoneIndex, item.name))
+        applyRotation(item.rotation)
         currentName = item.name
         showMessage(null)
         currentIsVideo = item.isVideo
@@ -363,7 +366,7 @@ class MediaZone(
                     target.show(drawable, blur, mode)
                     startAnimation(drawable)
                     reveal(target.root)
-                    startImageTimer(prefs.imageSeconds * 1000L, my)
+                    startImageTimer((item.seconds ?: prefs.imageSeconds) * 1000L, my)
                 }
             }
         }

@@ -41,7 +41,7 @@ mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
 LOCAL_PORT = 18080  # HTTPS のとき、この PC 自身が使う HTTP のポート
-VERSION = "1.9.0"
+VERSION = "1.10.0"
 
 
 def resource_dir() -> Path:
@@ -207,13 +207,15 @@ class Server:
                 z["writable"] = True
                 z["files"] = []
                 for f in s.zone_items(i):
-                    e = {"name": f["name"], "video": f["video"], "size": f["size"]}
-                    rule = s.file_rule(i, f["name"])
-                    if rule:
-                        e["rule"] = rule
-                    rot = s.file_rotation(i, f["name"])
-                    if rot:
-                        e["rotation"] = rot
+                    e = {"id": f["id"], "name": f["name"], "video": f["video"], "size": f["size"]}
+                    if f["rule"]:
+                        e["rule"] = f["rule"]
+                    if f["exclusive"]:
+                        e["exclusive"] = True
+                    if f["seconds"]:
+                        e["seconds"] = f["seconds"]
+                    if f["rotation"]:
+                        e["rotation"] = f["rotation"]
                     z["files"].append(e)
             zones.append(z)
         settings = {k: s.get(k) for k in (
@@ -230,6 +232,8 @@ class Server:
         settings["zoneRefreshMin"] = [s.zone_refresh(i) for i in range(st.MAX_ZONES)]
         settings["weatherPlace"] = s.get("weatherCityName") or s.get("weatherAreaName") or ""
         return {
+            "library": s.library_files(),
+            "placements": s.placement_list(),
             "ticker": {"standing": s.get("tickerStanding"), "schedules": s.get("tickerSchedules") or []},
             "id": s.device_id,
             "name": s.device_name,
@@ -581,6 +585,38 @@ class Server:
                 # グループコードを先に判定する（コードを知らない相手に、PIN が合っているかを教えない）
                 raise HttpError(401, "PIN が違います" if group_ok else "グループコードが違います")
 
+            def placement_op(self, j):
+                """配置の追加・変更・削除・並べ替え（管理画面のスケジュール画面・ライブラリ画面が使う）"""
+                s = server.store
+                op = j.get("op")
+                try:
+                    if op == "add":
+                        zone = self.zone_of(j.get("zone"))
+                        name = str(j.get("name", ""))
+                        s.find_library_file(name)
+                        pid = s.add_placement(zone, name, j.get("rule"), bool(j.get("exclusive")), j.get("seconds"))
+                        s.notify("content")
+                        return {"ok": True, "id": pid}
+                    if op == "update":
+                        fields = {k: j[k] for k in ("rule", "exclusive", "seconds", "zone") if k in j}
+                        if "zone" in fields:
+                            self.zone_of(fields["zone"])
+                        s.update_placement(str(j.get("id", "")), fields)
+                    elif op == "remove":
+                        s.remove_placement_id(str(j.get("id", "")))
+                    elif op == "reorder":
+                        zone = self.zone_of(j.get("zone"))
+                        ids = [str(x) for x in (j.get("ids") or [])]
+                        s.reorder_placements(zone, ids)
+                    else:
+                        raise HttpError(400, "操作が正しくありません")
+                except ValueError as e:
+                    raise HttpError(400, str(e))
+                except (KeyError, FileNotFoundError) as e:
+                    raise HttpError(404, "見つかりません")
+                s.notify("content")
+                return {"ok": True}
+
             def zone_of(self, raw):
                 """区画の番号を確認して返す（画像・動画の区画のみ）"""
                 s = server.store
@@ -615,7 +651,7 @@ class Server:
                 elif key == "POST /api/access":
                     self.json(server.apply_access(self.body_json(), self.client_address[0]))
                 elif key == "PUT /api/upload":
-                    zone = self.zone_of(query.get("zone"))
+                    zone = self.zone_of(query.get("zone")) if query.get("zone") not in (None, "", "-1") else None  # 区画なし＝ライブラリにだけ保存
                     folder = s.library_dir()
                     name = s.sanitize(query.get("name", ""))
                     if not name:
@@ -646,10 +682,12 @@ class Server:
                                 f.write(chunk)
                                 remaining -= len(chunk)
                         os.replace(tmp, folder / final)
-                        s.add_placement(zone, final)
+                        if zone is not None:
+                            s.add_placement(zone, final)
                     finally:
                         if tmp.exists():
                             tmp.unlink()
+                    s.notify("content")
                     self.json({"ok": True, "name": final})
                 elif key == "POST /api/delete":
                     j = self.body_json()
@@ -663,33 +701,51 @@ class Server:
                     self.json({"ok": True})
                 elif key == "POST /api/filerotate":
                     j = self.body_json()
-                    self.zone_of(j.get("zone"))  # 区画の確認
                     try:
                         deg = int(j.get("degrees", 0))
                     except (TypeError, ValueError):
                         raise HttpError(400, "回転は 0・90・180・270 のどれかにしてください")
                     if deg not in (0, 90, 180, 270):
                         raise HttpError(400, "回転は 0・90・180・270 のどれかにしてください")
-                    s.set_file_rotation(int(j["zone"]), str(j.get("name", "")), deg)
+                    try:
+                        s.find_library_file(str(j.get("name", "")))
+                    except FileNotFoundError as e:
+                        raise HttpError(404, str(e))
+                    s.set_file_rotation(str(j["name"]), deg)
                     s.notify("content")
                     self.json({"ok": True})
-                elif key == "POST /api/filerule":
+                elif key == "POST /api/filerule":  # 旧 API：区画のその名前の配置すべてに、同じ条件を設定する
                     j = self.body_json()
-                    self.zone_of(j.get("zone"))  # 区画の確認
+                    zone = self.zone_of(j.get("zone"))
                     try:
                         rule = s.normalize_rule(j.get("rule"))
                     except ValueError as e:
                         raise HttpError(400, str(e))
-                    s.set_file_rule(int(j["zone"]), str(j.get("name", "")), rule)
+                    for p in s.placements_of(zone):
+                        if p["name"] == str(j.get("name", "")):
+                            s.update_placement(p["id"], {"rule": rule})
+                    s.notify("content")
+                    self.json({"ok": True})
+                elif key == "POST /api/placement":
+                    self.json(self.placement_op(self.body_json()))
+                elif key == "POST /api/library/delete":
+                    j = self.body_json()
+                    try:
+                        s.find_library_file(str(j.get("name", "")))
+                    except FileNotFoundError as e:
+                        raise HttpError(404, str(e))
+                    s.delete_library_file(str(j["name"]))
                     s.notify("content")
                     self.json({"ok": True})
                 elif key in ("GET /api/file", "HEAD /api/file"):
-                    zone = self.zone_of(query.get("zone"))
                     try:
-                        item = s.find_item(zone, query.get("name", ""))
+                        if query.get("zone") in (None, "", "-1"):
+                            path = s.find_library_file(query.get("name", ""))
+                        else:
+                            path = s.find_item(self.zone_of(query.get("zone")), query.get("name", ""))["path"]
                     except FileNotFoundError as e:
                         raise HttpError(404, str(e))
-                    self.send_file(item["path"])
+                    self.send_file(path)
                 elif key == "POST /api/voice":
                     # 管理画面のマイクの声（16kHz・モノラル・16bit PCM、0.2秒ぶんほど）。再生画面（Edge）へすぐ流す
                     self.body_read = True
@@ -786,11 +842,14 @@ class Server:
                     zone = self.zone_of(query.get("zone"))
                     items = s.zone_items(zone)
                     return self.json([{
+                        "id": it["id"],
                         "name": it["name"],
                         "video": it["video"],
                         "url": f"/media/{zone}/{quote(it['name'])}?v={int(it['path'].stat().st_mtime)}",
-                        "rule": s.file_rule(zone, it["name"]),
-                        "rotation": s.file_rotation(zone, it["name"]),
+                        "rule": it["rule"],
+                        "exclusive": it["exclusive"],
+                        "seconds": it["seconds"],
+                        "rotation": it["rotation"],
                     } for it in items])
                 if key == "GET /local/rss":
                     try:

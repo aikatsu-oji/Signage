@@ -488,7 +488,12 @@
       // 再生条件（時間帯・曜日・期間）に合わないファイルは飛ばす
       const pick = (from, dir) => {
         const now = appNow();
-        for (let i = from; i >= 0 && i < this.playlist.length; i += dir) if (ruleActive(this.playlist[i].rule, now)) return i;
+        // 「専用」の配置が、いま有効なら、その時間帯は、専用のものだけを流す
+        const only = this.playlist.some((it) => it.exclusive && ruleActive(it.rule, now));
+        for (let i = from; i >= 0 && i < this.playlist.length; i += dir) {
+          const it = this.playlist[i];
+          if (ruleActive(it.rule, now) && (!only || it.exclusive)) return i;
+        }
         return -1;
       };
       let next = pick(this.index_ + step, step < 0 ? -1 : 1);
@@ -554,7 +559,7 @@
           target.bg.hidden = fit !== FIT_BLUR;
           if (fit === FIT_BLUR) target.bg.src = img.src; else target.bg.removeAttribute('src');
           this.reveal(target);
-          this.startTimer(cfg.imageSeconds * 1000, my);
+          this.startTimer((item.seconds || cfg.imageSeconds) * 1000, my);
         };
         img.onerror = () => { if (my === this.token) this.goto(1); };
         img.src = item.url;

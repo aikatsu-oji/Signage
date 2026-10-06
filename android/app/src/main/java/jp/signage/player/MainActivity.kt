@@ -715,7 +715,7 @@ class MainActivity : Activity() {
         folderText.text = "アプリ専用の保存場所（管理画面から、登録・削除と、区画への配置を行います）"
         scanResult.text = "読み込み中…"
         io.execute {
-            val result = runCatching { Library.summary(this) }
+            val result = runCatching { Library.items(this).let { l -> l.size to l.count { it.placements.isEmpty() } } }
             val zones = runCatching { (0 until Prefs.zoneCount(prefs.layout)).map { Library.entries(this, it).size } }.getOrNull()
             main.post {
                 if (gen != scanGeneration || isDestroyed) return@post

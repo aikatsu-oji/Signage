@@ -306,77 +306,74 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("libraryMigrated", false)
         set(v) = sp.edit().putBoolean("libraryMigrated", v).apply()
 
-    /** 配置（区画, ライブラリのファイル名）。区画ごとの順番は、この並び順 */
+    /** 配置（どのファイルを、どの区画で、どの条件で流すか）。区画ごとの順番は、この並び順 */
+    data class Placement(
+        val id: String,
+        val zone: Int,
+        val name: String,
+        val rule: JSONObject? = null,
+        /** 「専用」：この配置が有効な時間帯は、専用の配置だけを流す */
+        val exclusive: Boolean = false,
+        /** 画像の表示秒数（null なら、共通の秒数） */
+        val seconds: Int? = null,
+    )
+
+    /** 配置が、ID・再生条件などを持つ形に移行済みか */
+    var placementsV2: Boolean
+        get() = sp.getBoolean("placementsV2", false)
+        set(v) = sp.edit().putBoolean("placementsV2", v).apply()
+
     @Synchronized
-    fun placements(): List<Pair<Int, String>> = runCatching {
+    fun placements(): List<Placement> = runCatching {
         val arr = org.json.JSONArray(sp.getString("placements", "[]") ?: "[]")
-        (0 until arr.length()).mapNotNull { i -> arr.optJSONObject(i)?.let { it.getInt("zone") to it.getString("name") } }
+        (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            Placement(
+                o.optString("id").ifEmpty { newPlacementId() }, o.getInt("zone"), o.getString("name"),
+                o.optJSONObject("rule"), o.optBoolean("exclusive", false), if (o.has("seconds") && !o.isNull("seconds")) o.optInt("seconds") else null,
+            )
+        }
     }.getOrDefault(emptyList())
 
-    fun placementsOf(zone: Int): List<String> = placements().filter { it.first == zone }.map { it.second }
+    fun placementsOf(zone: Int): List<Placement> = placements().filter { it.zone == zone }
+
+    private fun newPlacementId() = java.util.UUID.randomUUID().toString().replace("-", "").take(8)
 
     @Synchronized
-    fun replacePlacements(list: List<Pair<Int, String>>) {
+    fun replacePlacements(list: List<Placement>) {
         val arr = org.json.JSONArray()
-        list.forEach { arr.put(JSONObject().put("zone", it.first).put("name", it.second)) }
+        list.forEach {
+            arr.put(JSONObject().put("id", it.id).put("zone", it.zone).put("name", it.name).apply {
+                it.rule?.let { r -> put("rule", r) }
+                if (it.exclusive) put("exclusive", true)
+                it.seconds?.let { s -> put("seconds", s) }
+            })
+        }
         sp.edit().putString("placements", arr.toString()).apply()
     }
 
-    @Synchronized
-    fun addPlacement(zone: Int, name: String) {
-        val list = placements()
-        if (list.none { it.first == zone && it.second == name }) replacePlacements(list + (zone to name))
+    fun makePlacementId() = newPlacementId()
+
+    /** 画像・動画ごとの表示の回転（ライブラリのファイル名がキー、値は 90・180・270）。回転なしは 0 */
+    private fun fileRotations(): JSONObject = runCatching { JSONObject(sp.getString("fileRotations", "{}") ?: "{}") }.getOrDefault(JSONObject())
+
+    fun fileRotation(name: String): Int = fileRotations().optInt(name, 0)
+
+    fun setFileRotation(name: String, degrees: Int) {
+        val all = fileRotations()
+        if (degrees == 90 || degrees == 180 || degrees == 270) all.put(name, degrees) else all.remove(name)
+        sp.edit().putString("fileRotations", all.toString()).apply()
     }
 
-    /** 区画から外す。同じファイルが、ほかの区画で使われていれば true */
-    @Synchronized
-    fun removePlacement(zone: Int, name: String): Boolean {
-        val rest = placements().filterNot { it.first == zone && it.second == name }
-        replacePlacements(rest)
-        return rest.any { it.second == name }
-    }
+    /** 移行用：旧バージョンの、区画|名前 をキーにした、再生条件・回転 */
+    fun legacyFileRules(): JSONObject = runCatching { JSONObject(sp.getString("fileRules", "{}") ?: "{}") }.getOrDefault(JSONObject())
+    fun legacyFileRotations(): JSONObject = fileRotations()
 
     @Synchronized
     fun replaceFileRulesAndRotations(rules: Map<String, JSONObject>, rotations: Map<String, Int>) {
         val r = JSONObject(); rules.forEach { (k, v) -> r.put(k, v) }
         val o = JSONObject(); rotations.forEach { (k, v) -> o.put(k, v) }
         sp.edit().putString("fileRules", r.toString()).putString("fileRotations", o.toString()).apply()
-    }
-
-    /** 画像・動画ごとの表示の回転（キーは「区画|ファイル名」、値は 90・180・270）。回転なしは 0 */
-    private fun fileRotations(): JSONObject = runCatching { JSONObject(sp.getString("fileRotations", "{}") ?: "{}") }.getOrDefault(JSONObject())
-
-    fun fileRotation(zone: Int, name: String): Int = fileRotations().optInt("$zone|$name", 0)
-
-    fun fileRotationsOf(zone: Int): Map<String, Int> {
-        val all = fileRotations()
-        val prefix = "$zone|"
-        return all.keys().asSequence().filter { it.startsWith(prefix) }.associate { it.removePrefix(prefix) to all.optInt(it, 0) }
-    }
-
-    fun setFileRotation(zone: Int, name: String, degrees: Int) {
-        val all = fileRotations()
-        if (degrees == 90 || degrees == 180 || degrees == 270) all.put("$zone|$name", degrees) else all.remove("$zone|$name")
-        sp.edit().putString("fileRotations", all.toString()).apply()
-    }
-
-    /** 画像・動画ごとの再生条件（キーは「区画|ファイル名」）。条件が無いファイルは常に再生 */
-    private fun fileRules(): JSONObject = runCatching { JSONObject(sp.getString("fileRules", "{}") ?: "{}") }.getOrDefault(JSONObject())
-
-    fun fileRule(zone: Int, name: String): JSONObject? = fileRules().optJSONObject("$zone|$name")
-
-    fun setFileRule(zone: Int, name: String, rule: JSONObject?) {
-        val all = fileRules()
-        if (rule == null) all.remove("$zone|$name") else all.put("$zone|$name", rule)
-        sp.edit().putString("fileRules", all.toString()).apply()
-    }
-
-    /** 全ファイルの条件を一度に取り出す（一覧の表示用） */
-    fun fileRulesOf(zone: Int): Map<String, JSONObject> {
-        val all = fileRules()
-        val prefix = "$zone|"
-        return all.keys().asSequence().filter { it.startsWith(prefix) }
-            .mapNotNull { k -> all.optJSONObject(k)?.let { k.removePrefix(prefix) to it } }.toMap()
     }
 
     companion object {

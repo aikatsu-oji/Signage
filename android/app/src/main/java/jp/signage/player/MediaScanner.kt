@@ -14,6 +14,12 @@ data class MediaEntry(
     val isVideo: Boolean,
     /** バイト数（不明なら 0） */
     val size: Long = 0,
+    /** 配置の ID・再生条件・「専用」・表示秒数と、ファイルの回転（ライブラリの配置から作ったときだけ） */
+    val id: String = "",
+    val rule: org.json.JSONObject? = null,
+    val exclusive: Boolean = false,
+    val seconds: Int? = null,
+    val rotation: Int = 0,
 )
 
 /**
