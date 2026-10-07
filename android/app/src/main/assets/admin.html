@@ -1473,7 +1473,7 @@
       $('.sub', b).textContent = {
         ok: `v${d.version || ''}`, pin: 'PINが違います', offline: '応答なし', checking: '確認中…',
       }[d.status] || '';
-      b.addEventListener('click', () => { closeDevMenu(); select(d.key); });
+      b.addEventListener('click', () => { closeDevMenu(); select(d.key, false); });
       m.append(b);
     }
   }
@@ -1495,14 +1495,14 @@
     renderDevices();
   });
 
-  async function select(key) {
+  async function select(key, reveal = true) {
     if (key !== selectedKey) {   // 別の端末に切り替えたら、その端末以外のチェックは外す
       for (const k of [...checked]) if (k !== key) checked.delete(k);
       saveChecked();
     }
     selectedKey = key;
     store.set('signage-selected', key);
-    showTab('dev', true);
+    showTab('dev', reveal);   // ヘッダーの「操作中」ボタンからの切り替えでは、端末のパネルを開かない
     renderDevices();
     const dev = selected();
     if (dev.status !== 'ok') await check(dev);
