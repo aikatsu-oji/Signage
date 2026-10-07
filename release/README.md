@@ -1,14 +1,14 @@
-# サイネージ Android 1.21.0 / Windows 1.19.0
+# サイネージ Android 1.22.0 / Windows 1.20.0
 
 | ファイル | 内容 | バージョン |
 |---|---|---|
-| `SimpleSignage-android-1.21.0.apk` | Android / Fire TV 用アプリ | 1.21.0 |
-| `SimpleSignage-windows-1.19.0.exe` | Windows 用アプリ（インストール不要・単体で動作） | 1.19.0 |
+| `SimpleSignage-android-1.22.0.apk` | Android / Fire TV 用アプリ | 1.22.0 |
+| `SimpleSignage-windows-1.20.0.exe` | Windows 用アプリ（インストール不要・単体で動作） | 1.20.0 |
 | `SHA256SUMS` | ファイルの改ざん・破損を確かめるチェックサム | |
 | `LICENSE` / `THIRD_PARTY_NOTICES.md` | 本ソフトウェア（MIT）と、利用している部品のライセンス | |
 
 ## 今回の変更
-アプリ ID を jp.signage.player から jp.simplesignage に変更しました（Google Play 公開に向けて）。**別のアプリとして入る**ため、いま使っている端末の更新は、これまでの APK への上書きではできません（管理画面からのアプリ更新も使えません）。新しい APK を入れ直し、画像・動画の登録と設定をやり直してください。古いアプリは、端末から削除してかまいません。
+Google Play 版に一本化：管理画面からのアプリ更新（APK の送信）の機能と、関連する権限（REQUEST_INSTALL_PACKAGES・写真と動画の読み取り）をなくしました。ソースコードの内部名も jp.simplesignage に変更しました。Google Play の無い端末（Fire TV など）には、この APK を adb で入れてください。
 
 ## 確認方法
 ```
@@ -23,4 +23,4 @@ sha256sum -c SHA256SUMS
 
 ## 注意
 - この APK は **debug 署名** です。社外へ広く配る場合は、リリース鍵で署名し直してください。署名が変わると、入っている端末では上書きできません。
-- Android 1.9.5 以降は、管理画面から APK で更新できます（端末側で許可が必要）。1.9.4 以前からは、一度手動で入れ替えてください。
+- Android は、Google Play 版でのテストに移行しています。この APK は、Google Play の無い端末（Fire TV など）用です。Google Play 版とは署名が違うため、入れ替えるときは、アプリを削除してから入れ直してください。管理画面からのアプリ更新の機能は、1.22.0 でなくしました。
