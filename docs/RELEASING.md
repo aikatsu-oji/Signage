@@ -8,8 +8,8 @@ GitHub Actions（`.github/workflows/release.yml`）が Releases に添付しま�
 3. 一時的なコミットを作ってタグを付け、**タグだけ**を push する。
    ```
    git checkout --detach
-   cp <APK> release/SimpleSignage-android-<版>.apk
-   cp <exe> release/SimpleSignage-windows-<版>.exe
+   cp <APK> release/Signage-android-<版>.apk
+   cp <exe> release/Signage-windows-<版>.exe
    (cd release && sha256sum Signage-* > SHA256SUMS)
    git add release && git commit -m "リリース v<版>"
    git tag v<版>

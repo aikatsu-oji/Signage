@@ -14,11 +14,19 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- 管理画面から送られた APK でアプリを更新する（端末側で許可したときだけ） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- 天気予報の取得 -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST" />
+    <!-- 旧バージョンで選んだフォルダの画像・動画を、ライブラリへ移すため（移行のみ。次のバージョンで不要になります） -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
 
     <!-- Android TV / タッチ非対応のサイネージ端末にもインストール可能にする -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -32,11 +40,6 @@
         android:requestLegacyExternalStorage="true"
         android:usesCleartextTraffic="true"
         android:theme="@style/Theme.Settings">
-
-        <!-- Android 16 以降、大きな画面（タブレット・テレビ）でも、画面の向きの固定を守る（サイネージは、向きの固定が必要なため） -->
-        <property
-            android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
-            android:value="true" />
 
         <activity
             android:name=".MainActivity"
@@ -76,5 +79,8 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name=".UpdateResultReceiver"
+            android:exported="false" />
     </application>
 </manifest>
