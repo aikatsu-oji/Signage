@@ -53,7 +53,7 @@ sha256sum -c SHA256SUMS
 
 ```
 cd android
-gradlew assembleDebug        # APK を android/app/build/outputs/apk/debug/ に出力（build.bat は ..\dist\signage.apk にも出力）
+gradlew assembleDirectDebug  # APK を android/app/build/outputs/apk/direct/debug/ に出力（build.bat は ..\dist\signage.apk にも出力）
 ```
 
 JDK 17 と Android SDK（API 34）が必要です。Windows 版は `windows\build.bat`（`..\dist\SimpleSignage.exe` に出力。Python 3.10 以降が必要）です。

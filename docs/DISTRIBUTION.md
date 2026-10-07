@@ -11,7 +11,7 @@
 keytool -genkeypair -v -keystore signage-release.jks -alias signage \
   -keyalg RSA -keysize 4096 -validity 10000
 cp android/keystore.properties.example android/keystore.properties   # 値を記入
-cd android && ./gradlew assembleRelease
+cd android && ./gradlew assembleDirectRelease   # Google Play 版（AAB）は docs/PLAY_STORE.md
 ```
 - `*.jks` と `keystore.properties` は `.gitignore` 済み。**鍵とパスワードは別の場所にバックアップ**（紛失すると更新配布不可）。
 - ⚠ 署名を変えると、既に入っている端末では **上書きインストールできません**（一度アンインストール → 設定が消える。事前にエクスポートを）。

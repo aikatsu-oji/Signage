@@ -360,7 +360,7 @@ object AdminServer {
         return when ("${req.method} ${req.path}") {
             "GET /api/state" -> json(200, state(prefs).put("access", accessInfo(prefs, from)).put("group", groupInfo(prefs)))
             "GET /api/status" -> json(200, status(prefs))
-            "PUT /api/apk" -> receiveApk(prefs, req)
+            "PUT /api/apk" -> if (!AppUpdater.supported) throw HttpError(400, "この版（Google Play 版）は、管理画面からは更新できません。Google Play で更新してください") else receiveApk(prefs, req)
             "GET /api/weather/offices" -> {
                 val arr = org.json.JSONArray()
                 Weather.offices(app).forEach { o ->
@@ -559,7 +559,7 @@ object AdminServer {
             .put("ticker", JSONObject().put("standing", Ticker.standing(app) != null).put("queued", 0))
             .put("disk", disk ?: JSONObject.NULL)
             .put("platform", "android")
-            .put("update", JSONObject().put("allowed", prefs.allowRemoteUpdate).put("canInstall", AppUpdater.canInstall(app))
+            .put("update", JSONObject().put("supported", AppUpdater.supported).put("allowed", prefs.allowRemoteUpdate).put("canInstall", AppUpdater.canInstall(app))
                 .put("phase", AppUpdater.state.phase).put("message", AppUpdater.state.message).put("at", AppUpdater.state.at))
     }
 

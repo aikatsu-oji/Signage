@@ -13,7 +13,7 @@ val keystoreProps = Properties().apply {
 
 android {
     namespace = "jp.signage.player"
-    compileSdk = 34
+    compileSdk = 36
 
     signingConfigs {
         if (keystoreProps.isNotEmpty()) {
@@ -23,6 +23,24 @@ android {
                 keyAlias = keystoreProps.getProperty("keyAlias")
                 keyPassword = keystoreProps.getProperty("keyPassword")
             }
+        }
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    // 配布の種類。direct＝GitHub などで APK を直接配る版（管理画面からのアプリ更新あり）、
+    // play＝Google Play 版（アプリの更新は Google Play が行うので、管理画面からの更新と、その権限は無い）
+    flavorDimensions += "dist"
+    productFlavors {
+        create("direct") {
+            dimension = "dist"
+            buildConfigField("boolean", "SELF_UPDATE", "true")
+        }
+        create("play") {
+            dimension = "dist"
+            buildConfigField("boolean", "SELF_UPDATE", "false")
         }
     }
 
@@ -36,9 +54,9 @@ android {
     defaultConfig {
         applicationId = "jp.signage.player"
         minSdk = 26
-        targetSdk = 34
-        versionCode = 88
-        versionName = "1.19.0"
+        targetSdk = 36
+        versionCode = 89
+        versionName = "1.20.0"
     }
 
     compileOptions {

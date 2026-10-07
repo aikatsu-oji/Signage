@@ -244,7 +244,7 @@ Android の仕様で、別のアプリが画面に出ている間は、更新の
 
 ```
 cd android
-gradlew assembleDebug      # android/app/build/outputs/apk/debug/app-debug.apk ができます
+gradlew assembleDirectDebug  # android/app/build/outputs/apk/direct/debug/app-direct-debug.apk ができます（Google Play 版は docs/PLAY_STORE.md）
 ```
 
 JDK 17 と Android SDK（API 34）が必要です。`build.bat` を実行すると、ビルドして `..\dist\signage.apk` にコピーします。

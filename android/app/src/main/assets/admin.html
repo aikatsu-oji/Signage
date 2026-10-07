@@ -1319,6 +1319,7 @@
     const m = dev.mon;
     if (!m?.ok) return say(m?.http === 404 ? 'この端末のアプリが古く、遠隔更新に未対応です（一度、手動で更新してください）' : `接続できません（${m?.error || ''}）`, 'ng');
     if (m.data.platform !== 'android') return say('Android 端末ではないため、対象外です', 'warn');
+    if (m.data.update?.supported === false) return say('この端末は Google Play 版のため、管理画面からは更新できません（Google Play で更新されます）', 'warn');
     if (!m.data.update?.allowed) return say('端末側で「管理画面からのアプリ更新を許可」が OFF です。端末の設定画面で ON にしてください', 'ng');
     if (!m.data.update.canInstall) say('「不明なアプリのインストール」の許可がありません。端末の設定画面から許可してください（このまま送ります）', 'warn');
     const before = m.data.version;

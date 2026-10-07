@@ -69,6 +69,12 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        // Android 15 以降は、画面の端までアプリの領域になる（ステータスバー・ナビゲーションバーの下にも描かれる）。設定画面は、その分の余白を空ける
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(findViewById<View>(android.R.id.content)) { v, insets ->
+            val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars() or androidx.core.view.WindowInsetsCompat.Type.displayCutout())
+            v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            insets
+        }
         prefs = Prefs(this)
         shownSettingsVersion = prefs.settingsVersion
 
@@ -436,10 +442,11 @@ class MainActivity : Activity() {
         findViewById<View>(R.id.adminName).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
         findViewById<View>(R.id.groupButton).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
         findViewById<Button>(R.id.groupButton).text = if (prefs.groupCode.isEmpty()) "グループコードを設定" else "グループコードを変更・解除"
-        findViewById<View>(R.id.updateSwitch).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
-        findViewById<View>(R.id.updateNote).visibility = if (prefs.adminEnabled) View.VISIBLE else View.GONE
+        // 管理画面からのアプリ更新（Google Play 版には無い）
+        findViewById<View>(R.id.updateSwitch).visibility = if (prefs.adminEnabled && AppUpdater.supported) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.updateNote).visibility = if (prefs.adminEnabled && AppUpdater.supported) View.VISIBLE else View.GONE
         findViewById<View>(R.id.updateUnknown).visibility =
-            if (prefs.adminEnabled && prefs.allowRemoteUpdate && !AppUpdater.canInstall(this)) View.VISIBLE else View.GONE
+            if (prefs.adminEnabled && AppUpdater.supported && prefs.allowRemoteUpdate && !AppUpdater.canInstall(this)) View.VISIBLE else View.GONE
         findViewById<View>(R.id.adminAccessReset).visibility = if (prefs.macLock || prefs.allowedMacs.isNotEmpty()) View.VISIBLE else View.GONE
         findViewById<View>(R.id.adminOpenLocal).visibility = if (running) View.VISIBLE else View.GONE
         // 省電力の対象のままだと、再生画面を出していないときに外から接続できない端末がある

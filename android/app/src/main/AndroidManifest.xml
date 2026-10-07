@@ -41,6 +41,11 @@
         android:usesCleartextTraffic="true"
         android:theme="@style/Theme.Settings">
 
+        <!-- Android 16 以降、大きな画面（タブレット・テレビ）でも、画面の向きの固定を守る（サイネージは、向きの固定が必要なため） -->
+        <property
+            android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
+            android:value="true" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

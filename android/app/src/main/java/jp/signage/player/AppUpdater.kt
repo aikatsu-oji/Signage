@@ -29,8 +29,11 @@ object AppUpdater {
 
     fun apkFile(ctx: Context) = File(ctx.cacheDir, "update.apk")
 
+    /** 管理画面からのアプリ更新に対応した版か（Google Play 版は、Google Play が更新するので、対応しない） */
+    val supported: Boolean get() = BuildConfig.SELF_UPDATE
+
     fun canInstall(ctx: Context): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.O || ctx.packageManager.canRequestPackageInstalls()
+        supported && Build.VERSION.SDK_INT < Build.VERSION_CODES.O || ctx.packageManager.canRequestPackageInstalls()
 
     @Suppress("DEPRECATION")
     private fun versionCode(i: PackageInfo): Long =
@@ -62,6 +65,10 @@ object AppUpdater {
 
     /** インストールを始める。確認が必要な端末では、端末の画面に確認が出る */
     fun install(ctx: Context, f: File) {
+        if (!supported) {
+            state = State("failed", "この版（Google Play 版）は、Google Play で更新します")
+            return
+        }
         if (!canInstall(ctx)) {
             state = State("failed", "この端末で、SimpleSignage に「不明なアプリのインストール」の許可がありません。端末の設定画面から許可してください")
             return
