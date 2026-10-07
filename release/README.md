@@ -1,14 +1,14 @@
-# サイネージ Android 1.18.3 / Windows 1.17.3
+# サイネージ Android 1.19.0 / Windows 1.18.0
 
 | ファイル | 内容 | バージョン |
 |---|---|---|
-| `Signage-android-1.18.3.apk` | Android / Fire TV 用アプリ | 1.18.3 |
-| `Signage-windows-1.17.3.exe` | Windows 用アプリ（インストール不要・単体で動作） | 1.17.3 |
+| `SimpleSignage-android-1.19.0.apk` | Android / Fire TV 用アプリ | 1.19.0 |
+| `SimpleSignage-windows-1.18.0.exe` | Windows 用アプリ（インストール不要・単体で動作） | 1.18.0 |
 | `SHA256SUMS` | ファイルの改ざん・破損を確かめるチェックサム | |
 | `LICENSE` / `THIRD_PARTY_NOTICES.md` | 本ソフトウェア（MIT）と、利用している部品のライセンス | |
 
 ## 今回の変更
-管理画面：ヘッダーの「操作中の端末」ボタンで端末を切り替えても、端末のパネルを開かないように。
+アプリ名を「SimpleSignage」に変更（Android の表示名、Windows のトレイ・通知・ウィンドウ、管理画面、配布ファイル名 SimpleSignage-android-<版>.apk / SimpleSignage-windows-<版>.exe）。内部の識別子・設定の保存場所は、そのままです（更新はそのまま上書きできます）。
 
 ## 確認方法
 ```
