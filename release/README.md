@@ -1,14 +1,14 @@
-# サイネージ Android 1.18.2 / Windows 1.17.2
+# サイネージ Android 1.18.3 / Windows 1.17.3
 
 | ファイル | 内容 | バージョン |
 |---|---|---|
-| `Signage-android-1.18.2.apk` | Android / Fire TV 用アプリ | 1.18.2 |
-| `Signage-windows-1.17.2.exe` | Windows 用アプリ（インストール不要・単体で動作） | 1.17.2 |
+| `Signage-android-1.18.3.apk` | Android / Fire TV 用アプリ | 1.18.3 |
+| `Signage-windows-1.17.3.exe` | Windows 用アプリ（インストール不要・単体で動作） | 1.17.3 |
 | `SHA256SUMS` | ファイルの改ざん・破損を確かめるチェックサム | |
 | `LICENSE` / `THIRD_PARTY_NOTICES.md` | 本ソフトウェア（MIT）と、利用している部品のライセンス | |
 
 ## 今回の変更
-「VPN（Tailscale）経由は許可する」の設定と、VPN に関する処理・説明をすべて削除（VPN の概念をなくしました）。
+管理画面：ヘッダーの「操作中の端末」ボタンで端末を切り替えても、端末のパネルを開かないように。
 
 ## 確認方法
 ```
