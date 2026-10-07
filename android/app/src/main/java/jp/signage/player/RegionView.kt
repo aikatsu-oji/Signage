@@ -83,7 +83,9 @@ class RegionView(context: Context) : PanelView(context) {
             s.setSpan(RelativeSizeSpan(0.55f), start, s.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
         box.addView(txt("", if (compact) 1.7f else 2.3f).apply { text = s })
-        box.addView(txt("${day.max?.let { "$it℃" } ?: "--"} / ${day.min?.let { "$it℃" } ?: "--"}", 0.95f))
+        // 値が無いときは、「--」を出さずに、ある値だけを出す
+        val temps = listOfNotNull(day.max?.let { "$it℃" }, day.min?.let { "$it℃" }).joinToString(" / ")
+        if (temps.isNotEmpty()) box.addView(txt(temps, 0.95f))
         val pop = day.pops6h?.mapNotNull { it?.toIntOrNull() }?.maxOrNull()
         if (pop != null && k >= 0.85f) box.addView(txt("☂ $pop%", 0.8f, color = DIM))
         return box

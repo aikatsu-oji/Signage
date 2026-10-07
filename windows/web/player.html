@@ -209,9 +209,12 @@
       const label = el('div', 'label ' + dayClass(dt), `${i === 0 ? '今日' : '明日'}  ${dateLabel(day.date)}`);
       const mid = el('div', 'mid');
       const temps = el('div', 'temps');
-      temps.append(el('div', 'hot', `最高 ${day.max ? day.max + '℃' : '--'}`), el('div', 'cold', `最低 ${day.min ? day.min + '℃' : '--'}`));
+      // 値が無い（気象庁の予報に含まれない）ときは、「--」を出さずに、その行を省く
+      if (day.max) temps.append(el('div', 'hot', `最高 ${day.max}℃`));
+      if (day.min) temps.append(el('div', 'cold', `最低 ${day.min}℃`));
       if (compact) temps.style.fontSize = '1.3em';
-      mid.append(iconEl(day.icon, compact ? 3 : 5), temps);
+      mid.append(iconEl(day.icon, compact ? 3 : 5));
+      if (temps.children.length) mid.append(temps);
       c.append(label, mid);
       if (day.text) c.append(el('div', 'wtext', day.text));
       if (day.pops6h && !compact) {
@@ -232,9 +235,9 @@
       d.week.slice(0, compact ? 4 : 7).forEach((w) => {
         const c = el('div', 'wcell');
         const t = el('div');
-        t.innerHTML = `<span class="hot"></span> / <span class="cold"></span>`;
-        t.children[0].textContent = w.max || '--';
-        t.children[1].textContent = w.min || '--';
+        if (w.max) { const m = el('span', 'hot'); m.textContent = w.max; t.append(m); }
+        if (w.max && w.min) t.append(' / ');
+        if (w.min) { const m = el('span', 'cold'); m.textContent = w.min; t.append(m); }
         c.append(el('div', dayClass(dateOf(w.date)), dateLabel(w.date)), iconEl(w.icon, 2.4), t, el('div', 'dim', w.pop ? `☂ ${w.pop}%` : ''));
         week.append(c);
       });
@@ -255,7 +258,8 @@
       c.append(el('div', 'tn', t.label));
       if (t.icon) {
         c.append(iconEl(t.icon, compact ? 1.7 : 2.3));
-        c.append(el('div', 'tt', `${t.max ? t.max + '℃' : '--'} / ${t.min ? t.min + '℃' : '--'}`));
+        const tt = [t.max ? t.max + '℃' : '', t.min ? t.min + '℃' : ''].filter(Boolean).join(' / ');   // 値が無いときは「--」を出さない
+        if (tt) c.append(el('div', 'tt', tt));
         if (t.pop != null) c.append(el('div', 'tp', `☂ ${t.pop}%`));
       } else {
         c.append(el('div', 'tt', '--'));
@@ -350,7 +354,7 @@
       const time = el('div');
       time.append(el('div', 'dim ' + dayClass(t), showDate ? dateLabel(s.time) : ' '), el('div', '', `${t.getHours()}時`));
       time.lastChild.style.cssText = 'font-size:1.5em;font-weight:bold';
-      const temp = el('div', '', s.temp ? s.temp + '℃' : '--');
+      const temp = el('div', '', s.temp ? s.temp + '℃' : '');
       temp.style.cssText = 'font-size:1.7em;font-weight:bold';
       c.append(time, iconEl(s.icon, landscape ? 3.2 : 2.2), el('div', '', s.weather), temp, el('div', 'dim', wind));
       box.append(c);

@@ -175,6 +175,14 @@ def parse_forecast(text: str, area_code, hint=None):
             wtimes = [parse_time(t) for t in w0["timeDefines"]]
             tarea = wts[1]["areas"][0] if len(wts) > 1 else {}
             last = days[-1]["date"] if days else report.date().isoformat()
+            # 今日・明日の最高・最低気温が、短期予報に無いとき（発表の時間帯による）は、週間予報の同じ日の値で補う
+            for i, t in enumerate(wtimes):
+                for d in days:
+                    if d["date"] != t.date().isoformat():
+                        continue
+                    for key, arr in (("max", tarea.get("tempsMax")), ("min", tarea.get("tempsMin"))):
+                        if not d[key] and arr and i < len(arr) and arr[i]:
+                            d[key] = arr[i]
             for i, t in enumerate(wtimes):
                 if t.date().isoformat() <= last:
                     continue
