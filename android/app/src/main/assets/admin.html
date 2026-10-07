@@ -1497,6 +1497,10 @@
   });
 
   async function select(key) {
+    if (key !== selectedKey) {   // 別の端末に切り替えたら、その端末以外のチェックは外す
+      for (const k of [...checked]) if (k !== key) checked.delete(k);
+      saveChecked();
+    }
     selectedKey = key;
     store.set('signage-selected', key);
     showTab('dev', true);
