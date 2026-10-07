@@ -69,9 +69,10 @@ class WeatherView(context: Context) : PanelView(context) {
             setPadding((u * 0.8f).toInt(), 0, 0, 0)
         }
         val tempSize = if (compact) 1.3f else 1.7f
-        temps.addView(text("最高 ${day.max?.let { "$it℃" } ?: "--"}", tempSize, bold = true, color = HOT))
-        temps.addView(text("最低 ${day.min?.let { "$it℃" } ?: "--"}", tempSize, bold = true, color = COLD))
-        middle.addView(temps)
+        // 値が無い（気象庁の予報に含まれない）ときは、「--」を出さずに、その行を省く
+        day.max?.let { temps.addView(text("最高 $it℃", tempSize, bold = true, color = HOT)) }
+        day.min?.let { temps.addView(text("最低 $it℃", tempSize, bold = true, color = COLD)) }
+        if (temps.childCount > 0) middle.addView(temps)
         card.addView(middle, LayoutParams(WRAP, 0, 1f))
 
         day.text?.let {
@@ -83,16 +84,18 @@ class WeatherView(context: Context) : PanelView(context) {
         }
 
         // 小さな区画では降水確率の行を省き、アイコンと気温を優先する
-        day.pops6h?.takeIf { !compact }?.let { pops ->
+        // 終わった時間帯など、値が無い時間帯は、「--」を出さずに省く（1 つも無ければ、降水確率の欄ごと出さない）
+        day.pops6h?.takeIf { !compact && it.any { v -> v != null } }?.let { pops ->
             card.addView(text("降水確率", 0.85f, color = DIM).apply { setPadding(0, gap(), 0, 0) })
             val row = LinearLayout(context)
             listOf("0-6時", "6-12時", "12-18時", "18-24時").forEachIndexed { i, h ->
+                val value = pops[i] ?: return@forEachIndexed
                 val cell = LinearLayout(context).apply {
                     orientation = VERTICAL
                     gravity = Gravity.CENTER
                 }
                 cell.addView(text(h, 0.8f, color = DIM))
-                cell.addView(text(pops[i]?.let { "$it%" } ?: "--", 1.3f, bold = true))
+                cell.addView(text("$value%", 1.3f, bold = true))
                 row.addView(cell, LayoutParams(0, WRAP, 1f))
             }
             card.addView(row, LayoutParams(MATCH, WRAP))
@@ -109,9 +112,9 @@ class WeatherView(context: Context) : PanelView(context) {
         cell.addView(text(dateLabel(day.date), 0.95f, bold = true, color = dayColor(day.date, WHITE)))
         cell.addView(codeIcon(day.code, 2.4f))
         val temps = LinearLayout(context).apply { gravity = Gravity.CENTER }
-        temps.addView(text(day.max ?: "--", 1.2f, bold = true, color = HOT))
-        temps.addView(text(" / ", 1f, color = DIM))
-        temps.addView(text(day.min ?: "--", 1.2f, bold = true, color = COLD))
+        day.max?.let { temps.addView(text(it, 1.2f, bold = true, color = HOT)) }
+        if (day.max != null && day.min != null) temps.addView(text(" / ", 1f, color = DIM))
+        day.min?.let { temps.addView(text(it, 1.2f, bold = true, color = COLD)) }
         cell.addView(temps)
         cell.addView(text(day.pop?.let { "☂ $it%" } ?: "", 0.9f, color = DIM))
         for (i in 0 until cell.childCount) (cell.getChildAt(i) as? TextView)?.gravity = Gravity.CENTER

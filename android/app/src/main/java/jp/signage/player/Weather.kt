@@ -258,7 +258,7 @@ object Weather {
         val temps = ts2?.getJSONArray("areas")?.let { it.getJSONObject(ai.coerceAtMost(it.length() - 1)) }
             ?.optJSONArray("temps")
 
-        val days = (0 until minOf(2, times0.size, codes.length())).map { i ->
+        val baseDays = (0 until minOf(2, times0.size, codes.length())).map { i ->
             val date = times0[i].toLocalDate()
             val pops6h = listOf(0, 6, 12, 18).map { h ->
                 popTimes.indexOfFirst { it.toLocalDate() == date && it.hour == h }
@@ -280,6 +280,8 @@ object Weather {
 
         // 週間予報（明日以降。今日・明日のカードより後の日だけ使う）
         val week = mutableListOf<DayForecast>()
+        // 今日・明日の最高・最低気温が、短期予報に無いとき（発表の時間帯による）に補う、週間予報の同じ日の値
+        val weekTemps = mutableMapOf<LocalDate, Pair<String?, String?>>()
         root.optJSONObject(1)?.optJSONArray("timeSeries")?.let { wts ->
             val w0 = wts.getJSONObject(0)
             val wAreas = w0.getJSONArray("areas")
@@ -288,9 +290,11 @@ object Weather {
             val wCodes = wa.getJSONArray("weatherCodes")
             val wPops = wa.optJSONArray("pops")
             val t = wts.optJSONObject(1)?.getJSONArray("areas")?.let { it.getJSONObject(0) }
-            val last = days.lastOrNull()?.date ?: report.toLocalDate()
+            val last = baseDays.lastOrNull()?.date ?: report.toLocalDate()
             for (i in wTimes.indices) {
                 val date = wTimes[i].toLocalDate()
+                weekTemps[date] = t?.optJSONArray("tempsMax")?.optString(i)?.ifEmpty { null } to
+                    t?.optJSONArray("tempsMin")?.optString(i)?.ifEmpty { null }
                 if (!date.isAfter(last)) continue
                 week += DayForecast(
                     date = date,
@@ -300,6 +304,10 @@ object Weather {
                     pop = wPops?.optString(i)?.ifEmpty { null },
                 )
             }
+        }
+        val days = baseDays.map { d ->
+            val wk = weekTemps[d.date]
+            d.copy(max = d.max ?: wk?.first, min = d.min ?: wk?.second)
         }
         return WeatherData(areaName, report, days, week, stale = false)
     }

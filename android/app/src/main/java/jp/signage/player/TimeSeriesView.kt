@@ -85,7 +85,7 @@ class TimeSeriesView(context: Context) : PanelView(context) {
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
         })
-        card.addView(text(slot.temp?.let { "$it℃" } ?: "--", 1.7f, bold = true))
+        card.addView(text(slot.temp?.let { "$it℃" } ?: "", 1.7f, bold = true))
         card.addView(text(wind(slot), 0.85f, color = DIM).apply { maxLines = 2 })
         for (i in 0 until card.childCount) (card.getChildAt(i) as? android.widget.TextView)?.gravity = Gravity.CENTER
         return card
@@ -112,7 +112,7 @@ class TimeSeriesView(context: Context) : PanelView(context) {
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
         }, LayoutParams(0, WRAP, 1f))
-        r.addView(text(slot.temp?.let { "$it℃" } ?: "--", 1.6f, bold = true).apply {
+        r.addView(text(slot.temp?.let { "$it℃" } ?: "", 1.6f, bold = true).apply {
             gravity = Gravity.END
         }, LayoutParams((u * 4).toInt(), WRAP))
         r.addView(text(wind(slot), 0.85f, color = DIM).apply {
