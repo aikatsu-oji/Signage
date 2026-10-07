@@ -2741,24 +2741,37 @@
 
   /** 合わせる区画を動かす比率の項目と、その区画が決まる割合（0〜1）。合わせられない（区画が画面全体など）ときは null */
   function ratioTarget(layout, zone, portrait, W, H, r) {
+    const mp = fval('mainPercent') / 100, sa = fval('splitA') / 100;
     if (layout === 1) return { field: 'splitPercent', frac: zone === 0 ? (r * H) / W : 1 - (r * H) / W };
     if (layout === 2) return { field: 'splitPercent', frac: zone === 0 ? W / (r * H) : 1 - W / (r * H) };
-    if (layout === 3 && zone === 0) return { field: 'mainPercent', frac: portrait ? W / (r * H) : (r * H) / W };
+    if (layout === 3) {
+      if (zone === 0) return { field: 'mainPercent', frac: portrait ? W / (r * H) : (r * H) / W };
+      // サイド：横向きは右の列（幅 W×(1-メイン)）を上下に、縦向きは下の行（高さ H×(1-メイン)）を左右に分ける
+      const f = portrait ? (r * H * (1 - mp)) / W : (W * (1 - mp)) / (r * H);
+      return { field: 'sidePercent', frac: zone === 1 ? f : 1 - f };
+    }
+    if (layout === 4 || layout === 5) {
+      const f = layout === 4 ? (r * H) / W : W / (r * H);   // その区画が、分割する向きに占める割合
+      if (zone === 0) return { field: 'splitA', frac: f };
+      if (zone === 1) return { field: 'splitB', frac: f };
+      return { field: 'splitB', frac: 1 - sa - f };         // 区画3は、区画1を保ったまま区画2で調整する
+    }
     return null;
   }
 
   /** 現在の比率の項目（1% 刻みの数字）の表示と、合わせる区画の選択肢を、いまの分割に合わせる */
   function renderRatioFit() {
     const layout = fval('layout');
-    const zones = layout === 1 || layout === 2 ? [0, 1] : layout === 3 ? [0] : [];
+    const zones = layout === 1 || layout === 2 ? [0, 1] : layout >= 3 ? [0, 1, 2] : [];
     $('#fitRatioRow').hidden = !zones.length;
-    $('#frFine').hidden = !zones.length;
+    $('#frFine').hidden = !(layout >= 1 && layout <= 3);
     if (!zones.length) return;
     const portrait = screenDims(selected()).portrait;
     const names = zoneLabels(layout, portrait);
     const prev = $('#frZone').value;
     $('#frZone').innerHTML = zones.map((i) => `<option value="${i}">区画${i + 1}（${names[i]}）を</option>`).join('');
     if (zones.map(String).includes(prev)) $('#frZone').value = prev;
+    if (layout >= 4) return;
     const field = layout === 3 ? 'mainPercent' : 'splitPercent';
     const [lo, hi] = LIMITS[field];
     $('#frPct').min = lo; $('#frPct').max = hi;
@@ -2773,7 +2786,8 @@
     const zone = Number($('#frZone').value || 0);
     const t = ratioTarget(layout, zone, portrait, W, H, rw / rh);
     if (!t) return;
-    const [lo, hi] = LIMITS[t.field];
+    const [lo] = LIMITS[t.field];
+    const hi = t.field === 'splitB' ? Math.min(LIMITS.splitB[1], 90 - fval('splitA')) : LIMITS[t.field][1];
     const want = Math.round(t.frac * 100);
     const pct = Math.min(hi, Math.max(lo, want));
     layoutForm().elements[t.field].value = String(pct);
