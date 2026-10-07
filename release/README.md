@@ -1,14 +1,14 @@
-# サイネージ Android 1.12.0 / Windows 1.11.1
+# サイネージ Android 1.12.1 / Windows 1.11.2
 
 | ファイル | 内容 | バージョン |
 |---|---|---|
-| `Signage-android-1.12.0.apk` | Android / Fire TV 用アプリ | 1.12.0 |
-| `Signage-windows-1.11.1.exe` | Windows 用アプリ（インストール不要・単体で動作） | 1.11.1 |
+| `Signage-android-1.12.1.apk` | Android / Fire TV 用アプリ | 1.12.1 |
+| `Signage-windows-1.11.2.exe` | Windows 用アプリ（インストール不要・単体で動作） | 1.11.2 |
 | `SHA256SUMS` | ファイルの改ざん・破損を確かめるチェックサム | |
 | `LICENSE` / `THIRD_PARTY_NOTICES.md` | 本ソフトウェア（MIT）と、利用している部品のライセンス | |
 
 ## 今回の変更
-PC 版の設定画面に、グループコードの「設定」ボタンを追加（これまで解除しかなく、保存ボタンでしか設定できませんでした）。
+管理画面の枠の拡大表示（⤢）が効かない不具合を修正。
 
 ## 確認方法
 ```
