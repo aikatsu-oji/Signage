@@ -52,11 +52,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "jp.signage.player"
+        applicationId = "jp.simplesignage"
         minSdk = 26
         targetSdk = 36
-        versionCode = 89
-        versionName = "1.20.0"
+        versionCode = 90
+        versionName = "1.21.0"
     }
 
     compileOptions {

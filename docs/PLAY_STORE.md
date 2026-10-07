@@ -1,6 +1,6 @@
 # Google Play で配る（クローズドテスト）
 
-SimpleSignage を、Google Play の「クローズドテスト」で配る手順です。Play 向けの版は、GitHub で配る版（direct）と、**同じアプリ ID（jp.signage.player）で、中身が少し違います**。
+SimpleSignage を、Google Play の「クローズドテスト」で配る手順です。Play 向けの版は、GitHub で配る版（direct）と、**同じアプリ ID（jp.simplesignage）で、中身が少し違います**。
 
 | | direct（GitHub の APK） | play（Google Play） |
 | --- | --- | --- |
