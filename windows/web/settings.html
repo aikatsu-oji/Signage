@@ -48,9 +48,10 @@
   </section>
 
   <section>
-    <h2>フォルダ</h2>
-    <p class="sub">区画ごとに再生するフォルダです。画像・動画をこのフォルダに入れるか、管理画面からアップロードしてください。</p>
-    <div id="zones"></div>
+    <h2>画像・動画（ライブラリ）</h2>
+    <p class="sub">画像・動画は、アプリ専用の保存場所（ライブラリ）に、まとめて保存されます。登録・削除と、どの区画で・いつ流すかは、管理画面から行ってください（フォルダを直接操作する必要はありません）。</p>
+    <div class="row"><button type="button" id="openLibrary">ライブラリのフォルダを開く</button></div>
+    <p class="sub" id="libInfo"></p>
   </section>
 
   <section>
@@ -119,32 +120,9 @@
     $('#adminPin').value = s.adminPin;
     $('#urls').innerHTML = (s.addresses.length ? s.addresses : ['（LAN に接続されていません）'])
       .map((a) => a.includes('.') ? `http://${a}:${s.port}/` : a).join('<br>');
-    renderZones();
   }
 
-  function renderZones() {
-    const root = $('#zones');
-    root.replaceChildren();
-    for (let i = 0; i < 3; i++) {
-      const div = document.createElement('div');
-      div.className = 'zone';
-      const used = i < s.zoneCount;
-      const type = s.zoneTypes[i] === 1 ? '天気予報' : 'フォルダの画像・動画';
-      const label = used ? `区画${i + 1}（${s.zoneNames[i] || ''}）：${type}` : `区画${i + 1}（今の画面分割では使っていません）`;
-      div.innerHTML = `<div class="sub"></div><div class="row"><input class="path" type="text"><button type="button">参照…</button><button type="button">フォルダを開く</button></div>`;
-      div.querySelector('.sub').textContent = label;
-      const input = div.querySelector('input');
-      input.value = s.zoneFolders[i] || '';
-      input.dataset.zone = i;
-      const [pick, open] = div.querySelectorAll('button');
-      pick.addEventListener('click', async () => {
-        const r = await post('/local/pick-folder', { zone: i });
-        if (r.path) input.value = r.path;
-      });
-      open.addEventListener('click', () => post('/local/open-folder', { zone: i }));
-      root.append(div);
-    }
-  }
+  $('#openLibrary').addEventListener('click', () => post('/local/open-folder', {}));
 
   async function loadOffices() {
     try { offices = await (await fetch('/local/offices')).json(); } catch (e) { offices = []; }
@@ -196,7 +174,6 @@
       ...($('#groupCode').value.trim() ? { groupCode: $('#groupCode').value.trim() } : {}),
       deviceName: $('#deviceName').value.trim(),
       adminPin: $('#adminPin').value.trim(),
-      zoneFolders: [...document.querySelectorAll('input.path')].map((i) => i.value.trim()),
     };
     if (offices.length) {
       Object.assign(body, {

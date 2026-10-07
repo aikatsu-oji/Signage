@@ -291,62 +291,90 @@ class Prefs(context: Context) {
 
     fun setZoneRefreshMin(i: Int, min: Int) = sp.edit().putInt("zoneRefreshMin$i", min.coerceIn(1, 1440)).apply()
 
-    /** 区画 i のフォルダ。区画0 は従来の「再生フォルダ」 */
-    fun zoneFolder(i: Int): Uri? =
-        (if (i == 0) folderUri else sp.getString("zoneFolder$i", null)?.let(Uri::parse)) ?: appFolder(i)
+    /** 旧バージョンの区画ごとのフォルダ（ライブラリへの移行にだけ使う）。区画0 は従来の「再生フォルダ」 */
+    fun legacyZoneFolder(i: Int): Uri? =
+        (if (i == 0) folderUri else sp.getString("zoneFolder$i", null)?.let(Uri::parse)) ?: legacyAppFolder(i)
 
-    /**
-     * まだフォルダを選んでいない区画の初期値は、アプリ専用のフォルダ（Android/data/…/files/zoneN）。
-     * 権限なしで読み書きでき、管理画面からすぐ画像・動画を追加できる（アプリを削除すると中身も消える）
-     */
-    fun appFolder(i: Int): Uri? = runCatching {
+    private fun legacyAppFolder(i: Int): Uri? = runCatching {
         val dir = appContext.getExternalFilesDir("zone${i + 1}") ?: File(appContext.filesDir, "zone${i + 1}")
-        dir.mkdirs()
+        if (!dir.isDirectory) return null
         Uri.fromFile(dir)
     }.getOrNull()
 
-    /** 画像・動画ごとの表示の回転（キーは「区画|ファイル名」、値は 90・180・270）。回転なしは 0 */
-    private fun fileRotations(): JSONObject = runCatching { JSONObject(sp.getString("fileRotations", "{}") ?: "{}") }.getOrDefault(JSONObject())
+    /** ライブラリ（アプリ専用の保存場所）への移行が済んだか */
+    var libraryMigrated: Boolean
+        get() = sp.getBoolean("libraryMigrated", false)
+        set(v) = sp.edit().putBoolean("libraryMigrated", v).apply()
 
-    fun fileRotation(zone: Int, name: String): Int = fileRotations().optInt("$zone|$name", 0)
+    /** 配置（どのファイルを、どの区画で、どの条件で流すか）。区画ごとの順番は、この並び順 */
+    data class Placement(
+        val id: String,
+        val zone: Int,
+        val name: String,
+        val rule: JSONObject? = null,
+        /** 「専用」：この配置が有効な時間帯は、専用の配置だけを流す */
+        val exclusive: Boolean = false,
+        /** 画像の表示秒数（null なら、共通の秒数） */
+        val seconds: Int? = null,
+    )
 
-    fun fileRotationsOf(zone: Int): Map<String, Int> {
-        val all = fileRotations()
-        val prefix = "$zone|"
-        return all.keys().asSequence().filter { it.startsWith(prefix) }.associate { it.removePrefix(prefix) to all.optInt(it, 0) }
+    /** 配置が、ID・再生条件などを持つ形に移行済みか */
+    var placementsV2: Boolean
+        get() = sp.getBoolean("placementsV2", false)
+        set(v) = sp.edit().putBoolean("placementsV2", v).apply()
+
+    @Synchronized
+    fun placements(): List<Placement> = runCatching {
+        val arr = org.json.JSONArray(sp.getString("placements", "[]") ?: "[]")
+        (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            Placement(
+                o.optString("id").ifEmpty { newPlacementId() }, o.getInt("zone"), o.getString("name"),
+                o.optJSONObject("rule"), o.optBoolean("exclusive", false), if (o.has("seconds") && !o.isNull("seconds")) o.optInt("seconds") else null,
+            )
+        }
+    }.getOrDefault(emptyList())
+
+    fun placementsOf(zone: Int): List<Placement> = placements().filter { it.zone == zone }
+
+    private fun newPlacementId() = java.util.UUID.randomUUID().toString().replace("-", "").take(8)
+
+    @Synchronized
+    fun replacePlacements(list: List<Placement>) {
+        val arr = org.json.JSONArray()
+        list.forEach {
+            arr.put(JSONObject().put("id", it.id).put("zone", it.zone).put("name", it.name).apply {
+                it.rule?.let { r -> put("rule", r) }
+                if (it.exclusive) put("exclusive", true)
+                it.seconds?.let { s -> put("seconds", s) }
+            })
+        }
+        sp.edit().putString("placements", arr.toString()).apply()
     }
 
-    fun setFileRotation(zone: Int, name: String, degrees: Int) {
+    fun makePlacementId() = newPlacementId()
+
+    /** 画像・動画ごとの表示の回転（ライブラリのファイル名がキー、値は 90・180・270）。回転なしは 0 */
+    private fun fileRotations(): JSONObject = runCatching { JSONObject(sp.getString("fileRotations", "{}") ?: "{}") }.getOrDefault(JSONObject())
+
+    fun fileRotation(name: String): Int = fileRotations().optInt(name, 0)
+
+    fun setFileRotation(name: String, degrees: Int) {
         val all = fileRotations()
-        if (degrees == 90 || degrees == 180 || degrees == 270) all.put("$zone|$name", degrees) else all.remove("$zone|$name")
+        if (degrees == 90 || degrees == 180 || degrees == 270) all.put(name, degrees) else all.remove(name)
         sp.edit().putString("fileRotations", all.toString()).apply()
     }
 
-    /** 画像・動画ごとの再生条件（キーは「区画|ファイル名」）。条件が無いファイルは常に再生 */
-    private fun fileRules(): JSONObject = runCatching { JSONObject(sp.getString("fileRules", "{}") ?: "{}") }.getOrDefault(JSONObject())
+    /** 移行用：旧バージョンの、区画|名前 をキーにした、再生条件・回転 */
+    fun legacyFileRules(): JSONObject = runCatching { JSONObject(sp.getString("fileRules", "{}") ?: "{}") }.getOrDefault(JSONObject())
+    fun legacyFileRotations(): JSONObject = fileRotations()
 
-    fun fileRule(zone: Int, name: String): JSONObject? = fileRules().optJSONObject("$zone|$name")
-
-    fun setFileRule(zone: Int, name: String, rule: JSONObject?) {
-        val all = fileRules()
-        if (rule == null) all.remove("$zone|$name") else all.put("$zone|$name", rule)
-        sp.edit().putString("fileRules", all.toString()).apply()
+    @Synchronized
+    fun replaceFileRulesAndRotations(rules: Map<String, JSONObject>, rotations: Map<String, Int>) {
+        val r = JSONObject(); rules.forEach { (k, v) -> r.put(k, v) }
+        val o = JSONObject(); rotations.forEach { (k, v) -> o.put(k, v) }
+        sp.edit().putString("fileRules", r.toString()).putString("fileRotations", o.toString()).apply()
     }
-
-    /** 全ファイルの条件を一度に取り出す（一覧の表示用） */
-    fun fileRulesOf(zone: Int): Map<String, JSONObject> {
-        val all = fileRules()
-        val prefix = "$zone|"
-        return all.keys().asSequence().filter { it.startsWith(prefix) }
-            .mapNotNull { k -> all.optJSONObject(k)?.let { k.removePrefix(prefix) to it } }.toMap()
-    }
-
-    fun setZoneFolder(i: Int, uri: Uri?) {
-        if (i == 0) folderUri = uri else sp.edit().putString("zoneFolder$i", uri?.toString()).apply()
-    }
-
-    /** 使用中の全区画のフォルダ（フォルダへのアクセス権を残すため） */
-    fun allZoneFolders(): Set<Uri> = (0 until MAX_ZONES).mapNotNull(::zoneFolder).toSet()
 
     companion object {
         const val LAYOUT_SINGLE = 0

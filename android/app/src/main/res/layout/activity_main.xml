@@ -169,36 +169,14 @@
 
         <TextView
             style="@style/Label"
-            android:text="再生フォルダ（区画1・メイン）" />
+            android:text="画像・動画（ライブラリ）" />
 
         <TextView
             android:id="@+id/folderText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="未選択"
-            android:textSize="16sp" />
-
-        <Button
-            android:id="@+id/pickFolder"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="フォルダを選択" />
-
-        <Button
-            android:id="@+id/pickFolderDirect"
-            style="?android:attr/borderlessButtonStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="端末内のフォルダを直接選択（フォルダ選択画面が出ない端末向け）"
-            android:textSize="13sp" />
-
-        <Button
-            android:id="@+id/useAppFolder"
-            style="?android:attr/borderlessButtonStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="アプリ専用フォルダを使う（管理画面からのアップロード用）"
-            android:textSize="13sp" />
+            android:text="アプリ専用の保存場所"
+            android:textSize="14sp" />
 
         <TextView
             android:id="@+id/scanResult"
@@ -234,11 +212,6 @@
             android:id="@+id/shuffleSwitch"
             style="@style/Option"
             android:text="シャッフル再生（ループごとに並べ替え）" />
-
-        <Switch
-            android:id="@+id/recursiveSwitch"
-            style="@style/Option"
-            android:text="サブフォルダも含める" />
 
         <Switch
             android:id="@+id/soundSwitch"
