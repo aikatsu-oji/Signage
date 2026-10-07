@@ -1,4 +1,4 @@
-# サイネージ（Windows 版）
+# SimpleSignage（Windows 版）
 
 Windows PC でフォルダの画像・動画を全画面でループ再生します。Android 版と同じ機能を持ち、同じ管理画面から操作できます。
 
@@ -8,7 +8,7 @@ Windows PC でフォルダの画像・動画を全画面でループ再生しま
 
 ## 使い方
 
-1. [Releases](https://github.com/aikatsu-oji/Signage/releases) の最新のリリースから `Signage-windows-<版>.exe` をダウンロードし、ダブルクリックします（インストールは不要です。同じリリースの `SHA256SUMS` でファイルを確かめられます）
+1. [Releases](https://github.com/aikatsu-oji/Signage/releases) の最新のリリースから `SimpleSignage-windows-<版>.exe` をダウンロードし、ダブルクリックします（インストールは不要です。同じリリースの `SHA256SUMS` でファイルを確かめられます）
    - 初回は Windows のファイアウォールの確認が出ます。別の端末から管理画面を使うため「プライベート ネットワーク」を許可してください
    - Windows SmartScreen の警告が出た場合は「詳細情報」→「実行」を選んでください（署名していないため）
 2. 「Windows の起動時に自動で開始」が **ON** のときは、Edge が全画面（キオスクモード）で開き、再生が始まります。**OFF**（初期状態）のときは全画面にはならず、タスクトレイに常駐します。再生はトレイのアイコンの「再生画面を開く（全画面）」から始めます（初回起動時は設定画面が開きます）
@@ -161,7 +161,7 @@ Android 端末のアプリ更新は、管理画面の「📊 配信状況」タ�
 
 ## ビルド
 
-Python 3.10 以降をインストールし、`build.bat` を実行すると `..\dist\Signage.exe` を出力します（管理画面 `admin.html` は Android 版からコピーされます）。
+Python 3.10 以降をインストールし、`build.bat` を実行すると `..\dist\SimpleSignage.exe` を出力します（管理画面 `admin.html` は Android 版からコピーされます）。
 リリースの出し方は [docs/RELEASING.md](../docs/RELEASING.md) を参照してください。
 
 開発中は次のように起動できます。

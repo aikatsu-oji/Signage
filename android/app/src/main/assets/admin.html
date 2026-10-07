@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>サイネージ管理</title>
+<title>SimpleSignage 管理</title>
 <style>
   :root {
     --bg: #f4f6f9; --card: #fff; --text: #1d2330; --sub: #6b7385; --line: #dde2ea;
@@ -357,7 +357,7 @@
 
 <div id="login" hidden>
   <section>
-    <h2>サイネージ管理</h2>
+    <h2>SimpleSignage 管理</h2>
     <p class="sub">端末の設定画面に表示されている PIN（6桁）を入力してください。</p>
     <form id="loginForm">
       <input id="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••••">
@@ -371,7 +371,7 @@
 <div id="app" hidden>
   <header>
     <div class="bar">
-      <h1>サイネージ管理</h1>
+      <h1>SimpleSignage 管理</h1>
       <span class="hdrBtns"><button type="button" id="openQ1" data-open="q1" aria-pressed="false" title="端末の一覧・端末の設定・配信状況・入れる端末">⚙ 設定</button><button type="button" id="openQ4" data-open="q4" aria-pressed="false" title="テロップを流す・マイクで声を届ける">📣 配信</button></span>
       <span class="hdrDev" id="hdrDev"></span>
       <label class="check sub"><input type="checkbox" id="autoReload" checked> 変更後すぐ再生に反映</label>
@@ -1281,7 +1281,7 @@
     $('#monUpdated').textContent = `最終更新 ${hhmmss(Date.now())}`;
     const alert = counts.bad + counts.warn;
     $('#tabStatusBadge').textContent = alert ? ` ⚠${alert}` : '';
-    document.title = counts.bad ? `⚠ ${counts.bad}台に異常 - サイネージ管理` : 'サイネージ管理';
+    document.title = counts.bad ? `⚠ ${counts.bad}台に異常 - SimpleSignage 管理` : 'SimpleSignage 管理';
   }
 
   $('#monRefresh').addEventListener('click', pollStatus);
@@ -1338,7 +1338,7 @@
       else if (u.phase === 'failed') return say(u.message || '更新できませんでした', 'ng');
       else if (u.phase === 'success') return say('更新しました', 'ok');
       else if (u.phase === 'installing' && Date.now() - t0 > 45000) {
-        say('端末から結果が返ってきません。端末の通知（「サイネージの更新があります」）か、端末のサイネージのアプリを確認してください。それでも進まないときは、APK を端末に直接入れてください', 'warn');
+        say('端末から結果が返ってきません。端末の通知（「SimpleSignage の更新があります」）か、端末の SimpleSignage アプリを確認してください。それでも進まないときは、APK を端末に直接入れてください', 'warn');
       }
     }
     say('完了を確認できませんでした。端末の画面を確認してください', 'warn');
@@ -3655,7 +3655,7 @@
     importData = null;
     try {
       const j = JSON.parse(await f.text());
-      if (j.kind !== EXPORT_KIND || !j.settings || typeof j.settings !== 'object') throw new Error('サイネージの設定ファイルではありません');
+      if (j.kind !== EXPORT_KIND || !j.settings || typeof j.settings !== 'object') throw new Error('SimpleSignage の設定ファイルではありません');
       if (j.version > 1) throw new Error('新しい形式の設定ファイルです。管理画面（アプリ）を新しい版にしてください');
       const settings = {};
       for (const k of EXPORT_KEYS) if (j.settings[k] !== undefined) settings[k] = j.settings[k];

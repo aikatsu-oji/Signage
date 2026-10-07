@@ -63,7 +63,7 @@ object AppUpdater {
     /** インストールを始める。確認が必要な端末では、端末の画面に確認が出る */
     fun install(ctx: Context, f: File) {
         if (!canInstall(ctx)) {
-            state = State("failed", "この端末で、サイネージに「不明なアプリのインストール」の許可がありません。端末の設定画面から許可してください")
+            state = State("failed", "この端末で、SimpleSignage に「不明なアプリのインストール」の許可がありません。端末の設定画面から許可してください")
             return
         }
         try {
@@ -138,7 +138,7 @@ class UpdateResultReceiver : BroadcastReceiver() {
             nm.notify(
                 7001,
                 builder.setSmallIcon(android.R.drawable.stat_sys_download_done)
-                    .setContentTitle("サイネージの更新があります")
+                    .setContentTitle("SimpleSignage の更新があります")
                     .setContentText("タップして、更新を進めてください")
                     .setContentIntent(tap).setAutoCancel(true).build(),
             )

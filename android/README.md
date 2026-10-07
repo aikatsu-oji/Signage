@@ -1,4 +1,4 @@
-# サイネージ（Android 版）
+# SimpleSignage（Android 版）
 
 端末内（または USB メモリ・SD カード）のフォルダにある画像・動画を一覧にして、全画面でループ再生するアプリです。
 
@@ -8,10 +8,10 @@
 
 ## インストール
 
-[Releases](https://github.com/aikatsu-oji/Signage/releases) の最新のリリースから `Signage-android-<版>.apk` をダウンロードし、端末にコピーしてファイルアプリから開くか、PC から次のコマンドでインストールします。
+[Releases](https://github.com/aikatsu-oji/Signage/releases) の最新のリリースから `SimpleSignage-android-<版>.apk` をダウンロードし、端末にコピーしてファイルアプリから開くか、PC から次のコマンドでインストールします。
 
 ```
-adb install -r Signage-android-<版>.apk
+adb install -r SimpleSignage-android-<版>.apk
 ```
 
 - 初回は「不明なアプリのインストール」の許可が必要です
@@ -157,7 +157,7 @@ adb install -r Signage-android-<版>.apk
 - 同じアプリ・いまより新しい版・同じ署名の APK だけ入ります（署名の違う APK や古い版は断ります）。
 - 端末の画面に「更新しますか？」の確認が出る場合があります（機種・Android の版による）。更新後は自動で再起動します。
 - **この機能が入った版（1.9.1）への更新は、一度、手動で入れ替えてください**（古い版は受け取れません）。
-- Windows 版は対象外です（新しい Signage.exe に差し替えます）。
+- Windows 版は対象外です（新しい SimpleSignage.exe に差し替えます）。
 
 ##### 更新の確認画面が出ないとき
 Android の仕様で、別のアプリが画面に出ている間は、更新の確認画面を自動で開けないことがあります。その場合は、(1) 端末に出る「サイネージの更新があります」の通知をタップする、または (2) 端末でサイネージのアプリを開く（「アプリの更新があります」と出ます）と、更新を進められます（1.9.3 以降）。

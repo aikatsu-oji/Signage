@@ -1,4 +1,4 @@
-# Signage
+# SimpleSignage
 
 フォルダに入れた画像・動画を一覧にして、全画面でループ再生するデジタルサイネージです。
 最新の版は **Android 1.9.5 / Windows 1.8.4**（[Releases](../../releases) からダウンロードできます）。
@@ -35,8 +35,8 @@
 
 | ファイル | 内容 |
 |---|---|
-| `Signage-android-<版>.apk` | Android / Android TV / Fire TV 用（Android 8.0 以降） |
-| `Signage-windows-<版>.exe` | Windows 10 / 11 用（インストール不要・単体で動作） |
+| `SimpleSignage-android-<版>.apk` | Android / Android TV / Fire TV 用（Android 8.0 以降） |
+| `SimpleSignage-windows-<版>.exe` | Windows 10 / 11 用（インストール不要・単体で動作） |
 | `SHA256SUMS` | ファイルの改ざん・破損を確かめるチェックサム |
 
 ```
@@ -45,7 +45,7 @@ sha256sum -c SHA256SUMS
 
 （Windows の PowerShell では `Get-FileHash <ファイル名>` の値を `SHA256SUMS` と見比べてください）
 
-- **Android**：APK を端末に入れ、「不明なアプリのインストール」を許可します。PC から入れるときは `adb install -r Signage-android-<版>.apk`
+- **Android**：APK を端末に入れ、「不明なアプリのインストール」を許可します。PC から入れるときは `adb install -r SimpleSignage-android-<版>.apk`
 - **Windows**：exe を起動します（初回の SmartScreen 警告は「詳細情報」→「実行」。ファイアウォールの確認は「プライベート ネットワーク」を許可）
 - APK は **debug 署名** です。社外へ広く配る場合は、リリース鍵で署名してください（[docs/DISTRIBUTION.md](docs/DISTRIBUTION.md)）
 
@@ -56,7 +56,7 @@ cd android
 gradlew assembleDebug        # APK を android/app/build/outputs/apk/debug/ に出力（build.bat は ..\dist\signage.apk にも出力）
 ```
 
-JDK 17 と Android SDK（API 34）が必要です。Windows 版は `windows\build.bat`（`..\dist\Signage.exe` に出力。Python 3.10 以降が必要）です。
+JDK 17 と Android SDK（API 34）が必要です。Windows 版は `windows\build.bat`（`..\dist\SimpleSignage.exe` に出力。Python 3.10 以降が必要）です。
 リリースの出し方は [docs/RELEASING.md](docs/RELEASING.md) を参照してください。
 
 ## 簡易 PC 版（旧版）

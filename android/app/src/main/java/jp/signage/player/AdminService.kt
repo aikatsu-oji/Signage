@@ -95,7 +95,7 @@ class AdminService : Service() {
         )
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_admin)
-            .setContentTitle("サイネージ管理画面")
+            .setContentTitle("SimpleSignage 管理画面")
             .setContentText(text)
             .setContentIntent(open)
             .setOngoing(true)

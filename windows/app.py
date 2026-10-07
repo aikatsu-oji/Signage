@@ -1,9 +1,9 @@
 """
-サイネージ（Windows 版）
+SimpleSignage（Windows 版）
 タスクトレイに常駐し、再生サーバーを動かして Edge を全画面（キオスクモード）で開く。
 
-  Signage.exe                 通常の起動
-  Signage.exe --no-player     再生画面を開かずに起動（設定・管理だけ）
+  SimpleSignage.exe                 通常の起動
+  SimpleSignage.exe --no-player     再生画面を開かずに起動（設定・管理だけ）
 """
 
 import argparse
@@ -325,7 +325,7 @@ class App:
             return
         try:
             ok = ctypes.windll.user32.MessageBoxW(
-                0, "操作できる端末の制限を解除し、登録した端末の一覧を消します。よろしいですか？", "サイネージ", 0x1 | 0x20 | 0x40000) == 1
+                0, "操作できる端末の制限を解除し、登録した端末の一覧を消します。よろしいですか？", "SimpleSignage", 0x1 | 0x20 | 0x40000) == 1
         except Exception:
             ok = True
         if ok:
@@ -393,14 +393,14 @@ class App:
             pystray.Menu.SEPARATOR,
             item("終了", self.quit),
         )
-        self.tray = pystray.Icon(APP_NAME, img, f"サイネージ v{VERSION}（{self.store.device_name}）", menu)
+        self.tray = pystray.Icon(APP_NAME, img, f"SimpleSignage v{VERSION}（{self.store.device_name}）", menu)
 
         def ready(icon):
             icon.visible = True
             # 全画面を開かずに起動したときは、常駐したことが分かるように通知する
             if not self.store.get("autoStart") and not self.first_run:
                 try:
-                    icon.notify("タスクトレイのアイコンから、再生画面や設定を開けます。", "サイネージを起動しました")
+                    icon.notify("タスクトレイのアイコンから、再生画面や設定を開けます。", "SimpleSignage を起動しました")
                 except Exception:
                     pass
 
@@ -421,7 +421,7 @@ def main():
             # 別の版が動いたままだと、新しい版を起動したつもりでも古い版の画面が開くため、はっきり知らせる
             try:
                 # MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST
-                ctypes.windll.user32.MessageBoxW(0, msg, "サイネージ", 0x40 | 0x10000 | 0x40000)
+                ctypes.windll.user32.MessageBoxW(0, msg, "SimpleSignage", 0x40 | 0x10000 | 0x40000)
             except Exception:
                 pass
         elif running:
