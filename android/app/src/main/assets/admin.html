@@ -31,6 +31,8 @@
   .quad section { border: 0; border-radius: 0; padding: 4px 0 10px; margin-bottom: 8px; border-bottom: 1px solid var(--line); background: transparent; }
   .quad section:last-child { border-bottom: 0; }
   .split { display: none; }
+  .lcard.dragging { opacity: .45; }
+  ul.over { outline: 2px dashed var(--brand); outline-offset: 2px; }
   @media (min-width: 1100px) {
     .dash { height: calc(100vh - 58px); gap: 0; grid-template-columns: var(--gc, minmax(0, 40fr) 12px minmax(0, 60fr)); grid-template-rows: var(--gr, minmax(0, 57fr) 12px minmax(0, 43fr)); }
     .quad .tabs { flex-wrap: nowrap; overflow-x: auto; }
@@ -1008,6 +1010,8 @@
     wire($('#splitH'), 'rh', 'y');
   }
 
+  // ライブラリをドラッグ中に、別のタブの上へ持っていくと、そのタブに切り替える
+  for (const b of $$('.quad .tabs button[data-tab]')) b.addEventListener('dragenter', () => { if (typeof dragName === 'string' && dragName) showTab(b.dataset.tab); });
   for (const q of $$('.quad')) {
     q.addEventListener('click', (e) => {
       const b = e.target.closest('.tabs button');
@@ -1801,6 +1805,10 @@
     thumb.dataset.zone = -1; thumb.dataset.name = f.name; thumb.dataset.dev = dev.key;
     if (f.video) { thumb.dataset.video = '1'; thumb.dataset.size = f.size || 0; thumb.classList.add('vid'); }
     thumb.addEventListener('click', () => openFile(dev, -1, f.name));
+    card.draggable = true;   // スケジュールの表（日付・時間帯）や「常時」の欄にドラッグして配置できる
+    card.title = 'スケジュールの表にドラッグすると、その日時に配置できます';
+    card.addEventListener('dragstart', (e) => { dragName = f.name; e.dataTransfer.effectAllowed = 'copy'; e.dataTransfer.setData('text/plain', f.name); card.classList.add('dragging'); });
+    card.addEventListener('dragend', () => { dragName = null; card.classList.remove('dragging'); });
     $('.fname', card).textContent = f.name;
     $('.row span', card).textContent = (f.video ? '動画・' : '画像・') + fmtSize(f.size);
     const use = $('.use', card);
@@ -2403,10 +2411,19 @@
       ul.append(li);
     }
     ul.addEventListener('dragover', (e) => {
+      if (dragName) { e.preventDefault(); ul.classList.add('over'); return; }   // ライブラリからのドラッグ
       const cur = ul.querySelector('.dragging'); if (!cur) return;
       e.preventDefault();
       const after = [...ul.querySelectorAll('li:not(.dragging)')].find((o) => e.clientY < o.getBoundingClientRect().top + o.offsetHeight / 2);
       ul.insertBefore(cur, after || null);
+    });
+    ul.addEventListener('dragleave', () => ul.classList.remove('over'));
+    ul.addEventListener('drop', (e) => {
+      ul.classList.remove('over');
+      if (!dragName) return;
+      e.preventDefault();
+      openPlacementDialog({ dev, mode: 'add', name: dragName, zone });
+      dragName = null;
     });
   }
 
