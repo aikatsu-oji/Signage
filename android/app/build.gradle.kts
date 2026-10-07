@@ -12,8 +12,8 @@ val keystoreProps = Properties().apply {
 }
 
 android {
-    namespace = "jp.simplesignage"
-    compileSdk = 36
+    namespace = "jp.signage.player"
+    compileSdk = 34
 
     signingConfigs {
         if (keystoreProps.isNotEmpty()) {
@@ -34,11 +34,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "jp.simplesignage"
+        applicationId = "jp.signage.player"
         minSdk = 26
-        targetSdk = 36
-        versionCode = 91
-        versionName = "1.22.0"
+        targetSdk = 34
+        versionCode = 87
+        versionName = "1.18.3"
     }
 
     compileOptions {
