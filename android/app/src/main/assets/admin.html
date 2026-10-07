@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>サイネージ管理</title>
+<title>SimpleSignage 管理</title>
 <style>
   :root {
     --bg: #f4f6f9; --card: #fff; --text: #1d2330; --sub: #6b7385; --line: #dde2ea;
@@ -357,7 +357,7 @@
 
 <div id="login" hidden>
   <section>
-    <h2>サイネージ管理</h2>
+    <h2>SimpleSignage 管理</h2>
     <p class="sub">端末の設定画面に表示されている PIN（6桁）を入力してください。</p>
     <form id="loginForm">
       <input id="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••••">
@@ -371,7 +371,7 @@
 <div id="app" hidden>
   <header>
     <div class="bar">
-      <h1>サイネージ管理</h1>
+      <h1>SimpleSignage 管理</h1>
       <span class="hdrBtns"><button type="button" id="openQ1" data-open="q1" aria-pressed="false" title="端末の一覧・端末の設定・配信状況・入れる端末">⚙ 設定</button><button type="button" id="openQ4" data-open="q4" aria-pressed="false" title="テロップを流す・マイクで声を届ける">📣 配信</button></span>
       <span class="hdrDev" id="hdrDev"></span>
       <label class="check sub"><input type="checkbox" id="autoReload" checked> 変更後すぐ再生に反映</label>
@@ -572,19 +572,6 @@
             <p class="sub">夜間に電源を切る端末など、異常として数えたくない端末です。件数・タブの表示・出来事の記録には含まれません。</p>
             <div class="mongrid" id="monExcluded"></div>
           </div>
-        </section>
-        <section id="apkSec">
-          <h2>アプリ（APK）の更新</h2>
-          <p class="sub">新しい版の APK を選び、端末一覧でチェックした Android 端末に送って更新します。端末側で「管理画面からのアプリ更新を許可」を ON にした端末だけが受け付けます。同じアプリで、いまより新しい版で、同じ署名の APK だけ入ります。</p>
-          <div class="dlgrow" style="margin:8px 0">
-            <input type="file" id="apkFile" accept=".apk,application/vnd.android.package-archive">
-            <button type="button" class="primary" id="apkSend" disabled>チェックした端末に送って更新</button>
-          </div>
-          <p class="sub" id="apkTarget"></p>
-          <ol class="log" id="apkLog" style="padding-left:20px"></ol>
-          <p class="sub">・端末の画面に「更新しますか？」の確認が出る場合があります（初回は特に）。確認が出た端末の画面で、タップして進めてください。<br>
-          ・更新が終わると、アプリが自動で再起動します（端末の「自動再生」が ON のときは、再生画面も開き直します）。<br>
-          ・Windows 版は、この方法では更新できません（新しい Signage.exe に差し替えてください）。</p>
         </section>
         <section>
           <h2>最近の出来事</h2>
@@ -1064,7 +1051,7 @@
 
   // ---- 各一覧は、見出しをクリックして閉じられる（使う頻度の低いものは、はじめ閉じておく）
   {
-    const CLOSED = new Set(['settingsSec', 'apkSec', 'groupSec', '最近の出来事']);
+    const CLOSED = new Set(['settingsSec', 'groupSec', '最近の出来事']);
     const saved = store.get('signage-secs', {});
     for (const sec of $$('.quad section')) {
       if (sec.id === 'deviceHead') continue;
@@ -1281,7 +1268,7 @@
     $('#monUpdated').textContent = `最終更新 ${hhmmss(Date.now())}`;
     const alert = counts.bad + counts.warn;
     $('#tabStatusBadge').textContent = alert ? ` ⚠${alert}` : '';
-    document.title = counts.bad ? `⚠ ${counts.bad}台に異常 - サイネージ管理` : 'サイネージ管理';
+    document.title = counts.bad ? `⚠ ${counts.bad}台に異常 - SimpleSignage 管理` : 'SimpleSignage 管理';
   }
 
   $('#monRefresh').addEventListener('click', pollStatus);
@@ -1292,69 +1279,6 @@
     monTick++;
     if (!$('#pane-status').hidden || monTick % 6 === 0) pollStatus();
   }, 5000);
-
-  // ------------------------------------------------------------ アプリ（APK）の更新
-
-  const apkTargets = () => targets().filter((d) => d.status === 'ok' || d.status === 'pin');
-  function renderApkTarget() {
-    const list = targets();
-    $('#apkTarget').textContent = list.length
-      ? `送り先：チェックした ${list.length} 台（${list.map((d) => d.name).join('、')}）`
-      : '送り先：端末一覧で、更新する端末にチェックを入れてください';
-    $('#apkSend').disabled = !list.length || !$('#apkFile').files.length;
-  }
-  $('#apkFile').addEventListener('change', renderApkTarget);
-
-  function apkLine(text, cls = '') {
-    const li = document.createElement('li');
-    li.textContent = text; li.className = cls;
-    $('#apkLog').append(li);
-    return li;
-  }
-
-  async function updateOneDevice(dev, file) {
-    const li = apkLine(`${dev.name}：状況を確認中…`);
-    const say = (t, cls = '') => { li.textContent = `${dev.name}：${t}`; li.className = cls; };
-    await pollOne(dev);
-    const m = dev.mon;
-    if (!m?.ok) return say(m?.http === 404 ? 'この端末のアプリが古く、遠隔更新に未対応です（一度、手動で更新してください）' : `接続できません（${m?.error || ''}）`, 'ng');
-    if (m.data.platform !== 'android') return say('Android 端末ではないため、対象外です', 'warn');
-    if (!m.data.update?.allowed) return say('端末側で「管理画面からのアプリ更新を許可」が OFF です。端末の設定画面で ON にしてください', 'ng');
-    if (!m.data.update.canInstall) say('「不明なアプリのインストール」の許可がありません。端末の設定画面から許可してください（このまま送ります）', 'warn');
-    const before = m.data.version;
-    say(`APK を送信中…（${(file.size / 1e6).toFixed(1)} MB）`);
-    try {
-      await api(dev, '/api/apk', { method: 'PUT', body: file }, 300000);
-    } catch (e) { return say(e.message, 'ng'); }
-    say('端末で確認・インストール中…');
-    const t0 = Date.now();
-    while (Date.now() - t0 < 240000) {
-      await new Promise((r) => setTimeout(r, 2500));
-      let st = null;
-      try { st = await api(dev, '/api/status', {}, 4000); } catch (e) { say('再起動中…（更新が終わると自動で再開します）'); continue; }
-      if (st.version !== before) return say(`更新しました（v${before} → v${st.version}）`, 'ok');
-      const u = st.update || {};
-      if (u.phase === 'pending_user') say(`${u.message}`, 'warn');
-      else if (u.phase === 'failed') return say(u.message || '更新できませんでした', 'ng');
-      else if (u.phase === 'success') return say('更新しました', 'ok');
-      else if (u.phase === 'installing' && Date.now() - t0 > 45000) {
-        say('端末から結果が返ってきません。端末の通知（「サイネージの更新があります」）か、端末のサイネージのアプリを確認してください。それでも進まないときは、APK を端末に直接入れてください', 'warn');
-      }
-    }
-    say('完了を確認できませんでした。端末の画面を確認してください', 'warn');
-  }
-
-  $('#apkSend').addEventListener('click', async () => {
-    const file = $('#apkFile').files[0];
-    const list = targets();
-    if (!file || !list.length) return;
-    if (!/\.apk$/i.test(file.name)) { toast('APK ファイルを選んでください'); return; }
-    if (!confirm(`「${file.name}」を、チェックした ${list.length} 台（${list.map((d) => d.name).join('、')}）に送って更新します。\n更新中は、再生が一時的に止まります。よろしいですか？`)) return;
-    $('#apkLog').replaceChildren();
-    $('#apkSend').disabled = true;
-    try { await Promise.all(list.map((d) => updateOneDevice(d, file))); }
-    finally { renderApkTarget(); setTimeout(() => $('#refreshBtn').click(), 3000); }
-  });
 
   // ------------------------------------------------------------ グループ（組織）コード
 
@@ -1438,7 +1362,6 @@
     $('#checkAll').checked = list.length > 0 && list.every((d) => checked.has(d.key));
     renderBulk();
     renderTargetBars();
-    renderApkTarget();
     renderGroup();
     renderAccess();
   }
@@ -3655,7 +3578,7 @@
     importData = null;
     try {
       const j = JSON.parse(await f.text());
-      if (j.kind !== EXPORT_KIND || !j.settings || typeof j.settings !== 'object') throw new Error('サイネージの設定ファイルではありません');
+      if (j.kind !== EXPORT_KIND || !j.settings || typeof j.settings !== 'object') throw new Error('SimpleSignage の設定ファイルではありません');
       if (j.version > 1) throw new Error('新しい形式の設定ファイルです。管理画面（アプリ）を新しい版にしてください');
       const settings = {};
       for (const k of EXPORT_KEYS) if (j.settings[k] !== undefined) settings[k] = j.settings[k];

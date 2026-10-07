@@ -11,17 +11,17 @@ WV="$(grep -o '^VERSION = "[^"]*"' windows/server.py | cut -d'"' -f2)"
 BLOB="https://github.com/aikatsu-oji/Signage/blob/main"
 TAG="v${AV}"
 
-cp dist/signage-debug.apk "release/Signage-android-${AV}.apk"
-cp dist/Signage.exe "release/Signage-windows-${WV}.exe"
-(cd release && sha256sum "Signage-android-${AV}.apk" "Signage-windows-${WV}.exe" > SHA256SUMS)
+cp dist/signage-debug.apk "release/SimpleSignage-android-${AV}.apk"
+cp dist/SimpleSignage.exe "release/SimpleSignage-windows-${WV}.exe"
+(cd release && sha256sum "SimpleSignage-android-${AV}.apk" "SimpleSignage-windows-${WV}.exe" > SHA256SUMS)
 
 cat > release/README.md <<EOT
 # サイネージ Android ${AV} / Windows ${WV}
 
 | ファイル | 内容 | バージョン |
 |---|---|---|
-| \`Signage-android-${AV}.apk\` | Android / Fire TV 用アプリ | ${AV} |
-| \`Signage-windows-${WV}.exe\` | Windows 用アプリ（インストール不要・単体で動作） | ${WV} |
+| \`SimpleSignage-android-${AV}.apk\` | Android / Fire TV 用アプリ | ${AV} |
+| \`SimpleSignage-windows-${WV}.exe\` | Windows 用アプリ（インストール不要・単体で動作） | ${WV} |
 | \`SHA256SUMS\` | ファイルの改ざん・破損を確かめるチェックサム | |
 | \`LICENSE\` / \`THIRD_PARTY_NOTICES.md\` | 本ソフトウェア（MIT）と、利用している部品のライセンス | |
 
@@ -41,7 +41,7 @@ sha256sum -c SHA256SUMS
 
 ## 注意
 - この APK は **debug 署名** です。社外へ広く配る場合は、リリース鍵で署名し直してください。署名が変わると、入っている端末では上書きできません。
-- Android 1.9.5 以降は、管理画面から APK で更新できます（端末側で許可が必要）。1.9.4 以前からは、一度手動で入れ替えてください。
+- Android は、Google Play 版でのテストに移行しています。この APK は、Google Play の無い端末（Fire TV など）用です。Google Play 版とは署名が違うため、入れ替えるときは、アプリを削除してから入れ直してください。管理画面からのアプリ更新の機能は、1.22.0 でなくしました。
 EOT
 
 # 1) ファイルを入れたコミット（Releases の添付元）  2) ファイルを消して、公開のリクエストを書いたコミット

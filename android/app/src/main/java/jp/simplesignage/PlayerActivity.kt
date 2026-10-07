@@ -1,0 +1,480 @@
+package jp.simplesignage
+
+import android.app.Activity
+import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
+import android.graphics.drawable.GradientDrawable
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.RelativeSizeSpan
+import android.util.TypedValue
+import android.view.GestureDetector
+import android.view.Gravity
+import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
+import android.view.WindowManager
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import java.time.LocalDateTime
+import java.time.format.TextStyle
+import java.util.Locale
+import kotlin.math.abs
+
+/**
+ * 全画面の再生画面。設定に応じて画面を区画に分け、区画ごとに
+ * フォルダの画像・動画／天気予報を表示する。操作はメイン区画（最初のフォルダ区画）に対して行う。
+ */
+class PlayerActivity : Activity() {
+    companion object {
+        /**
+         * テレビ端末（Fire TV・Google TV・Android TV）かどうか。画面を回す処理は、この端末だけが対象。
+         * テレビの OS は、アプリが縦向きを求めても画面を回さない。回る端末（画面が縦長になる端末）では、二重に回さない
+         */
+        fun isTv(ctx: android.content.Context): Boolean =
+            ctx.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
+
+        /** 「画面を回す」が有効なとき（テレビ専用。画面は横長のままなので、再生画面そのものを回して表示する） */
+        @Suppress("DEPRECATION")
+        fun needsSoftRotation(ctx: android.content.Context, prefs: Prefs): Boolean {
+            if (prefs.screenRotate == 0 || !isTv(ctx)) return false
+            val dm = android.util.DisplayMetrics()
+            (ctx.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay.getRealMetrics(dm)
+            return dm.widthPixels > dm.heightPixels
+        }
+
+        /** 起動直後に天気予報を表示する（設定画面のプレビュー用） */
+        const val EXTRA_WEATHER_NOW = "weatherNow"
+    }
+
+    private lateinit var prefs: Prefs
+    private lateinit var zonesFrame: FrameLayout
+    private lateinit var infoView: TextView
+    private lateinit var clockView: TextView
+    private lateinit var tickerView: TickerView
+    private lateinit var announcer: Announcer
+    /** 読み上げ・チャイムを済ませた「止めるまで流す」テロップ（割り込み後に再開したとき鳴らさない） */
+    private var announcedStandingId: String? = null
+    private var zones: List<Zone> = emptyList()
+    /** スワイプ・一時停止などの操作対象 */
+    private var mainZone: MediaZone? = null
+
+    private val handler = Handler(Looper.getMainLooper())
+    private val clockTick = object : Runnable {
+        override fun run() {
+            maybeSyncTime()
+            updateClock()
+            Ticker.checkSchedules(this@PlayerActivity, AppTime.localDateTime(prefs)) // 予約したテロップの時刻か確認
+            handler.postDelayed(this, 60_000 - AppTime.nowMillis(prefs) % 60_000 + 50) // 分が変わった直後に更新
+        }
+    }
+    private var syncing = false
+
+    /** 時刻サーバーに問い合わせる時期なら、バックグラウンドで問い合わせる（1 時間ごと。失敗したら 5 分ごと） */
+    private fun maybeSyncTime() {
+        if (syncing || !TimeSync.due(prefs)) return
+        // 失敗が続くときは、5 分あけてやり直す
+        if (prefs.timeSyncError.isNotEmpty() && System.currentTimeMillis() - lastSyncTry < 300_000L) return
+        syncing = true
+        lastSyncTry = System.currentTimeMillis()
+        Thread {
+            TimeSync.syncNow(prefs)
+            handler.post { syncing = false; updateClock() }
+        }.start()
+    }
+
+    private var lastSyncTry = 0L
+
+    private val hideInfo = Runnable { infoView.visibility = View.GONE }
+
+    private lateinit var voiceBanner: TextView
+
+    /** 管理画面からの声の放送中は「放送中」を表示し、動画の音を下げる */
+    private fun showVoice(on: Boolean) {
+        voiceBanner.visibility = if (on) View.VISIBLE else View.GONE
+        if (on) voiceBanner.bringToFront()
+        zones.filterIsInstance<MediaZone>().forEach { it.duck(on) }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_player)
+        prefs = Prefs(this)
+        // 「画面を回す」が有効なときは、向きの指定（テレビでは細い窓になることがある）をせず、再生画面を回して表示する
+        requestedOrientation = if (needsSoftRotation(this, prefs)) ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED else prefs.orientation
+
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        hideSystemUi()
+
+        zonesFrame = findViewById(R.id.zones)
+        infoView = findViewById(R.id.info)
+        clockView = createClock()
+        findViewById<FrameLayout>(R.id.root).addView(clockView)
+        tickerView = TickerView(this).apply {
+            onFinished = { showNextTicker() }
+            addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> avoidTicker() }
+        }
+        findViewById<FrameLayout>(R.id.root).addView(
+            tickerView, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM)
+        )
+        announcer = Announcer(this)
+        voiceBanner = TextView(this).apply {
+            text = "📢 放送中"
+            setTextColor(0xFFFFFFFF.toInt())
+            setBackgroundColor(0xDDE53935.toInt())
+            textSize = 22f
+            setPadding(48, 20, 48, 20)
+            visibility = View.GONE
+        }
+        findViewById<FrameLayout>(R.id.root).addView(
+            voiceBanner, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = 24 }
+        )
+        infoView.bringToFront()
+
+        zones = createZones()
+        mainZone = zones.filterIsInstance<MediaZone>().firstOrNull()
+        mainZone?.forceWeather = intent.getBooleanExtra(EXTRA_WEATHER_NOW, false)
+        applySoftRotation()
+        arrangeZones()
+    }
+
+    private fun createZones(): List<Zone> {
+        var mainAssigned = false
+        return (0 until Prefs.zoneCount(prefs.layout)).map { i ->
+            when (prefs.zoneType(i)) {
+                Prefs.ZONE_WEATHER -> WeatherZone(this, prefs)
+                Prefs.ZONE_WEB -> WebZone(this, prefs, i)
+                Prefs.ZONE_RSS -> RssZone(this, prefs, i)
+                else -> {
+                    val isMain = !mainAssigned
+                    mainAssigned = true
+                    MediaZone(
+                        this, prefs, isMain,
+                        zoneIndex = i,
+                        onChanged = { if (isMain) updateInfo() },
+                        // 1画面のときは、天気予報の画面に時計が含まれるので重ねて表示しない
+                        onPanelShown = { panel ->
+                            if (isMain && prefs.clockEnabled && zones.size == 1) {
+                                clockView.visibility = if (panel) View.GONE else View.VISIBLE
+                            }
+                        },
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * 区画を画面に並べる。メイン＋サイドは、横長の画面では右側に、縦長の画面では下側にサイドを置く。
+     */
+    /** 縦向きを選んだのに画面が横長のまま（Fire TV・Google TV など、OS が向きの指定を無視する端末）のときは、再生画面そのものを 90 度回して表示する */
+    private var softRotated = false
+
+    @Suppress("DEPRECATION")
+    private fun applySoftRotation() {
+        if (!needsSoftRotation(this, prefs)) return
+        val reverse = prefs.screenRotate == 2
+        val dm = android.util.DisplayMetrics()
+        windowManager.defaultDisplay.getRealMetrics(dm)
+        val w = dm.widthPixels
+        val h = dm.heightPixels
+        val root = findViewById<FrameLayout>(R.id.root)
+        root.layoutParams = FrameLayout.LayoutParams(h, w)
+        // 動画（TextureView）の中身も一緒に回るよう、いったん別の面に描いてから回す
+        root.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        root.pivotX = 0f
+        root.pivotY = 0f
+        if (reverse) {
+            root.rotation = -90f
+            root.translationY = h.toFloat()
+        } else {
+            root.rotation = 90f
+            root.translationX = w.toFloat()
+        }
+        softRotated = true
+    }
+
+    private fun arrangeZones() {
+        zones.forEach { (it.view.parent as? ViewGroup)?.removeView(it.view) }
+        zonesFrame.removeAllViews()
+        val gap = (resources.displayMetrics.density * 2).toInt()
+        val landscape = !softRotated && resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+        fun box(vertical: Boolean) = LinearLayout(this).apply { orientation = if (vertical) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL }
+        fun LinearLayout.add(v: View, weight: Float) {
+            val lp = if (orientation == LinearLayout.HORIZONTAL) LinearLayout.LayoutParams(0, -1, weight)
+            else LinearLayout.LayoutParams(-1, 0, weight)
+            lp.setMargins(gap, gap, gap, gap)
+            addView(v, lp)
+        }
+
+        val v = zones.map { it.view }
+        val root: View = when (prefs.layout) {
+            Prefs.LAYOUT_LEFT_RIGHT, Prefs.LAYOUT_TOP_BOTTOM -> {
+                val first = prefs.splitPercent.toFloat()
+                box(vertical = prefs.layout == Prefs.LAYOUT_TOP_BOTTOM).apply {
+                    add(v[0], first)
+                    add(v[1], 100f - first)
+                }
+            }
+            Prefs.LAYOUT_COLUMNS3, Prefs.LAYOUT_ROWS3 -> box(vertical = prefs.layout == Prefs.LAYOUT_ROWS3).apply {
+                val a = prefs.splitA.toFloat()
+                val b = prefs.splitB.toFloat()
+                add(v[0], a); add(v[1], b); add(v[2], maxOf(10f, 100f - a - b))
+            }
+            Prefs.LAYOUT_MAIN_SIDE -> box(vertical = !landscape).apply {
+                val main = prefs.mainPercent.toFloat()
+                val side = prefs.sidePercent.toFloat()
+                add(v[0], main)
+                add(box(vertical = landscape).apply { add(v[1], side); add(v[2], 100f - side) }, 100f - main)
+            }
+            else -> v[0]
+        }
+        zonesFrame.addView(root, FrameLayout.LayoutParams(-1, -1))
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (prefs.layout == Prefs.LAYOUT_MAIN_SIDE) arrangeZones()
+    }
+
+    /** 管理画面（別の端末）からの変更 */
+    private val adminListener: (String) -> Unit = { event ->
+        when (event) {
+            AdminServer.EVENT_CONTENT -> zones.filterIsInstance<MediaZone>().forEach { it.reload() }
+            AdminServer.EVENT_SETTINGS -> recreate() // 区画の構成なども変わるので作り直す
+            AdminServer.EVENT_VOICE_START -> showVoice(true)
+            AdminServer.EVENT_VOICE_END -> showVoice(false)
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        PlayerStatus.running = true
+        PlayerStatus.runningSince = System.currentTimeMillis()
+        clockTick.run()
+        zones.forEach { it.start() }
+        AdminServer.addListener(adminListener)
+        AdminService.sync(this)
+        Ticker.addListener(tickerListener)
+        showNextTicker()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        PlayerStatus.running = false
+        PlayerStatus.clear()
+        AdminServer.removeListener(adminListener)
+        Ticker.removeListener(tickerListener)
+        handler.removeCallbacks(clockTick)
+        zones.forEach { it.stop() }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        handler.removeCallbacksAndMessages(null)
+        zones.forEach { it.release() }
+        tickerView.stop()
+        announcer.release()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideSystemUi()
+    }
+
+    private fun hideSystemUi() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
+
+    // ---------------------------------------------------------------- テロップ
+
+    private val tickerListener: () -> Unit = { showNextTicker() }
+
+    /**
+     * 次のテロップを流す。回数指定のもの（呼び出しなど）を優先し、なければ「止めるまで流す」ものを流す。
+     * 回数指定のものを流している間は、終わるまで次を待つ。
+     */
+    private fun showNextTicker() {
+        if (Ticker.consumeStop()) tickerView.stop().also { avoidTicker() }
+        val current = tickerView.message
+        if (current != null && !current.isStanding) return
+        val queued = Ticker.nextQueued()
+        val next = queued ?: Ticker.standing(this)
+        if (next == null) {
+            tickerView.stop()
+            avoidTicker()
+            return
+        }
+        if (current != null && current.id == next.id) return // 同じものを流し中
+        (tickerView.layoutParams as FrameLayout.LayoutParams).gravity =
+            if (next.position == 1) Gravity.TOP else Gravity.BOTTOM
+        tickerView.bringToFront()
+        infoView.bringToFront()
+        tickerView.show(next)
+        if (queued != null || announcedStandingId != next.id) {
+            announcer.announce(next)
+            if (next.isStanding) announcedStandingId = next.id
+        }
+    }
+
+    /** 時計がテロップと同じ側（上・下）にあるときは、帯の分だけずらして重ならないようにする */
+    private fun avoidTicker() {
+        val m = tickerView.message
+        val h = tickerView.bandHeight.toFloat()
+        val clockBottom = prefs.clockPosition == Prefs.CLOCK_BOTTOM_LEFT || prefs.clockPosition == Prefs.CLOCK_BOTTOM_RIGHT
+        clockView.translationY = when {
+            m == null || h == 0f -> 0f
+            clockBottom && m.position == 0 -> -h
+            !clockBottom && m.position == 1 -> h
+            else -> 0f
+        }
+    }
+
+    // ---------------------------------------------------------------- 時計
+
+    private fun createClock() = TextView(this).apply {
+        val dm = resources.displayMetrics
+        val base = minOf(dm.widthPixels, dm.heightPixels)
+        val size = base / when (prefs.clockSize) { 0 -> 26f; 2 -> 12f; else -> 18f }
+        setTextSize(TypedValue.COMPLEX_UNIT_PX, size)
+        setTextColor(0xFFFFFFFF.toInt())
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        includeFontPadding = false
+        setShadowLayer(size * 0.08f, 0f, size * 0.03f, 0x99000000.toInt())
+        background = GradientDrawable().apply {
+            setColor(0x66000000)
+            cornerRadius = size * 0.35f
+        }
+        val p = (size * 0.35f).toInt()
+        setPadding(p * 2, p, p * 2, p)
+        val (vertical, horizontal) = when (prefs.clockPosition) {
+            Prefs.CLOCK_BOTTOM_RIGHT -> Gravity.BOTTOM to Gravity.END
+            Prefs.CLOCK_TOP_LEFT -> Gravity.TOP to Gravity.START
+            Prefs.CLOCK_BOTTOM_LEFT -> Gravity.BOTTOM to Gravity.START
+            else -> Gravity.TOP to Gravity.END
+        }
+        gravity = horizontal or Gravity.CENTER_VERTICAL
+        layoutParams = FrameLayout.LayoutParams(-2, -2, vertical or horizontal).apply {
+            val m = (base * 0.03f).toInt()
+            setMargins(m, m, m, m)
+        }
+        visibility = if (prefs.clockEnabled) View.VISIBLE else View.GONE
+    }
+
+    /** 日付を小さく、時刻を大きく */
+    private fun updateClock() {
+        if (!prefs.clockEnabled) return
+        val t = AppTime.localDateTime(prefs)
+        val date = "${t.monthValue}/${t.dayOfMonth}(${t.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.JAPANESE)})"
+        val s = SpannableStringBuilder(date).append("\n").append(AppTime.hm(t, prefs.timeFormat))
+        s.setSpan(RelativeSizeSpan(0.45f), 0, date.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        clockView.text = s
+    }
+
+    // ---------------------------------------------------------------- 情報表示・操作
+
+    private fun updateInfo() {
+        val text = mainZone?.infoText() ?: "（フォルダの区画がありません）"
+        infoView.text = "$text\nタップ: 情報　スワイプ: 前/次　ダブルタップ: 一時停止　長押し: 設定"
+    }
+
+    private fun showInfo() {
+        updateInfo()
+        infoView.visibility = View.VISIBLE
+        infoView.removeCallbacks(hideInfo)
+        infoView.postDelayed(hideInfo, 5000)
+    }
+
+    private fun toggleInfo() {
+        if (infoView.visibility == View.VISIBLE) {
+            infoView.removeCallbacks(hideInfo)
+            infoView.visibility = View.GONE
+        } else {
+            showInfo()
+        }
+    }
+
+    private fun next(step: Int) {
+        val zone = mainZone ?: return
+        if (zone.paused) zone.togglePause()
+        zone.goto(step)
+        showInfo()
+    }
+
+    private fun togglePause() {
+        mainZone?.togglePause()
+        showInfo()
+    }
+
+    private fun openSettings() {
+        startActivity(
+            Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_FROM_PLAYER, true)
+        )
+        finish()
+    }
+
+    private val gestures by lazy { GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onDown(e: MotionEvent) = true
+
+        override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+            toggleInfo()
+            return true
+        }
+
+        override fun onDoubleTap(e: MotionEvent): Boolean {
+            togglePause()
+            return true
+        }
+
+        override fun onLongPress(e: MotionEvent) = openSettings()
+
+        override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
+            val start = e1 ?: return false
+            val dx = e2.x - start.x
+            if (abs(dx) < 100 || abs(dx) < abs(e2.y - start.y)) return false
+            next(if (dx < 0) 1 else -1)
+            return true
+        }
+    }) }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        gestures.onTouchEvent(ev)
+        return true
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> next(1)
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_PREVIOUS, KeyEvent.KEYCODE_MEDIA_REWIND -> next(-1)
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_SPACE,
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> togglePause()
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_INFO -> toggleInfo()
+            KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_SETTINGS -> openSettings()
+            else -> return super.onKeyDown(keyCode, event)
+        }
+        return true
+    }
+}

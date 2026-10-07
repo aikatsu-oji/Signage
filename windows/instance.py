@@ -23,7 +23,7 @@ def duplicate_message(running_version, this_version):
         return None
     old = running_version or "不明（この版より古い版です）"
     return (
-        "サイネージはすでに起動しています。\n\n"
+        "SimpleSignage はすでに起動しています。\n\n"
         f"実行中の版：{old}\n"
         f"このファイルの版：{this_version}\n\n"
         "新しい版に入れ替えるには、タスクトレイの Signage のアイコンを右クリックして「終了」を押し、"
