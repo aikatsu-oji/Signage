@@ -77,16 +77,41 @@ class MediaZone(
      */
     private val softFirst = !isMain && prefs.videoMultiSoft
 
+    /**
+     * いま再生する動画が大きい（フル HD の縦長など）とき、ソフトウェアデコーダーでは処理が追いつかず、カクつく。
+     * その動画だけは、ハードウェアデコーダーを先に使う（使えなければ、ソフトウェアに切り替える）
+     */
+    @Volatile private var hardwareFirst = false
+
     private val player = ExoPlayer.Builder(
         activity,
         DefaultRenderersFactory(activity).setEnableDecoderFallback(true).apply {
             if (softFirst) {
                 setMediaCodecSelector { mime, secure, tunneling ->
-                    MediaCodecSelector.DEFAULT.getDecoderInfos(mime, secure, tunneling).sortedBy { if (it.softwareOnly) 0 else 1 }
+                    val list = MediaCodecSelector.DEFAULT.getDecoderInfos(mime, secure, tunneling)
+                    if (hardwareFirst) list else list.sortedBy { if (it.softwareOnly) 0 else 1 }
                 }
             }
         },
     ).build()
+
+    /** 動画の大きさ・ビットレートから、ソフトウェアデコードでは重すぎるか。調べられなければ false（これまでどおり） */
+    private val heavyCache = HashMap<String, Boolean>()
+
+    private fun isHeavyVideo(uri: Uri): Boolean = heavyCache.getOrPut("$uri|${java.io.File(uri.path ?: "").length()}") {
+        runCatching {
+            val r = android.media.MediaMetadataRetriever()
+            try {
+                r.setDataSource(activity, uri)
+                val w = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+                val h = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+                val bps = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toLongOrNull() ?: 0L
+                w.toLong() * h > 1_000_000L || bps > 6_000_000L   // 1280×720（約 92 万画素）より大きい、または 6Mbps 超
+            } finally {
+                r.release()
+            }
+        }.getOrDefault(false)
+    }
 
     /** 音声のトラックを無効にしているか（音を出さない区画は、音声のデコーダーも使わない） */
     private var audioDisabled = false
@@ -337,6 +362,7 @@ class MediaZone(
 
         if (item.isVideo) {
             applyVolume()
+            hardwareFirst = softFirst && isHeavyVideo(item.uri)
             player.setMediaItem(MediaItem.fromUri(item.uri))
             player.prepare()
             player.playWhenReady = !paused
