@@ -12,7 +12,7 @@ val keystoreProps = Properties().apply {
 }
 
 android {
-    namespace = "jp.signage.player"
+    namespace = "jp.simplesignage"
     compileSdk = 36
 
     signingConfigs {
@@ -23,24 +23,6 @@ android {
                 keyAlias = keystoreProps.getProperty("keyAlias")
                 keyPassword = keystoreProps.getProperty("keyPassword")
             }
-        }
-    }
-
-    buildFeatures {
-        buildConfig = true
-    }
-
-    // 配布の種類。direct＝GitHub などで APK を直接配る版（管理画面からのアプリ更新あり）、
-    // play＝Google Play 版（アプリの更新は Google Play が行うので、管理画面からの更新と、その権限は無い）
-    flavorDimensions += "dist"
-    productFlavors {
-        create("direct") {
-            dimension = "dist"
-            buildConfigField("boolean", "SELF_UPDATE", "true")
-        }
-        create("play") {
-            dimension = "dist"
-            buildConfigField("boolean", "SELF_UPDATE", "false")
         }
     }
 
@@ -55,8 +37,8 @@ android {
         applicationId = "jp.simplesignage"
         minSdk = 26
         targetSdk = 36
-        versionCode = 90
-        versionName = "1.21.0"
+        versionCode = 91
+        versionName = "1.22.0"
     }
 
     compileOptions {

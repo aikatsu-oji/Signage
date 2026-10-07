@@ -5,8 +5,8 @@ set -euo pipefail
 cd "$(dirname "$0")/../android"
 [ -f keystore.properties ] || { echo "android/keystore.properties がありません（docs/PLAY_STORE.md の手順 1 を見てください）"; exit 1; }
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/android-sdk}"
-sh ./gradlew bundlePlayRelease
-OUT="app/build/outputs/bundle/playRelease/app-play-release.aab"
+sh ./gradlew bundleRelease
+OUT="app/build/outputs/bundle/release/app-release.aab"
 V="$(grep -o 'versionName = "[^"]*"' app/build.gradle.kts | cut -d'"' -f2)"
 mkdir -p ../dist && cp "$OUT" "../dist/SimpleSignage-play-${V}.aab"
 echo "完成: dist/SimpleSignage-play-${V}.aab"

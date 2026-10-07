@@ -23,7 +23,6 @@
   - 同じネットワークの Android 版・Windows 版を自動で見つけて「端末一覧」に表示し、ファイル・設定・テロップをまとめて送れる
   - **配信状況のモニタリング**：各端末の再生状況・テロップ・空き容量・稼働時間を確認し、異常を一覧できる
   - **設定のエクスポートと一括反映**：ある端末の設定を、ほかの端末へまとめてコピー
-  - **アプリ（APK）の更新**：新しい APK を管理画面から Android 端末へ送って更新（1.9.5 以降）
   - **操作できる端末の制限**：MAC アドレスで、管理画面に入れる端末を絞れる（任意）
 - 電源 ON 時の自動再生、Android TV / Fire TV / STB のリモコン操作、フォルダ選択画面が無い端末向けのフォルダブラウザ（Android）
 
@@ -45,7 +44,7 @@ sha256sum -c SHA256SUMS
 
 （Windows の PowerShell では `Get-FileHash <ファイル名>` の値を `SHA256SUMS` と見比べてください）
 
-- **Android**：APK を端末に入れ、「不明なアプリのインストール」を許可します。PC から入れるときは `adb install -r SimpleSignage-android-<版>.apk`
+- **Android**：Google Play から入れます（クローズドテスト中は、招待されたテスターのみ。[docs/PLAY_STORE.md](docs/PLAY_STORE.md)）。Google Play の無い端末（Fire TV など）には、リリースの APK を端末に入れ、「不明なアプリのインストール」を許可します。PC から入れるときは `adb install -r SimpleSignage-android-<版>.apk`
 - **Windows**：exe を起動します（初回の SmartScreen 警告は「詳細情報」→「実行」。ファイアウォールの確認は「プライベート ネットワーク」を許可）
 - APK は **debug 署名** です。社外へ広く配る場合は、リリース鍵で署名してください（[docs/DISTRIBUTION.md](docs/DISTRIBUTION.md)）
 
@@ -53,7 +52,7 @@ sha256sum -c SHA256SUMS
 
 ```
 cd android
-gradlew assembleDirectDebug  # APK を android/app/build/outputs/apk/direct/debug/ に出力（build.bat は ..\dist\signage.apk にも出力）
+gradlew assembleDebug  # APK を android/app/build/outputs/apk/debug/ に出力（build.bat は ..\dist\signage.apk にも出力）
 ```
 
 JDK 17 と Android SDK（API 34）が必要です。Windows 版は `windows\build.bat`（`..\dist\SimpleSignage.exe` に出力。Python 3.10 以降が必要）です。

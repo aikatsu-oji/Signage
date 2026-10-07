@@ -1,15 +1,10 @@
 # Google Play で配る（クローズドテスト）
 
-SimpleSignage を、Google Play の「クローズドテスト」で配る手順です。Play 向けの版は、GitHub で配る版（direct）と、**同じアプリ ID（jp.simplesignage）で、中身が少し違います**。
+SimpleSignage を、Google Play の「クローズドテスト」で配る手順です。
 
-| | direct（GitHub の APK） | play（Google Play） |
-| --- | --- | --- |
-| 管理画面からのアプリ更新 | ある | **ない**（Google Play が更新する） |
-| `REQUEST_INSTALL_PACKAGES` 権限 | ある | ない |
-| 写真・動画の読み取り権限（旧版からの移行用） | ある | ない |
-| ビルド | `gradlew assembleDirectDebug`（リリース作業は `scripts/publish-release.sh`） | `scripts/build-play-bundle.sh`（AAB） |
+Google Play 版は、**管理画面からのアプリ更新の機能がありません**（Google Play のポリシーで、Play 以外の経路での自己更新は認められないため）。アプリの更新は、Google Play が行います。`REQUEST_INSTALL_PACKAGES` と、写真・動画の読み取りの権限も、付けていません。
 
-> 同じアプリ ID でも、**署名が違う**ため、direct の APK を入れた端末に Play 版は上書きできません（入れ直しが必要です）。端末ごとに、どちらか一方を使ってください。
+> Google Play の無い端末（Fire TV など）には、GitHub のリリースの APK（debug 署名）を、`adb install` で入れます。**Google Play 版とは署名が違うため、入れ替えるときは、アプリを削除してから入れ直してください。**
 
 ## 1. アップロード鍵を作る（あなた自身で。1 回だけ）
 
@@ -59,5 +54,5 @@ scripts/build-play-bundle.sh
 
 ## Play 版の注意
 
-- アプリの更新は、Google Play で行います。管理画面の「アプリ（APK）の更新」は、Play 版の端末には効きません（「Google Play 版のため、管理画面からは更新できません」と表示します）。
+- アプリの更新は、Google Play で行います（管理画面からの更新の機能は、ありません）。
 - Android 16（targetSdk 36）に対応しています。画面の端までアプリの領域になるため、設定画面は、バーの分の余白を空けています。タブレット・テレビでの向きの固定は、Android 16 の既定（固定を無視）を、アプリ側で無効にしています。
