@@ -1,14 +1,14 @@
-# サイネージ Android 1.20.0 / Windows 1.19.0
+# サイネージ Android 1.21.0 / Windows 1.19.0
 
 | ファイル | 内容 | バージョン |
 |---|---|---|
-| `SimpleSignage-android-1.20.0.apk` | Android / Fire TV 用アプリ | 1.20.0 |
+| `SimpleSignage-android-1.21.0.apk` | Android / Fire TV 用アプリ | 1.21.0 |
 | `SimpleSignage-windows-1.19.0.exe` | Windows 用アプリ（インストール不要・単体で動作） | 1.19.0 |
 | `SHA256SUMS` | ファイルの改ざん・破損を確かめるチェックサム | |
 | `LICENSE` / `THIRD_PARTY_NOTICES.md` | 本ソフトウェア（MIT）と、利用している部品のライセンス | |
 
 ## 今回の変更
-Google Play（クローズドテスト）向けの準備：Android 16（targetSdk 36）に対応し、Google Play 向けの版（管理画面からのアプリ更新と、その権限を除いた版）を作れるようにしました（手順は docs/PLAY_STORE.md、プライバシーポリシーの案は docs/PRIVACY.md）。GitHub で配る APK は、これまでどおり管理画面から更新できます。
+アプリ ID を jp.signage.player から jp.simplesignage に変更しました（Google Play 公開に向けて）。**別のアプリとして入る**ため、いま使っている端末の更新は、これまでの APK への上書きではできません（管理画面からのアプリ更新も使えません）。新しい APK を入れ直し、画像・動画の登録と設定をやり直してください。古いアプリは、端末から削除してかまいません。
 
 ## 確認方法
 ```
