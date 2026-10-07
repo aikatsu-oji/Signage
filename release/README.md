@@ -1,14 +1,14 @@
-# サイネージ Android 1.19.0 / Windows 1.18.0
+# サイネージ Android 1.20.0 / Windows 1.19.0
 
 | ファイル | 内容 | バージョン |
 |---|---|---|
-| `SimpleSignage-android-1.19.0.apk` | Android / Fire TV 用アプリ | 1.19.0 |
-| `SimpleSignage-windows-1.18.0.exe` | Windows 用アプリ（インストール不要・単体で動作） | 1.18.0 |
+| `SimpleSignage-android-1.20.0.apk` | Android / Fire TV 用アプリ | 1.20.0 |
+| `SimpleSignage-windows-1.19.0.exe` | Windows 用アプリ（インストール不要・単体で動作） | 1.19.0 |
 | `SHA256SUMS` | ファイルの改ざん・破損を確かめるチェックサム | |
 | `LICENSE` / `THIRD_PARTY_NOTICES.md` | 本ソフトウェア（MIT）と、利用している部品のライセンス | |
 
 ## 今回の変更
-アプリ名を「SimpleSignage」に変更（Android の表示名、Windows のトレイ・通知・ウィンドウ、管理画面、配布ファイル名 SimpleSignage-android-<版>.apk / SimpleSignage-windows-<版>.exe）。内部の識別子・設定の保存場所は、そのままです（更新はそのまま上書きできます）。
+Google Play（クローズドテスト）向けの準備：Android 16（targetSdk 36）に対応し、Google Play 向けの版（管理画面からのアプリ更新と、その権限を除いた版）を作れるようにしました（手順は docs/PLAY_STORE.md、プライバシーポリシーの案は docs/PRIVACY.md）。GitHub で配る APK は、これまでどおり管理画面から更新できます。
 
 ## 確認方法
 ```
