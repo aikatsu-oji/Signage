@@ -38,9 +38,9 @@
     #schedSec > .head .sub { display: none; }
     .quad .qbody { overflow: auto; flex: 1; }
     #q1 { grid-area: 1 / 1; } #q2 { grid-area: 1 / 2; } #q3 { grid-area: 2 / 1; } #q4 { grid-area: 2 / 2; }
-    .dash.hasmax .quad:not(.max) { display: none; }
-    .dash.hasmax .quad.max { grid-area: 1 / 1 / 3 / 3; }
+    #dash.hasmax .quad.max { grid-area: 1 / 1 / 3 / 3; }
   }
+  #dash.hasmax .quad:not(.max) { display: none; }
   .hdrDev { font-size: 13px; color: var(--sub); display: inline-flex; align-items: center; gap: 4px; }
   .layout { max-width: 1280px; margin: 0 auto; padding: 16px; display: grid; grid-template-columns: 320px 1fr; gap: 16px; align-items: start; }
   @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
