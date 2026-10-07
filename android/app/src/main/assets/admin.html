@@ -34,7 +34,7 @@
   .lcard.dragging { opacity: .45; }
   ul.over { outline: 2px dashed var(--brand); outline-offset: 2px; }
   @media (min-width: 1100px) {
-    /* 4 枠は絶対配置。横の境界線は 1 本、縦の境界線は上段・下段で別々（--cwT / --cwB / --rh は % の数値）。見た目の隙間は境界線の太さ 12px */
+    /* 4 枠は絶対配置。縦の境界線は上段・下段で別々（--cwT / --cwB）、横の境界線は左列・右列で別々（--rl / --rr）。値は % の数値。見た目の隙間は境界線の太さ 12px */
     .dash { position: relative; display: block; height: calc(100vh - 58px); --W: calc(100% - 24px); }
     .quad .tabs { flex-wrap: nowrap; overflow-x: auto; }
     .quad .tabs button { white-space: nowrap; }
@@ -42,8 +42,10 @@
     #schedSec > .head .sub { display: none; }
     .quad .qbody { overflow: auto; flex: 1; }
     .quad, .split { position: absolute; }
-    #q1, #q2 { top: 12px; height: calc(var(--W) * var(--rh, 57) / 100 - 6px); }
-    #q3, #q4 { top: calc(12px + var(--W) * var(--rh, 57) / 100 + 6px); bottom: 12px; }
+    #q1 { top: 12px; height: calc(var(--W) * var(--rl, 57) / 100 - 6px); }
+    #q2 { top: 12px; height: calc(var(--W) * var(--rr, 57) / 100 - 6px); }
+    #q3 { top: calc(12px + var(--W) * var(--rl, 57) / 100 + 6px); bottom: 12px; }
+    #q4 { top: calc(12px + var(--W) * var(--rr, 57) / 100 + 6px); bottom: 12px; }
     #q1 { left: 12px; width: calc(var(--W) * var(--cwT, 40) / 100 - 6px); }
     #q2 { left: calc(12px + var(--W) * var(--cwT, 40) / 100 + 6px); right: 12px; }
     #q3 { left: 12px; width: calc(var(--W) * var(--cwB, 40) / 100 - 6px); }
@@ -52,9 +54,11 @@
     .split { display: block; border-radius: 6px; touch-action: none; }
     .split:hover, .split.drag, .split:focus-visible { background: var(--brand); opacity: .55; outline: none; }
     .split.v { width: 12px; cursor: col-resize; }
-    .split.h { height: 12px; left: 12px; right: 12px; top: calc(12px + var(--W) * var(--rh, 57) / 100 - 6px); cursor: row-resize; }
-    #splitV { left: calc(12px + var(--W) * var(--cwT, 40) / 100 - 6px); top: 12px; height: calc(var(--W) * var(--rh, 57) / 100 - 6px); }
-    #splitV2 { left: calc(12px + var(--W) * var(--cwB, 40) / 100 - 6px); top: calc(12px + var(--W) * var(--rh, 57) / 100 + 6px); bottom: 12px; }
+    .split.h { height: 12px; cursor: row-resize; }
+    #splitHL { left: 12px; width: calc(var(--W) * min(var(--cwT, 40), var(--cwB, 40)) / 100 - 6px); top: calc(12px + var(--W) * var(--rl, 57) / 100 - 6px); }
+    #splitHR { left: calc(12px + var(--W) * max(var(--cwT, 40), var(--cwB, 40)) / 100 + 6px); right: 12px; top: calc(12px + var(--W) * var(--rr, 57) / 100 - 6px); }
+    #splitV { left: calc(12px + var(--W) * var(--cwT, 40) / 100 - 6px); top: 12px; height: calc(var(--W) * var(--rl, 57) / 100 - 6px); }
+    #splitV2 { left: calc(12px + var(--W) * var(--cwB, 40) / 100 - 6px); top: calc(12px + var(--W) * var(--rl, 57) / 100 + 6px); bottom: 12px; }
     #dash.hasmax .split { display: none; }
   }
   #dash.hasmax .quad:not(.max) { display: none; }
@@ -376,7 +380,8 @@
   <div class="dash" id="dash">
     <div class="split v" id="splitV" tabindex="0" role="separator" aria-orientation="vertical" title="ドラッグで左右の幅を変更（上段）（ダブルクリックで元に戻す・←→キーでも操作できます）"></div>
     <div class="split v" id="splitV2" tabindex="0" role="separator" aria-orientation="vertical" title="ドラッグで左右の幅を変更（下段）（ダブルクリックで元に戻す・←→キーでも操作できます）"></div>
-    <div class="split h" id="splitH" tabindex="0" role="separator" aria-orientation="horizontal" title="ドラッグで上下の高さを変更（ダブルクリックで元に戻す・↑↓キーでも操作できます）"></div>
+    <div class="split h" id="splitHL" tabindex="0" role="separator" aria-orientation="horizontal" title="ドラッグで左側の上下の高さを変更（ダブルクリックで元に戻す・↑↓キーでも操作できます）"></div>
+    <div class="split h" id="splitHR" tabindex="0" role="separator" aria-orientation="horizontal" title="ドラッグで右側の上下の高さを変更（ダブルクリックで元に戻す・↑↓キーでも操作できます）"></div>
     <div class="quad" id="q1"><div class="tabs" role="tablist">
       <button type="button" role="tab" data-tab="devices">🖥 端末</button>
       <button type="button" role="tab" data-tab="dev">⚙ 端末の設定<span class="sub" id="tabDevName"></span></button>
@@ -1020,18 +1025,22 @@
   }
   // ---- 4 枠の大きさを、境界線のドラッグ（またはキー）で変える
   {
-    // 縦の境界線は上段（cw）と下段（cw2）で別々に、横の境界線（rh）は 1 本で動かす
-    const dash = $('#dash'), DEF = { cw: 40, cw2: 40, rh: 57 }, LIM = { cw: [20, 80], cw2: [20, 80], rh: [20, 80] };
+    // 縦の境界線は上段（cw）と下段（cw2）で別々に、横の境界線は左列（rl）と右列（rr）で別々に動かす
+    const dash = $('#dash'), DEF = { cw: 40, cw2: 40, rl: 57, rr: 57 }, LIM = { cw: [20, 80], cw2: [20, 80], rl: [20, 80], rr: [20, 80] };
     const saved = store.get('signage-dash', {});
     const pos = { ...DEF, ...saved };
     if (!(saved.cw2 >= 20)) pos.cw2 = pos.cw;   // 以前の版（縦 1 本）で決めた幅を、上段・下段の両方に引き継ぐ
+    if (!(saved.rl >= 20)) pos.rl = saved.rh >= 20 ? saved.rh : DEF.rl;   // 以前の版（横 1 本）で決めた高さを、左右の列の両方に引き継ぐ
+    if (!(saved.rr >= 20)) pos.rr = pos.rl;
+    delete pos.rh;
     const apply = () => {
       dash.style.setProperty('--cwT', pos.cw);
       dash.style.setProperty('--cwB', pos.cw2);
-      dash.style.setProperty('--rh', pos.rh);
+      dash.style.setProperty('--rl', pos.rl);
+      dash.style.setProperty('--rr', pos.rr);
     };
     const set = (k, v) => { pos[k] = Math.round(Math.min(LIM[k][1], Math.max(LIM[k][0], v)) * 10) / 10; apply(); store.set('signage-dash', pos); };
-    if (!(pos.cw >= 20 && pos.cw2 >= 20 && pos.rh >= 20)) Object.assign(pos, DEF);
+    if (!(pos.cw >= 20 && pos.cw2 >= 20 && pos.rl >= 20 && pos.rr >= 20)) Object.assign(pos, DEF);
     apply();
     const wire = (el, k, axis) => {
       el.addEventListener('pointerdown', (e) => {
@@ -1054,7 +1063,8 @@
     };
     wire($('#splitV'), 'cw', 'x');
     wire($('#splitV2'), 'cw2', 'x');
-    wire($('#splitH'), 'rh', 'y');
+    wire($('#splitHL'), 'rl', 'y');
+    wire($('#splitHR'), 'rr', 'y');
   }
 
   // ---- 各一覧は、見出しをクリックして閉じられる（使う頻度の低いものは、はじめ閉じておく）
