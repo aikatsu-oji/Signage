@@ -42,4 +42,4 @@ SimpleSignage（以下「本アプリ」）は、店舗や事務所などで、�
 
 ## 連絡先
 
-[ここに連絡先のメールアドレスを書いてください]
+support@hss-analize.jp
