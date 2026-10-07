@@ -84,16 +84,18 @@ class WeatherView(context: Context) : PanelView(context) {
         }
 
         // 小さな区画では降水確率の行を省き、アイコンと気温を優先する
-        day.pops6h?.takeIf { !compact }?.let { pops ->
+        // 終わった時間帯など、値が無い時間帯は、「--」を出さずに省く（1 つも無ければ、降水確率の欄ごと出さない）
+        day.pops6h?.takeIf { !compact && it.any { v -> v != null } }?.let { pops ->
             card.addView(text("降水確率", 0.85f, color = DIM).apply { setPadding(0, gap(), 0, 0) })
             val row = LinearLayout(context)
             listOf("0-6時", "6-12時", "12-18時", "18-24時").forEachIndexed { i, h ->
+                val value = pops[i] ?: return@forEachIndexed
                 val cell = LinearLayout(context).apply {
                     orientation = VERTICAL
                     gravity = Gravity.CENTER
                 }
                 cell.addView(text(h, 0.8f, color = DIM))
-                cell.addView(text(pops[i]?.let { "$it%" } ?: "--", 1.3f, bold = true))
+                cell.addView(text("$value%", 1.3f, bold = true))
                 row.addView(cell, LayoutParams(0, WRAP, 1f))
             }
             card.addView(row, LayoutParams(MATCH, WRAP))

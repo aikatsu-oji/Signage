@@ -217,11 +217,13 @@
       if (temps.children.length) mid.append(temps);
       c.append(label, mid);
       if (day.text) c.append(el('div', 'wtext', day.text));
-      if (day.pops6h && !compact) {
+      // 終わった時間帯など、値が無い時間帯は、「--」を出さずに省く（1 つも無ければ、降水確率の欄ごと出さない）
+      if (day.pops6h && day.pops6h.some((v) => v) && !compact) {
         const pops = el('div', 'pops');
         ['0-6時', '6-12時', '12-18時', '18-24時'].forEach((h, k) => {
+          if (!day.pops6h[k]) return;
           const cell = el('div');
-          cell.append(el('div', 'h', h), el('div', 'v', day.pops6h[k] ? day.pops6h[k] + '%' : '--'));
+          cell.append(el('div', 'h', h), el('div', 'v', day.pops6h[k] + '%'));
           pops.append(cell);
         });
         c.append(el('div', 'dim', '降水確率'), pops);
