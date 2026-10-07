@@ -34,26 +34,30 @@
   .lcard.dragging { opacity: .45; }
   ul.over { outline: 2px dashed var(--brand); outline-offset: 2px; }
   @media (min-width: 1100px) {
-    .dash { height: calc(100vh - 58px); gap: 0; grid-template-columns: var(--gc, minmax(0, 40fr) 12px minmax(0, 60fr)); grid-template-rows: minmax(0, 1fr); }
-    .dcol { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-    #colL > #q1 { flex: var(--rl, 57) 1 0; } #colL > #q3 { flex: calc(100 - var(--rl, 57)) 1 0; }
-    #colR > #q2 { flex: var(--rr, 57) 1 0; } #colR > #q4 { flex: calc(100 - var(--rr, 57)) 1 0; }
+    /* 4 枠は絶対配置。横の境界線は 1 本、縦の境界線は上段・下段で別々（--cwT / --cwB / --rh は % の数値）。見た目の隙間は境界線の太さ 12px */
+    .dash { position: relative; display: block; height: calc(100vh - 58px); --W: calc(100% - 24px); }
     .quad .tabs { flex-wrap: nowrap; overflow-x: auto; }
     .quad .tabs button { white-space: nowrap; }
     #tabDevName { display: none; }
     #schedSec > .head .sub { display: none; }
     .quad .qbody { overflow: auto; flex: 1; }
-    .split { display: block; border-radius: 6px; touch-action: none; flex: 0 0 12px; }
+    .quad, .split { position: absolute; }
+    #q1, #q2 { top: 12px; height: calc(var(--W) * var(--rh, 57) / 100 - 6px); }
+    #q3, #q4 { top: calc(12px + var(--W) * var(--rh, 57) / 100 + 6px); bottom: 12px; }
+    #q1 { left: 12px; width: calc(var(--W) * var(--cwT, 40) / 100 - 6px); }
+    #q2 { left: calc(12px + var(--W) * var(--cwT, 40) / 100 + 6px); right: 12px; }
+    #q3 { left: 12px; width: calc(var(--W) * var(--cwB, 40) / 100 - 6px); }
+    #q4 { left: calc(12px + var(--W) * var(--cwB, 40) / 100 + 6px); right: 12px; }
+    #dash.hasmax .quad.max { left: 12px; right: 12px; top: 12px; bottom: 12px; width: auto; height: auto; }
+    .split { display: block; border-radius: 6px; touch-action: none; }
     .split:hover, .split.drag, .split:focus-visible { background: var(--brand); opacity: .55; outline: none; }
-    .split.v { grid-column: 2; cursor: col-resize; }
-    .split.h { cursor: row-resize; }
-    #dash.hasmax { grid-template-columns: minmax(0, 1fr) !important; }
+    .split.v { width: 12px; cursor: col-resize; }
+    .split.h { height: 12px; left: 12px; right: 12px; top: calc(12px + var(--W) * var(--rh, 57) / 100 - 6px); cursor: row-resize; }
+    #splitV { left: calc(12px + var(--W) * var(--cwT, 40) / 100 - 6px); top: 12px; height: calc(var(--W) * var(--rh, 57) / 100 - 6px); }
+    #splitV2 { left: calc(12px + var(--W) * var(--cwB, 40) / 100 - 6px); top: calc(12px + var(--W) * var(--rh, 57) / 100 + 6px); bottom: 12px; }
     #dash.hasmax .split { display: none; }
-    #dash.hasmax .dcol:not(.holdmax) { display: none; }
-    #dash.hasmax .quad.max { flex: 1 1 0 !important; }
   }
   #dash.hasmax .quad:not(.max) { display: none; }
-  @media (max-width: 1099px) { .dcol { display: contents; } #q1 { order: 1; } #q2 { order: 2; } #q3 { order: 3; } #q4 { order: 4; } }
   #hdrDev { position: relative; }
   #hdrDevBtn { display: inline-flex; align-items: center; gap: 4px; }
   #devMenu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 260px; max-height: 60vh; overflow: auto; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 24px #0003; padding: 4px; display: flex; flex-direction: column; }
@@ -370,7 +374,9 @@
     </div>
   </header>
   <div class="dash" id="dash">
-    <div class="dcol" id="colL">
+    <div class="split v" id="splitV" tabindex="0" role="separator" aria-orientation="vertical" title="ドラッグで左右の幅を変更（上段）（ダブルクリックで元に戻す・←→キーでも操作できます）"></div>
+    <div class="split v" id="splitV2" tabindex="0" role="separator" aria-orientation="vertical" title="ドラッグで左右の幅を変更（下段）（ダブルクリックで元に戻す・←→キーでも操作できます）"></div>
+    <div class="split h" id="splitH" tabindex="0" role="separator" aria-orientation="horizontal" title="ドラッグで上下の高さを変更（ダブルクリックで元に戻す・↑↓キーでも操作できます）"></div>
     <div class="quad" id="q1"><div class="tabs" role="tablist">
       <button type="button" role="tab" data-tab="devices">🖥 端末</button>
       <button type="button" role="tab" data-tab="dev">⚙ 端末の設定<span class="sub" id="tabDevName"></span></button>
@@ -632,26 +638,6 @@
       </section>
       </div>
     </div></div>
-    <div class="split h" id="splitHL" tabindex="0" role="separator" aria-orientation="horizontal" title="ドラッグで左側の上下の高さを変更（ダブルクリックで元に戻す・↑↓キーでも操作できます）"></div>
-    <div class="quad" id="q3"><div class="tabs" role="tablist">
-      <button type="button" role="tab" data-tab="lib">🖼 コンテンツ</button>
-      <button type="button" class="qmax" title="この枠を大きく表示／元に戻す">⤢</button></div><div class="qbody">
-      <div class="pane" id="pane-lib" hidden>
-        <section id="libSec">
-          <div class="head">
-            <div>
-              <h2>画像・動画（ライブラリ）<span class="sub" id="libDevName"></span></h2>
-              <p class="sub" id="libSummary"></p>
-            </div>
-          </div>
-          <div class="warn" id="libWarn" hidden></div>
-          <div id="libBody"></div>
-        </section>
-      </div>
-    </div></div>
-    </div>
-    <div class="split v" id="splitV" tabindex="0" role="separator" aria-orientation="vertical" title="ドラッグで左右の幅を変更（ダブルクリックで元に戻す・←→キーでも操作できます）"></div>
-    <div class="dcol" id="colR">
     <div class="quad" id="q2"><div class="tabs" role="tablist">
       <button type="button" role="tab" data-tab="sched">🗓 スケジュール</button>
       <button type="button" role="tab" data-tab="rsv">⏰ 予約テロップ</button>
@@ -692,7 +678,22 @@
       </section>
       </div>
     </div></div>
-    <div class="split h" id="splitHR" tabindex="0" role="separator" aria-orientation="horizontal" title="ドラッグで右側の上下の高さを変更（ダブルクリックで元に戻す・↑↓キーでも操作できます）"></div>
+    <div class="quad" id="q3"><div class="tabs" role="tablist">
+      <button type="button" role="tab" data-tab="lib">🖼 コンテンツ</button>
+      <button type="button" class="qmax" title="この枠を大きく表示／元に戻す">⤢</button></div><div class="qbody">
+      <div class="pane" id="pane-lib" hidden>
+        <section id="libSec">
+          <div class="head">
+            <div>
+              <h2>画像・動画（ライブラリ）<span class="sub" id="libDevName"></span></h2>
+              <p class="sub" id="libSummary"></p>
+            </div>
+          </div>
+          <div class="warn" id="libWarn" hidden></div>
+          <div id="libBody"></div>
+        </section>
+      </div>
+    </div></div>
     <div class="quad" id="q4"><div class="tabs" role="tablist">
       <button type="button" role="tab" data-tab="ticker">📣 テロップ</button>
       <button type="button" role="tab" data-tab="voice">🎤 マイク</button>
@@ -741,7 +742,6 @@
       </section>
       </div>
     </div></div>
-    </div>
   </div>
 </div>
 
@@ -1020,25 +1020,28 @@
   }
   // ---- 4 枠の大きさを、境界線のドラッグ（またはキー）で変える
   {
-    const dash = $('#dash'), DEF = { cw: 40, rl: 57, rr: 57 }, LIM = { cw: [20, 80], rl: [20, 80], rr: [20, 80] };
-    const old = store.get('signage-dash', {});
-    const pos = { ...DEF, ...(old.rh ? { rl: old.rh, rr: old.rh } : {}), ...old };
+    // 縦の境界線は上段（cw）と下段（cw2）で別々に、横の境界線（rh）は 1 本で動かす
+    const dash = $('#dash'), DEF = { cw: 40, cw2: 40, rh: 57 }, LIM = { cw: [20, 80], cw2: [20, 80], rh: [20, 80] };
+    const saved = store.get('signage-dash', {});
+    const pos = { ...DEF, ...saved };
+    if (!(saved.cw2 >= 20)) pos.cw2 = pos.cw;   // 以前の版（縦 1 本）で決めた幅を、上段・下段の両方に引き継ぐ
     const apply = () => {
-      dash.style.setProperty('--gc', `minmax(0, ${pos.cw}fr) 12px minmax(0, ${100 - pos.cw}fr)`);
-      dash.style.setProperty('--rl', pos.rl); dash.style.setProperty('--rr', pos.rr);
+      dash.style.setProperty('--cwT', pos.cw);
+      dash.style.setProperty('--cwB', pos.cw2);
+      dash.style.setProperty('--rh', pos.rh);
     };
     const set = (k, v) => { pos[k] = Math.round(Math.min(LIM[k][1], Math.max(LIM[k][0], v)) * 10) / 10; apply(); store.set('signage-dash', pos); };
-    for (const k of Object.keys(DEF)) if (!(pos[k] >= 20 && pos[k] <= 80)) pos[k] = DEF[k];
+    if (!(pos.cw >= 20 && pos.cw2 >= 20 && pos.rh >= 20)) Object.assign(pos, DEF);
     apply();
-    const wire = (el, k, axis, area) => {
+    const wire = (el, k, axis) => {
       el.addEventListener('pointerdown', (e) => {
         e.preventDefault(); el.setPointerCapture(e.pointerId); el.classList.add('drag');
         el._from = [e.clientX, e.clientY];
       });
       el.addEventListener('pointermove', (e) => {
         if (!el.classList.contains('drag') || Math.hypot(e.clientX - el._from[0], e.clientY - el._from[1]) < 4) return;
-        const r = (area ? $(area) : dash).getBoundingClientRect();
-        set(k, axis === 'x' ? (e.clientX - r.left) / r.width * 100 : (e.clientY - r.top) / r.height * 100);
+        const r = dash.getBoundingClientRect();   // 枠の領域は、外側の余白 12px を除いた内側
+        set(k, axis === 'x' ? (e.clientX - r.left - 12) / (r.width - 24) * 100 : (e.clientY - r.top - 12) / (r.height - 24) * 100);
       });
       const end = () => el.classList.remove('drag');
       el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
@@ -1050,8 +1053,8 @@
       });
     };
     wire($('#splitV'), 'cw', 'x');
-    wire($('#splitHL'), 'rl', 'y', '#colL');
-    wire($('#splitHR'), 'rr', 'y', '#colR');
+    wire($('#splitV2'), 'cw2', 'x');
+    wire($('#splitH'), 'rh', 'y');
   }
 
   // ---- 各一覧は、見出しをクリックして閉じられる（使う頻度の低いものは、はじめ閉じておく）
@@ -1083,7 +1086,7 @@
     q.addEventListener('click', (e) => {
       const b = e.target.closest('.tabs button');
       if (!b) return;
-      if (b.classList.contains('qmax')) { q.classList.toggle('max'); q.closest('.dcol').classList.toggle('holdmax', q.classList.contains('max')); $('#dash').classList.toggle('hasmax', q.classList.contains('max')); return; }
+      if (b.classList.contains('qmax')) { q.classList.toggle('max'); $('#dash').classList.toggle('hasmax', q.classList.contains('max')); return; }
       if (b.dataset.tab) showTab(b.dataset.tab);
     });
     const first = $('.tabs button[data-tab]', q).dataset.tab;
