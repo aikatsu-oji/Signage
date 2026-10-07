@@ -626,7 +626,6 @@
             <ul class="log" id="accessList" style="margin:8px 0"></ul>
             <div style="display:flex; flex-direction:column; gap:6px; margin:8px 0">
               <label class="check"><input type="checkbox" id="accessEnabled"> 登録した端末だけ入れるようにする</label>
-              <label class="check"><input type="checkbox" id="accessVpn"> VPN（Tailscale）経由は許可する</label>
             </div>
             <div class="warn" id="accessMismatch" hidden>
               <span id="accessMismatchText"></span>
@@ -634,7 +633,7 @@
             </div>
             <p class="sub" id="accessSkipped" hidden></p>
             <p class="sub">・スマホは Wi-Fi の「プライベート アドレス（ランダム MAC）」を使うことがあります。「この端末を追加」なら、実際に使われている MAC アドレスを登録できます。<br>
-            ・VPN 経由・ルーターを挟んだ先の端末は MAC アドレスを確認できません。<br>
+            ・ルーターを挟んだ先の端末は MAC アドレスを確認できません。<br>
             ・入れなくなったときは、サイネージを動かしている端末側で解除できます（Windows：タスクトレイ／設定画面、Android：端末の設定画面）。</p>
           </div>
         </details>
@@ -1603,7 +1602,7 @@
   const accessDevices = () => [...devices.values()].filter((d) => d.status === 'ok' && d.state?.access?.canResolve);
   /** 基準にする端末（このページの端末が対応していればそれ、なければ最初の対応端末） */
   const accessBase = () => (self.state?.access?.canResolve ? self : accessDevices()[0]);
-  const accessKey = (a) => JSON.stringify([!!a.enabled, !!a.allowVpn, a.devices.map((d) => d.mac + '|' + d.name).sort()]);
+  const accessKey = (a) => JSON.stringify([!!a.enabled, a.devices.map((d) => d.mac + '|' + d.name).sort()]);
 
   function renderAccess() {
     const sec = $('#accessSec');
@@ -1621,11 +1620,10 @@
     const a = base.state.access;
     $('#accessSummary').textContent = a.enabled ? `（制限中・${a.devices.length} 台を許可）` : '（制限なし）';
     const you = a.you || {};
-    $('#accessYouMac').textContent = you.local ? 'この端末自身（常に許可）' : you.vpn ? 'VPN 経由（MAC アドレスなし）' : (you.mac || '確認できません');
+    $('#accessYouMac').textContent = you.local ? 'この端末自身（常に許可）' : (you.mac || '確認できません');
     $('#accessYouIp').textContent = you.ip ? `（${you.ip}）` : '';
     $('#accessAddYou').disabled = !you.mac || a.devices.some((d) => d.mac === you.mac);
     $('#accessEnabled').checked = !!a.enabled;
-    $('#accessVpn').checked = !!a.allowVpn;
     const list = $('#accessList');
     list.replaceChildren();
     if (!a.devices.length) {
@@ -1661,7 +1659,7 @@
     if (!base) return;
     const cur = base.state.access;
     const body = {
-      enabled: cur.enabled, allowVpn: cur.allowVpn, devices: cur.devices, ...patch,
+      enabled: cur.enabled, devices: cur.devices, ...patch,
     };
     try {
       base.state.access = await post(base, '/api/access', body);
@@ -1674,7 +1672,7 @@
     const fails = [];
     await Promise.all(accessDevices().filter((d) => d !== base).map(async (d) => {
       try {
-        d.state.access = await post(d, '/api/access', { enabled: fixed.enabled, allowVpn: fixed.allowVpn, devices: fixed.devices });
+        d.state.access = await post(d, '/api/access', { enabled: fixed.enabled, devices: fixed.devices });
       } catch (e) { fails.push(`${d.name}（${e.message}）`); }
     }));
     renderAccess();
@@ -1695,7 +1693,6 @@
     if (accessBase().state.access.devices.some((d) => d.mac.replace(/:/g, '') === norm)) { $('#accessMac').value = ''; $('#accessMacName').value = ''; }
   });
   $('#accessEnabled').addEventListener('change', (e) => saveAccess({ enabled: e.target.checked }));
-  $('#accessVpn').addEventListener('change', (e) => saveAccess({ allowVpn: e.target.checked }));
   $('#accessSync').addEventListener('click', () => saveAccess({}));
 
   // ------------------------------------------------------------ 接続の診断（「応答なし」のとき）

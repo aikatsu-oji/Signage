@@ -202,11 +202,6 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("macLock", false)
         set(v) = sp.edit().putBoolean("macLock", v).apply()
 
-    /** 制限中でも VPN（Tailscale）経由は許可するか */
-    var allowVpn: Boolean
-        get() = sp.getBoolean("allowVpn", true)
-        set(v) = sp.edit().putBoolean("allowVpn", v).apply()
-
     var allowedMacs: List<MacAccess.Device>
         get() = MacAccess.fromJson(sp.getString("allowedMacs", null))
         set(v) = sp.edit().putString("allowedMacs", MacAccess.toJson(v).toString()).apply()

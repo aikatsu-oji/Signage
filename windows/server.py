@@ -41,7 +41,7 @@ mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
 LOCAL_PORT = 18080  # HTTPS のとき、この PC 自身が使う HTTP のポート
-VERSION = "1.17.1"
+VERSION = "1.17.2"
 
 
 def resource_dir() -> Path:
@@ -301,9 +301,9 @@ class Server:
     def access_info(self, addr):
         s = self.store
         return {
-            "enabled": bool(s.get("macLock")), "allowVpn": bool(s.get("allowVpn")),
+            "enabled": bool(s.get("macLock")),
             "devices": list(s.get("allowedMacs") or []), "canResolve": True,
-            "you": {"ip": addr, "mac": devices.lookup_mac(addr), "vpn": devices.is_vpn(addr),
+            "you": {"ip": addr, "mac": devices.lookup_mac(addr),
                     "local": devices.is_loopback(addr)},
         }
 
@@ -315,11 +315,10 @@ class Server:
         except ValueError as e:
             raise HttpError(400, str(e))
         lock = bool(j["enabled"]) if "enabled" in j else bool(s.get("macLock"))
-        vpn = bool(j["allowVpn"]) if "allowVpn" in j else bool(s.get("allowVpn"))
-        why = devices.check_update(lock, devs, vpn, addr, devices.lookup_mac(addr))
+        why = devices.check_update(lock, devs, addr, devices.lookup_mac(addr))
         if why:
             raise HttpError(400, why)
-        s.update({"macLock": lock, "allowVpn": vpn, "allowedMacs": devs})
+        s.update({"macLock": lock, "allowedMacs": devs})
         return self.access_info(addr)
 
     def reset_access(self):
@@ -552,7 +551,7 @@ class Server:
                     return
                 devs = s.get("allowedMacs") or []
                 mac = None if devices.is_loopback(client) else devices.lookup_mac(client)
-                why = devices.gate(True, devs, bool(s.get("allowVpn")), client, mac)
+                why = devices.gate(True, devs, client, mac)
                 if why:
                     raise HttpError(403, why)
 

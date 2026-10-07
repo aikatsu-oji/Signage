@@ -1,7 +1,7 @@
 """操作できる端末の制限（MAC アドレス）。
 
 接続元の MAC アドレスは、同じネットワーク内（ルーターを挟まない）なら ARP テーブルから分かる。
-VPN（Tailscale など）経由や、ルーターを挟んだ先の端末は MAC アドレスを確認できない。
+ルーターを挟んだ先の端末は MAC アドレスを確認できない。
 Windows 専用の処理は lookup_mac の中だけにして、ほかは単体でテストできるようにしてある。
 """
 import ipaddress
@@ -60,18 +60,6 @@ def is_loopback(addr):
     return bool(ip and ip.is_loopback)
 
 
-_TAILSCALE_V4 = ipaddress.ip_network("100.64.0.0/10")
-_TAILSCALE_V6 = ipaddress.ip_network("fd7a:115c:a1e0::/48")
-
-
-def is_vpn(addr):
-    """Tailscale などの VPN 経由のアドレスか（MAC アドレスを確認できない）"""
-    ip = _ip(addr)
-    if not ip:
-        return False
-    return ip in (_TAILSCALE_V4 if ip.version == 4 else _TAILSCALE_V6)
-
-
 def parse_arp(text):
     """`arp -a`（Windows）と /proc/net/arp（Linux）の出力から {IPv4: MAC} を作る"""
     table = {}
@@ -102,7 +90,7 @@ def _send_arp(ip):
 def lookup_mac(addr):
     """接続元 IP の MAC アドレス。確認できなければ None"""
     ip = _ip(addr)
-    if not ip or ip.version != 4 or ip.is_loopback or is_vpn(addr):
+    if not ip or ip.version != 4 or ip.is_loopback:
         return None
     key = str(ip)
     now = time.time()
@@ -129,13 +117,11 @@ def lookup_mac(addr):
     return mac
 
 
-def gate(lock, devices, allow_vpn, addr, mac):
+def gate(lock, devices, addr, mac):
     """この接続元が操作してよいか。許可なら ""、だめなら理由。
     制限が OFF、または登録が 0 台なら誰でも許可（初期状態）。この PC 自身（ループバック）は常に許可。"""
     if not lock or not devices or is_loopback(addr):
         return ""
-    if is_vpn(addr):
-        return "" if allow_vpn else "VPN 経由の操作は許可されていません"
     if not mac:
         return "この端末の MAC アドレスを確認できないため、操作できません"
     if mac in {d["mac"] for d in devices}:
@@ -143,12 +129,12 @@ def gate(lock, devices, allow_vpn, addr, mac):
     return f"この端末（MAC アドレス {mac}）は、操作が許可されていません"
 
 
-def check_update(lock, devices, allow_vpn, addr, mac):
+def check_update(lock, devices, addr, mac):
     """制限を ON にする（または一覧を変える）とき、操作中の端末自身が締め出されないか確認する。
     問題なければ ""、だめなら理由"""
     if not lock:
         return ""
     if not devices:
         return "制限を ON にするには、操作を許可する端末を 1 台以上登録してください"
-    return gate(lock, devices, allow_vpn, addr, mac).replace(
+    return gate(lock, devices, addr, mac).replace(
         "は、操作が許可されていません", "が登録されていません。このままだと、いま操作しているこの端末が操作できなくなります")
