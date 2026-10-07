@@ -120,6 +120,30 @@
   .week .blk.per { border-style: dashed; }
   .week .tk { position: absolute; left: 2px; right: 2px; height: 0; border-top: 1px dotted var(--sub); font-size: 10px; color: var(--sub); pointer-events: none; }
   .week .tk span { position: absolute; right: 0; top: -9px; background: var(--bg, #fff); padding: 0 2px; }
+  #weekHead { grid-template-columns: repeat(var(--cols, 7), minmax(0, 1fr)); }
+  #weekHead > div { cursor: pointer; position: relative; padding-bottom: 6px; }
+  #weekHead > div.picked { box-shadow: inset 0 -3px 0 var(--brand); background: var(--card); color: var(--brand); }
+  #weekHead > div.today.picked { background: var(--brand); color: #fff; box-shadow: inset 0 -3px 0 #fff; }
+  #weekHead .dotm { position: absolute; left: 0; right: 0; bottom: -1px; font-size: 7px; font-style: normal; color: var(--brand); line-height: 8px; }
+  #weekHead .today .dotm { color: #fff; }
+  .dayview { padding: 6px; display: flex; flex-direction: column; gap: 6px; }
+  .trow { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 6px; }
+  .trow.cur { border-color: #c62828; box-shadow: 0 0 0 1px #c62828 inset; }
+  .trow.over { background: var(--brand-weak); }
+  .trow.new { border-style: dashed; }
+  .tlab { display: flex; flex-direction: column; justify-content: center; font-size: 13px; line-height: 1.3; }
+  .tlab span { color: var(--sub); } .tlab em { color: #c62828; font-style: normal; font-size: 11px; font-weight: bold; }
+  .tcells { display: flex; flex-wrap: wrap; gap: 6px; align-items: stretch; }
+  .tcard { width: 112px; cursor: pointer; border: 1px solid var(--line); border-radius: 8px; padding: 3px; font-size: 12px; background: var(--card); }
+  .tcard:hover { border-color: var(--brand); }
+  .tcard.ex { border: 2px solid #c62828; padding: 2px; }
+  .tcard.inactive { opacity: .5; }
+  .tcard .thumb { width: 100%; height: 62px; border-radius: 5px; }
+  .tcard .tn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+  .tadd { width: 112px; min-height: 84px; border: 2px dashed var(--line); background: transparent; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; color: var(--sub); padding: 4px; }
+  .tadd b { font-size: 20px; line-height: 1; }
+  .tadd:hover { border-color: var(--brand); color: var(--brand); }
+  .trow.new .tadd { min-height: 44px; width: auto; flex-direction: row; gap: 8px; padding: 6px 14px; }
   .always { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; align-items: center; }
   .blk .tip { position: absolute; right: 2px; bottom: 1px; background: #000b; color: #fff; border-radius: 4px; padding: 0 4px; font-size: 10px; pointer-events: none; }
   .blk.dragging { opacity: .85; box-shadow: 0 2px 8px #0006; z-index: 5; cursor: grabbing; }
@@ -2029,7 +2053,7 @@
   // ------------------------------------------------------------ スケジュール（週間表）
 
   const HP = 22;                     // 1 時間の高さ（px）
-  const sched = { zone: store.get('signage-sched-zone', null), span: Number(store.get('signage-sched-span', 7)) || 7, offset: 0 };   // span：表示する日数、offset：今日から何日ずらすか
+  const sched = { sel: null, zone: store.get('signage-sched-zone', null), span: Number(store.get('signage-sched-span', 7)) || 7, offset: 0 };   // span：表示する日数、offset：今日から何日ずらすか
 
   const toMin = (t) => (t ? Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5)) : null);
   const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
@@ -2115,8 +2139,8 @@
             <span class="seg" id="schSpan"></span>
             <span class="sub" id="schRange"></span>
           </div>
-          <div class="week" style="--hp:${HP}px"><div class="wh" id="weekHead"></div>
-            <div class="wb" id="weekBody"></div></div>
+          <div class="week"><div class="wh" id="weekHead"></div>
+            <div class="dayview" id="dayView"></div></div>
           <h3 style="margin:16px 0 4px">この区画の再生順（上から順に流れます）</h3>
           <div class="nowinfo" id="nowInfo"></div>
           <ul class="playlist" id="plList"></ul>
@@ -2151,12 +2175,17 @@
     const dates = Array.from({ length: sched.span }, (_, i) => addDays(first, i));
     const REL = { 0: '今日', 1: '明日', 2: '明後日' };
     $('#weekHead').style.setProperty('--cols', dates.length);
-    $('#weekBody').style.setProperty('--cols', dates.length);
-    $('#weekHead').innerHTML = '<div></div>' + dates.map((d, i) => {
+    const selIso = sched.sel && dates.some((d) => isoDate(d) === sched.sel) ? sched.sel : isoDate(dates.find((d) => isoDate(d) === isoDate(today)) || dates[0]);
+    $('#weekHead').innerHTML = dates.map((d, i) => {
       const rel = REL[sched.offset + i];
       const cls = d.getDay() === 6 ? 'sat' : d.getDay() === 0 ? 'sun' : '';
-      return `<div class="${cls} ${sched.offset + i === 0 ? 'today' : ''}">${rel ? `<small>${rel}</small>` : '<small>&nbsp;</small>'}${d.getMonth() + 1}/${d.getDate()}(${RULE_DAYS[d.getDay()]})</div>`;
+      const has = plist.some((p) => bandsForDate(p, d).length);
+      return `<div class="${cls} ${sched.offset + i === 0 ? 'today' : ''} ${isoDate(d) === selIso ? 'picked' : ''}" data-iso="${isoDate(d)}" role="button" tabindex="0" title="この日の予定を表示">${rel ? `<small>${rel}</small>` : '<small>&nbsp;</small>'}${d.getMonth() + 1}/${d.getDate()}(${RULE_DAYS[d.getDay()]})<i class="dotm">${has ? '●' : ''}</i></div>`;
     }).join('');
+    $('#weekHead').querySelectorAll('[data-iso]').forEach((el) => {
+      const go = () => { sched.sel = el.dataset.iso; renderSchedule(dev); };
+      el.addEventListener('click', go); el.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+    });
     $('#schRange').textContent = `${isoDate(dates[0]).replace(/-/g, '/')} 〜 ${isoDate(dates[dates.length - 1]).replace(/-/g, '/')}（端末の日付）`;
     $('#schPrev').addEventListener('click', () => { sched.offset -= sched.span; renderSchedule(dev); });
     $('#schNext').addEventListener('click', () => { sched.offset += sched.span; renderSchedule(dev); });
@@ -2164,45 +2193,74 @@
     $('#schSpan').innerHTML = [3, 7, 14].map((n) => `<button type="button" class="small" data-n="${n}" aria-pressed="${sched.span === n}">${n}日</button>`).join('');
     $('#schSpan').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { sched.span = Number(b.dataset.n); store.set('signage-sched-span', sched.span); renderSchedule(dev); }));
 
-    const wb = $('#weekBody');
-    const axis = document.createElement('div'); axis.className = 'axis'; axis.style.height = `${HP * 24}px`;
-    for (let h = 0; h < 24; h += 2) { const sp = document.createElement('span'); sp.style.top = `${h * HP}px`; sp.textContent = `${h}時`; axis.append(sp); }
-    wb.append(axis);
-    const cols = dates.map((d) => {
-      const c = document.createElement('div'); c.className = 'dcol'; c.style.height = `${HP * 24}px`; c.dataset.date = isoDate(d); c.dataset.day = d.getDay(); wb.append(c); return c;
-    });
-    dates.forEach((d, i) => {
-      const bands = [];
-      for (const p of plist) for (const b of bandsForDate(p, d)) bands.push({ p, ...b });
-      layBands(dev, cols[i], bands);
-      // 予約テロップの時刻（参考表示）
-      for (const sc of dev.state.ticker?.schedules || []) {
-        if (!sc.enabled || !sc.time) continue;
-        if (sc.days?.length && !sc.days.includes(d.getDay())) continue;
-        const tk = document.createElement('div'); tk.className = 'tk'; tk.style.top = `${toMin(sc.time) / 60 * HP}px`;
-        tk.innerHTML = `<span>🔔${esc(sc.time)}</span>`; tk.title = `予約テロップ ${sc.time}：${sc.message || ''}`;
-        cols[i].append(tk);
+    // 選んだ日の、登録されている時間の範囲（縦）と、その時間に流れる画像のサムネイル（横）
+    const selDate = dates.find((d) => isoDate(d) === selIso);
+    const dv = $('#dayView');
+    const bands = [];
+    for (const p of plist) for (const bd of bandsForDate(p, selDate)) bands.push({ p, ...bd });
+    const pts = [...new Set(bands.flatMap((x) => [x.s, x.e]))].sort((x, y) => x - y);
+    const segs = [];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const s0 = pts[i], e0 = pts[i + 1];
+      const ps = plist.filter((p) => bands.some((x) => x.p === p && x.s <= s0 && x.e >= e0));
+      if (!ps.length) continue;
+      const key = ps.map((p) => p.id).join(',');
+      const last = segs[segs.length - 1];
+      if (last && last.e === s0 && last.key === key) last.e = e0; else segs.push({ s: s0, e: e0, ps, key });
+    }
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    const isToday = selIso === isoDate(today);
+    const dow = selDate.getDay();
+    const dropAdd = (name, st, en) => openPlacementDialog({ dev, mode: 'add', name, zone, date: selIso, slot: { days: [dow], start: hhmm(st), end: hhmm(Math.min(en, 1439)) } });
+    const wire = (el, st, en) => {
+      el.addEventListener('dragover', (e) => { if (dragName) { e.preventDefault(); el.classList.add('over'); } });
+      el.addEventListener('dragleave', () => el.classList.remove('over'));
+      el.addEventListener('drop', (e) => { e.preventDefault(); el.classList.remove('over'); if (!dragName) return; const n = dragName; dragName = null; dropAdd(n, st, en); });
+    };
+    const addCard = (st, en, label) => {
+      const a = document.createElement('button');
+      a.type = 'button'; a.className = 'tadd'; a.innerHTML = `<b>＋</b><span>${label}</span>`;
+      a.title = 'ライブラリの画像・動画をここへドラッグ、またはクリックして選ぶ';
+      a.addEventListener('click', () => openPicker(dev, { zone, date: selIso, day: dow, start: st, end: Math.min(en, 1439) }));
+      return a;
+    };
+    for (const sg of segs) {
+      const row = document.createElement('div');
+      const cur = isToday && nowMin >= sg.s && nowMin < sg.e;
+      row.className = 'trow' + (cur ? ' cur' : '');
+      const lab = document.createElement('div'); lab.className = 'tlab';
+      lab.innerHTML = `<b>${hhmm(sg.s)}</b><span>〜 ${sg.e >= 1440 ? '24:00' : hhmm(sg.e)}</span>${cur ? '<em>いま</em>' : ''}`;
+      const cells = document.createElement('div'); cells.className = 'tcells';
+      for (const p of sg.ps) {
+        const f = dev.state.library.find((x) => x.name === p.name);
+        const c = document.createElement('div');
+        const blocked = cur && stat.get(p.id) === 'blocked';
+        c.className = 'tcard' + (p.exclusive ? ' ex' : '') + (blocked ? ' inactive' : '');
+        c.innerHTML = '<div class="thumb"><div class="timg"></div></div><div class="tn"></div>';
+        $('.tn', c).textContent = (p.exclusive ? '★ ' : '') + p.name;
+        const th = $('.thumb', c); th.dataset.zone = -1; th.dataset.name = p.name; th.dataset.dev = dev.key;
+        if (f?.video) { th.dataset.video = '1'; th.dataset.size = f.size || 0; th.classList.add('vid'); }
+        c.title = `${p.name}：${describeRule(p.rule)}${blocked ? '（専用の配置が有効なため、いまは流れません）' : ''}\nクリックで編集`;
+        c.addEventListener('click', () => openPlacementDialog({ dev, mode: 'edit', placement: p }));
+        cells.append(c);
       }
-      if (sched.offset + i === 0) {   // いまの時刻の線
-        const nl = document.createElement('div'); nl.className = 'now'; nl.style.top = `${(now.getHours() * 60 + now.getMinutes()) / 60 * HP}px`; nl.title = '端末のいまの時刻';
-        cols[i].append(nl);
-      }
-    });
-    // ドロップで配置（ドロップした位置の時刻から 1 時間。毎週くりかえす条件で、編集画面を開く）
-    cols.forEach((c) => {
-      c.addEventListener('pointerdown', (ev) => startRangeSelect(ev, dev, c, zone));
-      c.addEventListener('dragover', (e) => { if (dragName) { e.preventDefault(); c.classList.add('over'); } });
-      c.addEventListener('dragleave', () => c.classList.remove('over'));
-      c.addEventListener('drop', (e) => {
-        e.preventDefault(); c.classList.remove('over');
-        if (!dragName) return;
-        const y = e.clientY - c.getBoundingClientRect().top;
-        const start = Math.min(23 * 60, Math.floor(y / HP * 2) * 30);   // 30 分きざみ
-        openPlacementDialog({ dev, mode: 'add', name: dragName, zone, date: c.dataset.date,
-          slot: { days: [Number(c.dataset.day)], start: hhmm(start), end: hhmm(Math.min(start + 60, 1439)) } });
-        dragName = null;
-      });
-    });
+      cells.append(addCard(sg.s, sg.e, 'この時間に追加'));
+      row.append(lab, cells);
+      wire(row, sg.s, sg.e);
+      dv.append(row);
+    }
+    if (!segs.length) {
+      const e = document.createElement('p'); e.className = 'empty';
+      e.textContent = `${selDate.getMonth() + 1}/${selDate.getDate()} に時間を決めた配置はありません。` + (plist.some((p) => !slotsOf(p.rule).length) ? '「常時」の配置が流れます。' : '');
+      dv.append(e);
+    }
+    const st0 = Math.min(23 * 60, Math.ceil((isToday ? nowMin : 9 * 60) / 60) * 60);
+    const nr = document.createElement('div'); nr.className = 'trow new';
+    const nl = document.createElement('div'); nl.className = 'tlab'; nl.innerHTML = '<b>新しい</b><span>時間帯</span>';
+    const nc = document.createElement('div'); nc.className = 'tcells';
+    nc.append(addCard(st0, st0 + 60, `${hhmm(st0)}〜 に追加（ここへドラッグでも）`));
+    nr.append(nl, nc); wire(nr, st0, st0 + 60);
+    dv.append(nr);
 
     // ライブラリ（ドラッグ元）
     const pal = $('#palList');
