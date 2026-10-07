@@ -49,6 +49,15 @@
     #dash.hasmax .split { display: none; }
   }
   #dash.hasmax .quad:not(.max) { display: none; }
+  #hdrDev { position: relative; }
+  #hdrDevBtn { display: inline-flex; align-items: center; gap: 4px; }
+  #devMenu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 260px; max-height: 60vh; overflow: auto; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 24px #0003; padding: 4px; display: flex; flex-direction: column; }
+  #devMenu button { display: grid; grid-template-columns: auto 1fr auto; gap: 6px; align-items: center; text-align: left; border: 0; border-radius: 8px; padding: 8px 10px; background: transparent; }
+  #devMenu button:hover, #devMenu button.on { background: var(--brand-weak); }
+  .sechead { cursor: pointer; user-select: none; }
+  .sechead::before { content: '▾'; display: inline-block; width: 1.1em; color: var(--sub); }
+  .sec-closed .sechead::before { content: '▸'; }
+  .sec-closed > *:not(.sec-headwrap) { display: none !important; }
   .hdrDev { font-size: 13px; color: var(--sub); display: inline-flex; align-items: center; gap: 4px; }
   .layout { max-width: 1280px; margin: 0 auto; padding: 16px; display: grid; grid-template-columns: 320px 1fr; gap: 16px; align-items: start; }
   @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
@@ -440,8 +449,7 @@
                 <button type="button" class="small primary" id="frApply">ぴったり合わせる</button>
                 <span class="sub" id="frNote"></span>
               </div>
-              <label class="field" id="frFine" style="margin-top:6px"><span>比率を数字で指定（1% 刻み）</span>
-                <span class="dlgrow"><input type="number" id="frPct" min="10" max="90" step="1" style="width:90px"> <span class="sub" id="frPctLabel"></span></span></label>
+              
             </div>
           </div>
           <input type="hidden" name="layout" form="settings">
@@ -1034,6 +1042,29 @@
     wire($('#splitH'), 'rh', 'y');
   }
 
+  // ---- 各一覧は、見出しをクリックして閉じられる（使う頻度の低いものは、はじめ閉じておく）
+  {
+    const CLOSED = new Set(['settingsSec', 'apkSec', 'groupSec', '最近の出来事']);
+    const saved = store.get('signage-secs', {});
+    for (const sec of $$('.quad section')) {
+      if (sec.id === 'deviceHead') continue;
+      const h = $('h2', sec);
+      if (!h || h.closest('summary')) continue;   // 見出しが <details> の中のものは、もともと開け閉めできる
+      const wrap = [...sec.children].find((c) => c === h || c.contains(h));
+      if (!wrap) continue;
+      const key = sec.id || h.textContent.trim().slice(0, 20);
+      wrap.classList.add('sec-headwrap'); h.classList.add('sechead');
+      h.tabIndex = 0; h.setAttribute('role', 'button');
+      const set = (closed) => { sec.classList.toggle('sec-closed', closed); h.setAttribute('aria-expanded', String(!closed)); };
+      set(key in saved ? !!saved[key] : CLOSED.has(key));
+      const toggle = () => { const c = !sec.classList.contains('sec-closed'); set(c); saved[key] = c; store.set('signage-secs', saved); };
+      h.addEventListener('click', toggle);
+      h.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+    }
+    const ld = $('#layoutDetails'); if (ld && !('layout' in saved)) ld.open = false;   // 画面分割は、はじめ閉じておく
+    ld?.addEventListener('toggle', () => { saved.layout = !ld.open; store.set('signage-secs', saved); });
+    if (ld && 'layout' in saved) ld.open = !saved.layout;
+  }
   // ライブラリをドラッグ中に、別のタブの上へ持っていくと、そのタブに切り替える
   for (const b of $$('.quad .tabs button[data-tab]')) b.addEventListener('dragenter', () => { if (typeof dragName === 'string' && dragName) showTab(b.dataset.tab); });
   for (const q of $$('.quad')) {
@@ -1391,6 +1422,50 @@
     renderAccess();
   }
 
+  /** ヘッダーの「操作中の端末」ボタン。押すと端末の一覧が開き、選んだ端末に切り替える */
+  function renderHdrDev() {
+    const sd = selected();
+    const box = $('#hdrDev');
+    if (!sd.name) { box.replaceChildren(); return; }
+    let btn = $('#hdrDevBtn');
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.type = 'button'; btn.id = 'hdrDevBtn'; btn.className = 'small'; btn.setAttribute('aria-haspopup', 'listbox');
+      btn.title = '操作する端末を切り替える';
+      btn.addEventListener('click', (e) => { e.stopPropagation(); toggleDevMenu(); });
+      box.replaceChildren(btn);
+    }
+    btn.innerHTML = `<span class="dot ${sd.status || ''}"></span>操作中：<b></b>${sd.mon?.disk ? `<span class="sub">　空き ${fmtSize(sd.mon.disk.free)}</span>` : ''} ▾`;
+    $('b', btn).textContent = sd.name;
+    if ($('#devMenu')) fillDevMenu();
+  }
+  function fillDevMenu() {
+    const m = $('#devMenu');
+    m.replaceChildren();
+    const list = [...devices.values()].sort((a, b) => ((b.self ? 1 : 0) - (a.self ? 1 : 0)) || String(a.name).localeCompare(String(b.name), 'ja'));
+    for (const d of list) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.setAttribute('role', 'option'); b.setAttribute('aria-selected', String(d.key === selectedKey));
+      b.className = d.key === selectedKey ? 'on' : '';
+      b.innerHTML = `<span class="dot ${d.status || ''}"></span><span class="nm"></span><span class="sub"></span>`;
+      $('.nm', b).textContent = d.name + (d.self ? '（この端末）' : '');
+      $('.sub', b).textContent = {
+        ok: `v${d.version || ''}`, pin: 'PINが違います', offline: '応答なし', checking: '確認中…',
+      }[d.status] || '';
+      b.addEventListener('click', () => { closeDevMenu(); select(d.key); });
+      m.append(b);
+    }
+  }
+  function closeDevMenu() { $('#devMenu')?.remove(); $('#hdrDevBtn')?.setAttribute('aria-expanded', 'false'); }
+  function toggleDevMenu() {
+    if ($('#devMenu')) { closeDevMenu(); return; }
+    const m = document.createElement('div'); m.id = 'devMenu'; m.setAttribute('role', 'listbox');
+    $('#hdrDev').append(m); fillDevMenu();
+    $('#hdrDevBtn').setAttribute('aria-expanded', 'true');
+  }
+  document.addEventListener('click', (e) => { if (!e.target.closest('#hdrDev')) closeDevMenu(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDevMenu(); });
+
   function saveChecked() { store.set('signage-checked', [...checked]); }
 
   $('#checkAll').addEventListener('change', (e) => {
@@ -1445,7 +1520,7 @@
   // ------------------------------------------------------------ 選択中の端末の詳細
 
   function renderDetail() {
-    { const sd = selected(); $('#hdrDev').innerHTML = sd.name ? `<span class="dot ${sd.status || ''}"></span>操作中：<b></b>` : ''; if (sd.name) $('#hdrDev b').textContent = sd.name + (sd.mon?.disk ? `　空き ${fmtSize(sd.mon.disk.free)}` : ''); }
+    renderHdrDev();
     $('#tabDevName').textContent = selected().name ? `：${selected().name}` : '';
     const dev = selected();
     $('#devTitle').textContent = dev.name + (dev.self ? '（この端末）' : '');
@@ -2881,19 +2956,12 @@
     const layout = fval('layout');
     const zones = layout === 1 || layout === 2 ? [0, 1] : layout >= 3 ? [0, 1, 2] : [];
     $('#fitRatioRow').hidden = !zones.length;
-    $('#frFine').hidden = !(layout >= 1 && layout <= 3);
     if (!zones.length) return;
     const portrait = screenDims(selected()).portrait;
     const names = zoneLabels(layout, portrait);
     const prev = $('#frZone').value;
     $('#frZone').innerHTML = zones.map((i) => `<option value="${i}">区画${i + 1}（${names[i]}）を</option>`).join('');
     if (zones.map(String).includes(prev)) $('#frZone').value = prev;
-    if (layout >= 4) return;
-    const field = layout === 3 ? 'mainPercent' : 'splitPercent';
-    const [lo, hi] = LIMITS[field];
-    $('#frPct').min = lo; $('#frPct').max = hi;
-    if (document.activeElement !== $('#frPct')) $('#frPct').value = fval(field);
-    $('#frPctLabel').textContent = layout === 3 ? `メイン ${lo}〜${hi}%` : `区画1 ${lo}〜${hi}%`;
   }
 
   $('#frApply').addEventListener('click', () => {
@@ -2916,18 +2984,6 @@
     $('#frNote').textContent = want < lo || want > hi
       ? `範囲（${lo}〜${hi}%）の端までしか動かせず、${got} になります`
       : `${pct}% に設定しました（区画${zone + 1}は ${got}、${$('#frRatio').value} との差 ${err.toFixed(1)}%）。「保存」で反映されます`;
-  });
-  $('#frPct').addEventListener('input', () => {
-    const layout = fval('layout');
-    const field = layout === 3 ? 'mainPercent' : 'splitPercent';
-    const [lo, hi] = LIMITS[field];
-    const v = Math.round(Number($('#frPct').value));
-    if (!(v >= lo && v <= hi)) return;
-    layoutForm().elements[field].value = String(v);
-    const keep = $('#frPct').value;
-    renderLayoutCard();
-    $('#frPct').value = keep;
-    refreshZones();
   });
   $('#frRatio').addEventListener('change', () => { $('#frNote').textContent = ''; });
 
