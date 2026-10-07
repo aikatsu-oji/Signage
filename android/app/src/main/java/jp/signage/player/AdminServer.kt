@@ -352,7 +352,7 @@ object AdminServer {
         }
         // 操作できる端末の制限（MAC アドレス）。この端末が MAC アドレスを調べられないときは、締め出さないよう制限しない
         if (prefs.macLock && MacAccess.canResolve()) {
-            val why = MacAccess.gate(true, prefs.allowedMacs, prefs.allowVpn, from, MacAccess.lookup(from))
+            val why = MacAccess.gate(true, prefs.allowedMacs, from, MacAccess.lookup(from))
             if (why.isNotEmpty()) throw HttpError(403, why)
         }
         checkPin(from, req.headers["x-pin"], req.headers["x-group-code"])
@@ -601,10 +601,10 @@ object AdminServer {
 
     private fun accessInfo(prefs: Prefs, from: InetAddress): JSONObject {
         val you = JSONObject().put("ip", from.hostAddress?.substringBefore('%'))
-            .put("vpn", MacAccess.isVpn(from)).put("local", MacAccess.isLoopback(from))
+            .put("local", MacAccess.isLoopback(from))
         you.put("mac", MacAccess.lookup(from) ?: JSONObject.NULL)
         return JSONObject()
-            .put("enabled", prefs.macLock).put("allowVpn", prefs.allowVpn)
+            .put("enabled", prefs.macLock)
             .put("devices", MacAccess.toJson(prefs.allowedMacs))
             .put("canResolve", MacAccess.canResolve()).put("you", you)
     }
@@ -619,11 +619,9 @@ object AdminServer {
             throw HttpError(400, e.message ?: "端末の一覧が正しくありません")
         }
         val lock = if (j.has("enabled")) j.getBoolean("enabled") else prefs.macLock
-        val vpn = if (j.has("allowVpn")) j.getBoolean("allowVpn") else prefs.allowVpn
-        val why = MacAccess.checkUpdate(lock, devs, vpn, from, MacAccess.lookup(from))
+        val why = MacAccess.checkUpdate(lock, devs, from, MacAccess.lookup(from))
         if (why.isNotEmpty()) throw HttpError(400, why)
         prefs.macLock = lock
-        prefs.allowVpn = vpn
         prefs.allowedMacs = devs
         return accessInfo(prefs, from)
     }

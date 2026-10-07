@@ -108,7 +108,6 @@ DEFAULTS = {
     "tickerSchedules": [],
     "groupCode": "",  # グループ（組織）コード。空ならグループなし
     "macLock": False,  # 操作できる端末を MAC アドレスで制限するか（初期状態は制限なし）
-    "allowVpn": True,  # 制限中でも VPN（Tailscale）経由は許可するか（VPN では MAC アドレスを確認できない）
     "allowedMacs": [],  # 操作を許可する端末 [{mac, name}]
     "fileRotations": {},  # 画像・動画ごとの表示の回転（キーは「区画|ファイル名」、値は 90・180・270）
     "zoneUrls": ["", "", ""],  # Web ページ・RSS の区画の URL

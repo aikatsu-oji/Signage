@@ -60,17 +60,6 @@ object MacAccess {
 
     fun isLoopback(a: InetAddress): Boolean = a.isLoopbackAddress || v4(a)?.isLoopbackAddress == true
 
-    /** Tailscale などの VPN（100.64.0.0/10、fd7a:115c:a1e0::/48）。MAC アドレスは確認できない */
-    fun isVpn(a: InetAddress): Boolean {
-        v4(a)?.let { val b = it.address; return (b[0].toInt() and 0xFF) == 100 && (b[1].toInt() and 0xC0) == 64 }
-        if (a is Inet6Address) {
-            val b = a.address
-            return (b[0].toInt() and 0xFF) == 0xFD && (b[1].toInt() and 0xFF) == 0x7A &&
-                (b[2].toInt() and 0xFF) == 0x11 && (b[3].toInt() and 0x5C) == 0x5C
-        }
-        return false
-    }
-
     /** /proc/net/arp の内容から {IPv4: MAC} を作る */
     fun parseArp(text: String): Map<String, String> {
         val table = HashMap<String, String>()
@@ -89,24 +78,23 @@ object MacAccess {
 
     fun lookup(a: InetAddress): String? {
         val ip = v4(a) ?: return null
-        if (ip.isLoopbackAddress || isVpn(a)) return null
+        if (ip.isLoopbackAddress) return null
         return runCatching { parseArp(File(ARP_FILE).readText())[ip.hostAddress] }.getOrNull()
     }
 
     /** 許可なら ""、だめなら理由。制限が OFF・登録が 0 台なら誰でも許可。この端末自身は常に許可 */
-    fun gate(lock: Boolean, devices: List<Device>, allowVpn: Boolean, from: InetAddress, mac: String?): String {
+    fun gate(lock: Boolean, devices: List<Device>, from: InetAddress, mac: String?): String {
         if (!lock || devices.isEmpty() || isLoopback(from)) return ""
-        if (isVpn(from)) return if (allowVpn) "" else "VPN 経由の操作は許可されていません"
         if (mac == null) return "この端末の MAC アドレスを確認できないため、操作できません"
         if (devices.any { it.mac == mac }) return ""
         return "この端末（MAC アドレス $mac）は、操作が許可されていません"
     }
 
     /** 制限を ON にする・一覧を変えるとき、操作中の端末自身が締め出されないか。問題なければ "" */
-    fun checkUpdate(lock: Boolean, devices: List<Device>, allowVpn: Boolean, from: InetAddress, mac: String?): String {
+    fun checkUpdate(lock: Boolean, devices: List<Device>, from: InetAddress, mac: String?): String {
         if (!lock) return ""
         if (devices.isEmpty()) return "制限を ON にするには、操作を許可する端末を 1 台以上登録してください"
-        return gate(true, devices, allowVpn, from, mac).replace(
+        return gate(true, devices, from, mac).replace(
             "は、操作が許可されていません",
             "が登録されていません。このままだと、いま操作しているこの端末が操作できなくなります",
         )
