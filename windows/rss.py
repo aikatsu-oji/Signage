@@ -3,6 +3,7 @@ import http.client
 import ipaddress
 import re
 import socket
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from urllib.parse import urlparse
@@ -21,8 +22,17 @@ def check_url(url: str) -> str:
     return ""
 
 
+# この PC 自身の LAN のアドレスを返す関数（server.py が設定する）。自分自身の管理画面を、取得先にさせないため
+own_addresses = lambda: []
+
+
 def _blocked(ip) -> bool:
-    return ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip.is_multicast or ip.is_reserved
+    if ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip.is_multicast or ip.is_reserved:
+        return True
+    try:
+        return str(ip) in set(own_addresses())
+    except Exception:
+        return False
 
 
 def _is_internal(host: str) -> bool:
@@ -78,8 +88,24 @@ class _HTTPSHandler(urllib.request.HTTPSHandler):
         return self.do_open(_HTTPS, req)
 
 
-# 転送（リダイレクト）の先も、同じ接続の関数を通るので、内部のアドレスへは行けない
-_OPENER = urllib.request.build_opener(_HTTPHandler, _HTTPSHandler)
+class _RedirectHandler(urllib.request.HTTPRedirectHandler):
+    """転送（リダイレクト）は http / https の先だけ許す（ftp:// などへ転送して、接続の確認を回避されないように）"""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urlparse(newurl).scheme not in ("http", "https"):
+            raise urllib.error.HTTPError(newurl, code, "http / https 以外へは転送できません", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _build_opener():
+    """http / https だけを扱う。標準の opener に入っている ftp・file・data・プロキシのハンドラーは入れない。
+    転送の先も、同じ接続の関数を通るので、内部のアドレスへは行けない"""
+    o = urllib.request.OpenerDirector()
+    for h in (_HTTPHandler(), _HTTPSHandler(), _RedirectHandler(), urllib.request.HTTPDefaultErrorHandler(), urllib.request.HTTPErrorProcessor()):
+        o.add_handler(h)
+    return o
+
+
+_OPENER = _build_opener()
 
 
 def _text(el):

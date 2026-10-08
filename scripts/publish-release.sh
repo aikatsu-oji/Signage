@@ -53,7 +53,7 @@ SUMS="$(sha256sum release/SHA256SUMS | cut -d' ' -f1)"
 git rm -q release/*.apk release/*.exe release/SHA256SUMS
 # 3 行目は SHA256SUMS の SHA-256。Actions はこれと照合する（main に取り込まれる＝レビューを通った値）
 printf '%s\n%s\n%s\n' "$TAG" "$SRC" "$SUMS" > .github/release-request.txt
-git add -A
+git add release .github/release-request.txt   # 作業ツリーの、関係のないファイル（鍵など）を巻き込まないよう、明示する
 git commit -q -m "Release ${TAG} を公開する（ファイルはコミット ${SRC:0:7}）"
 git push -q origin "$BRANCH"
 echo "公開を依頼しました: ${TAG}。Actions が公開するのは main に取り込まれたあとです（PR を作って main へ取り込んでください）"

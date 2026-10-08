@@ -238,7 +238,16 @@ def parse_time_series(text: str):
     return {"pointName": point.get("pointNameJP", ""), "reportTime": report.isoformat(), "slots": slots, "stale": False}
 
 
+def _code(v) -> str:
+    """気象庁の地域コード（数字のみ）。キャッシュのファイル名と URL に使うので、それ以外は受け付けない"""
+    v = str(v)
+    if not re.fullmatch(r"\d{1,10}", v):
+        raise ValueError("地域コードが正しくありません")
+    return v
+
+
 def get_forecast(office, area_code, hint=None):
+    office = _code(office)
     r = cached(f"forecast_{office}.json", FORECAST_URL.format(office), lambda t: parse_forecast(t, area_code, hint))
     if not r:
         return None
@@ -251,6 +260,7 @@ def get_forecast(office, area_code, hint=None):
 
 
 def get_time_series(area_code):
+    area_code = _code(area_code)
     r = cached(f"timeseries_{area_code}.json", TIME_SERIES_URL.format(area_code), parse_time_series)
     if not r:
         return None

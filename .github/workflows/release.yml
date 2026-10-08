@@ -30,11 +30,16 @@ on:
 permissions:
   contents: write
 
+# 同時に 2 つ公開しない（タグと main の両方で始まったときなど）
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
@@ -48,6 +53,7 @@ jobs:
           IN_REF: ${{ inputs.binaries_ref }}
           IN_SUMS: ${{ inputs.sums_sha256 }}
           SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [ "$EVENT" = "workflow_dispatch" ]; then
@@ -67,6 +73,8 @@ jobs:
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "タグの形式が違います: $TAG"; exit 1; }
           [[ "$REF" =~ ^[0-9a-f]{40}$ ]] || { echo "コミットの SHA（40 桁）で指定してください"; exit 1; }
           [[ "$SUMS" =~ ^[0-9a-f]{64}$ ]] || { echo "SHA256SUMS の SHA-256 が必要です"; exit 1; }
+          # 公開済みの版は、上書きしない（作り直すときは、先に Release を削除する）
+          if gh release view "$TAG" >/dev/null 2>&1; then echo "$TAG は、すでに公開されています。作り直すときは、先に Release を削除してください"; exit 1; fi
           # main に取り込み済みのコミットだけ公開できる
           git merge-base --is-ancestor "$REF" origin/main || { echo "$REF は main に取り込まれていません"; exit 1; }
           if [ "$REF_TYPE" = "tag" ]; then
@@ -76,22 +84,29 @@ jobs:
           echo "ref=$REF" >> "$GITHUB_OUTPUT"
           echo "sums=$SUMS" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ steps.target.outputs.ref }}
 
       - name: チェックサムを確認する
         env:
           SUMS: ${{ steps.target.outputs.sums }}
+          TAG: ${{ steps.target.outputs.tag }}
         run: |
           set -euo pipefail
           cd release
           # SHA256SUMS 自体が、main に入っている値と同じか（ファイルとチェックサムを一緒にすり替えられていないか）
           echo "$SUMS  SHA256SUMS" | sha256sum -c -
           sha256sum -c SHA256SUMS
+          # SHA256SUMS に載っていない apk・exe は、公開しない（検証をすり抜けて、余分なファイルが付かないように）
+          listed="$(awk '{print $2}' SHA256SUMS | sed 's/^\*//' | sort)"
+          present="$(ls -1 ./*.apk ./*.exe 2>/dev/null | sed 's#^\./##' | sort)"
+          [ "$listed" = "$present" ] || { echo "SHA256SUMS の一覧と、apk・exe のファイルが一致しません"; echo "SHA256SUMS: $listed"; echo "ファイル: $present"; exit 1; }
+          # タグの版と、APK の版が一致すること（古い版のファイルを、新しいタグで公開させない）
+          [ -f "Signage-android-${TAG#v}.apk" ] || { echo "タグ $TAG に対応する Signage-android-${TAG#v}.apk がありません"; exit 1; }
 
       - name: Releases に添付して公開する
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ steps.target.outputs.tag }}
           target_commitish: ${{ steps.target.outputs.ref }}

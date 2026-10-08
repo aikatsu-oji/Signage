@@ -625,12 +625,20 @@ object AdminServer {
         else -> false
     }
 
+    /** 失敗の回数を数える単位。IPv6 は、送信元のアドレスを作り直して数え直しを狙われないよう、先頭の 64 ビット（/64）でまとめる */
+    private fun lockKey(a: InetAddress): String =
+        if (a is Inet6Address && !a.isLoopbackAddress) a.address.copyOfRange(0, 8).joinToString("") { "%02x".format(it) } + "::/64"
+        else a.hostAddress ?: ""
+
     @Synchronized
     private fun checkPin(from: InetAddress, pin: String?, groupCode: String?) {
         val now = System.currentTimeMillis()
-        val key = from.hostAddress ?: ""
-        // 長く来ていない接続元の記録は捨てる（記録が増え続けないように）
+        val key = lockKey(from)
+        // 長く来ていない接続元の記録は捨てる（記録が増え続けないように）。それでも多すぎるときは、古いものから捨てる
         if (strikes.size > MAX_TRACKED_IPS) strikes.entries.removeAll { now - it.value.last > STRIKE_FORGET_MS }
+        if (strikes.size > MAX_TRACKED_IPS * 16) {
+            strikes.entries.sortedBy { it.value.last }.take(strikes.size - MAX_TRACKED_IPS * 8).forEach { strikes.remove(it.key) }
+        }
         val st = strikes.getOrPut(key) { Strikes() }
         st.last = now
         if (now < st.lockedUntil) throw HttpError(429, "PIN またはグループコードを続けて間違えたため、しばらく操作できません")

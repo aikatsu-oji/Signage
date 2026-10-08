@@ -526,7 +526,10 @@ class Store:
         name = re.sub(r'[\x00-\x1f:*?"<>|]', "_", name).strip().lstrip(".")
         if not name or len(name) > 150 or not kind_of(name):
             return None
-        return name
+        # Windows のデバイス名（CON・NUL・COM1 など）は、拡張子が付いてもファイルとして使えない
+        if re.fullmatch(r"(?i)(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?", name.rstrip(" .")):
+            return None
+        return name.rstrip(" .") or None
 
     def find(self, folder: Path, name: str):
         for item in self.scan(folder):

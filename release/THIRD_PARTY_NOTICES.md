@@ -12,6 +12,7 @@
 | pystray | LGPL-3.0 | 下記「LGPL の義務」参照 |
 | Pillow | MIT-CMU (HPND) | 著作権表示を保持 |
 | PyInstaller | GPL-2.0 + 例外 | ブートローダーは出力物にGPLを及ぼさない例外付き |
+| tzdata | Apache-2.0 | タイムゾーンのデータ（IANA） |
 
 ### LGPL の義務（zeroconf / pystray）
 - ライセンス全文と著作権表示を同梱する。
@@ -36,6 +37,9 @@ Apache-2.0: ライセンス全文（https://www.apache.org/licenses/LICENSE-2.0�
 - 気象情報: **気象庁ホームページ**（https://www.jma.go.jp/bosai/forecast/）。
   気象庁コンテンツは出典を明示すれば利用でき、加工した場合はその旨の記載が必要です（政府標準利用規約 第2.0版）。
   本アプリは画面に「出典：気象庁ホームページ（…）のデータを加工して表示」と常時表示します。**この表示を消さないでください。**
+
+- 地図の背景（天気予報の「地方ごとの一覧」）: **Natural Earth**（https://www.naturalearthdata.com/）の行政区画データ（ne_10m_admin_1_states_provinces）。
+  パブリックドメインで、利用に出典の表示は不要です（本アプリは、簡略化して `weather_map.json` に収録しています。作り方は `scripts/build-weather-map.py`）。
 
 ## ユーザーが配置する素材
 画像・動画・音声・BGM などの著作権・肖像権・音楽著作権（JASRAC 等）は利用者の責任です。

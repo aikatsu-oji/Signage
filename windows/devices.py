@@ -75,6 +75,8 @@ def parse_arp(text):
 _cache = {}
 _cache_lock = threading.Lock()
 CACHE_SECONDS = 60
+NEGATIVE_CACHE_SECONDS = 10
+_arp_slots = threading.BoundedSemaphore(4)
 
 
 def _send_arp(ip):
@@ -96,8 +98,14 @@ def lookup_mac(addr):
     now = time.time()
     with _cache_lock:
         hit = _cache.get(key)
-        if hit and now - hit[1] < CACHE_SECONDS:
+        # 確認できなかった結果も、短い間は覚える（解決できない相手に連打されて、ARP の確認が大量に走らないように）
+        if hit and now - hit[1] < (CACHE_SECONDS if hit[0] else NEGATIVE_CACHE_SECONDS):
             return hit[0]
+        if len(_cache) > 1024:
+            _cache.clear()
+    # ARP の確認（サブプロセスを含む）は、同時に走らせる数を絞る。順番が回ってこなければ、確認できなかったものとして扱う
+    if not _arp_slots.acquire(timeout=2):
+        return None
     mac = None
     try:
         if os.name == "nt":
@@ -111,9 +119,10 @@ def lookup_mac(addr):
                 mac = parse_arp(f.read()).get(key)
     except Exception:
         mac = None
-    if mac:
-        with _cache_lock:
-            _cache[key] = (mac, now)
+    finally:
+        _arp_slots.release()
+    with _cache_lock:
+        _cache[key] = (mac, time.time())
     return mac
 
 

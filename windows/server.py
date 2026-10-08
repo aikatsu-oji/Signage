@@ -41,7 +41,7 @@ mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
 LOCAL_PORT = 18080  # HTTPS のとき、この PC 自身が使う HTTP のポート
-VERSION = "1.19.0"
+VERSION = "1.20.0"
 
 
 def resource_dir() -> Path:
@@ -110,6 +110,9 @@ def local_addresses() -> list:
         if a not in result and is_lan(a) and not a.startswith("127."):
             result.append(a)
     return result
+
+
+rss.own_addresses = local_addresses
 
 
 class _HTTPServer(ThreadingHTTPServer):
@@ -601,7 +604,8 @@ class Server:
                     pass
                 except Exception as e:  # noqa
                     try:
-                        self.json({"error": str(e) or e.__class__.__name__}, 500)
+                        # 例外の文言には、この PC のパスなどが入ることがあるので、種類だけを返す
+                        self.json({"error": f"内部エラーが起きました（{e.__class__.__name__}）"}, 500)
                     except Exception:
                         pass
 
@@ -1056,9 +1060,15 @@ class Server:
     def local_settings(self, j: dict):
         s = self.store
         u = {}
-        for k in ("weatherOffice", "weatherArea", "weatherAreaName", "weatherCity", "weatherCityName"):
+        for k in ("weatherOffice", "weatherArea", "weatherCity"):
             if k in j:
-                u[k] = j[k] or None
+                v = j[k]
+                if v and not re.fullmatch(r"\d{1,10}", str(v)):  # 気象庁のコード（数字のみ）。キャッシュのファイル名にも使うので、検証する
+                    raise HttpError(400, "天気予報の地域が正しくありません")
+                u[k] = str(v) if v else None
+        for k in ("weatherAreaName", "weatherCityName"):
+            if k in j:
+                u[k] = str(j[k])[:40] if j[k] else None
         if "deviceName" in j and str(j["deviceName"]).strip():
             u["deviceName"] = str(j["deviceName"]).strip()[:40]
         if "adminPin" in j:

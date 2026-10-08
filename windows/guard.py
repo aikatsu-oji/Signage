@@ -48,6 +48,10 @@ def check(method: str, path: str, host: str, origin, sec_fetch_site, is_lan_orig
     if not host_ok(host):
         return "このアドレスでは利用できません"
     is_local_path = path.startswith(LOCAL_PREFIXES)
+    # この PC 内部用の操作は、IP アドレスか localhost で開いたときだけ。*.local（mDNS の名前）は、LAN の別の機器が名乗れるので、
+    # DNS リバインディングで同じオリジンのページから読み取られないよう、受け付けない
+    if is_local_path and _hostname(host).endswith(".local"):
+        return "このアドレスでは利用できません"
     if origin:
         if is_local_path:
             # この PC 内部用の操作は、この PC 自身のページ（再生画面・設定画面）からだけ受け付ける
