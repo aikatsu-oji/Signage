@@ -125,9 +125,52 @@ class _HTTPServer(ThreadingHTTPServer):
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
         super().server_bind()
 
+    # 接続の数の上限（遅い接続を大量に張って、スレッドとメモリを使い切られないように）。全体と、接続元 IP ごと
+    MAX_CONNECTIONS = 256
+    MAX_PER_IP = 32
+
+    def __init__(self, *args, **kwargs):
+        self._conn_lock = threading.Lock()
+        self._conn_total = 0
+        self._conn_by_ip = {}
+        super().__init__(*args, **kwargs)
+
     def verify_request(self, request, client_address):
         """LAN の外からの接続は、何も読まずに切る（接続を占有されないように）"""
         return is_lan(client_address[0])
+
+    def process_request(self, request, client_address):
+        ip = client_address[0]
+        with self._conn_lock:
+            if self._conn_total >= self.MAX_CONNECTIONS or self._conn_by_ip.get(ip, 0) >= self.MAX_PER_IP:
+                over = True
+            else:
+                over = False
+                self._conn_total += 1
+                self._conn_by_ip[ip] = self._conn_by_ip.get(ip, 0) + 1
+        if over:
+            self.shutdown_request(request)  # 何も読まずに切る
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._conn_done(ip)
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._conn_done(client_address[0])
+
+    def _conn_done(self, ip):
+        with self._conn_lock:
+            self._conn_total = max(0, self._conn_total - 1)
+            n = self._conn_by_ip.get(ip, 0) - 1
+            if n > 0:
+                self._conn_by_ip[ip] = n
+            else:
+                self._conn_by_ip.pop(ip, None)
 
     def handle_error(self, request, client_address):
         """接続のやり取りの失敗（証明書の警告で切られた、など）は、画面に出さず無視する"""
@@ -403,6 +446,23 @@ class Server:
         class Handler(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
             timeout = 30  # 1 バイトずつ細々と送って接続を占有する攻撃（slowloris）を避ける
+            HEADER_DEADLINE = 10  # リクエストの行とヘッダーを受け終えるまでの総時間（秒）。recv ごとの期限では延ばされてしまう
+
+            def handle_one_request(self):
+                timer = threading.Timer(self.HEADER_DEADLINE, self._header_timeout)
+                timer.daemon = True
+                self._header_timer = timer
+                timer.start()
+                try:
+                    super().handle_one_request()
+                finally:
+                    timer.cancel()
+
+            def _header_timeout(self):
+                try:
+                    self.connection.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
 
             def content_length(self):
                 n = int(self.headers.get("Content-Length") or 0)
@@ -477,6 +537,9 @@ class Server:
             # -------- 振り分け
 
             def _dispatch(self, method):
+                timer = getattr(self, "_header_timer", None)
+                if timer:
+                    timer.cancel()  # ヘッダーを受け終えた。ここからは、本文や応答に時間がかかってよい
                 self.body_read = False
                 try:
                     self._handle(method)

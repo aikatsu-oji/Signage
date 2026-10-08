@@ -2600,11 +2600,20 @@
     return job;
   }
 
+  // 他の端末のファイルを blob で開くと、blob はこの管理画面と同じオリジンになる。SVG や HTML の中のスクリプトが
+  // 動いて、保存してある PIN を読まれないよう、画像（SVG を除く）と動画の型だけを許し、型は決め打ちで付け直す
+  const SAFE_BLOB_TYPE = /^(image\/(jpeg|png|gif|webp|bmp|avif|heic|heif)|video\/(mp4|webm|x-matroska|3gpp|quicktime|mp2t))$/;
+  const BLOB_TYPE_BY_EXT = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', avif: 'image/avif', heic: 'image/heic', heif: 'image/heif',
+    mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mkv: 'video/x-matroska', '3gp': 'video/3gpp', mov: 'video/quicktime', ts: 'video/mp2t' };
   async function openFile(dev, zone, name) {
     const w = window.open('', '_blank');
+    if (w) w.opener = null;
     try {
       const blob = await (await api(dev, fileUrl(zone, name), {}, 120000)).blob();
-      const u = URL.createObjectURL(blob);
+      // 応答の型ではなく、ファイルの拡張子から決めた型を使う（SVG・HTML など、画像・動画以外は開かない）
+      const type = BLOB_TYPE_BY_EXT[(name.split('.').pop() || '').toLowerCase()] || '';
+      if (!SAFE_BLOB_TYPE.test(type)) throw new Error('この種類のファイルは、管理画面からは開けません（画像・動画だけ開けます）');
+      const u = URL.createObjectURL(new Blob([blob], { type }));
       if (w) w.location = u; else location.href = u;
     } catch (e) { if (w) w.close(); toast(e.message); }
   }
