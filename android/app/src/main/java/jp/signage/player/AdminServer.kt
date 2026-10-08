@@ -23,8 +23,12 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.URLDecoder
 import java.security.MessageDigest
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArraySet
-import java.util.concurrent.Executors
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 
 /**
@@ -37,6 +41,10 @@ import kotlin.concurrent.thread
 object AdminServer {
     const val DEFAULT_PORT = 8080
     private const val HEADER_TIMEOUT_MS = 10_000L
+    /** 処理するスレッドの数と、待たせる接続の数の上限。接続元の IP ごとの同時接続数にも上限を設ける（遅い接続を大量に張って、管理画面を止められないように） */
+    private const val WORKER_THREADS = 16
+    private const val QUEUE_SIZE = 32
+    private const val MAX_CONNECTIONS_PER_IP = 6
     private const val MAX_TRACKED_IPS = 256
     private const val MAX_UPLOAD_BYTES = 4L * 1024 * 1024 * 1024
     private const val DISK_RESERVE_BYTES = 200L * 1024 * 1024
@@ -59,7 +67,8 @@ object AdminServer {
 
     val isRunning get() = server != null && port > 0
 
-    private val pool = Executors.newFixedThreadPool(6)
+    private val pool = ThreadPoolExecutor(WORKER_THREADS, WORKER_THREADS, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue(QUEUE_SIZE))
+    private val connectionsByIp = ConcurrentHashMap<String, AtomicInteger>()
     private val main = Handler(Looper.getMainLooper())
     private val listeners = CopyOnWriteArraySet<(String) -> Unit>()
 
@@ -121,12 +130,21 @@ object AdminServer {
                 val client = try { s.accept() } catch (e: IOException) { break } catch (e: Throwable) { continue }
                 // LAN の外からの接続は、何も読まずにすぐ切る（接続を占有されないように）
                 if (!isLan(client.inetAddress)) { runCatching { client.close() }; continue }
+                // 同じ IP から開かれた接続が多すぎるときは、何も読まずに切る
+                val ip = client.inetAddress.hostAddress ?: ""
+                val count = connectionsByIp.getOrPut(ip) { AtomicInteger(0) }
+                if (count.incrementAndGet() > MAX_CONNECTIONS_PER_IP) {
+                    release(ip)
+                    runCatching { client.close() }
+                    continue
+                }
                 try {
                     pool.execute {
                         // 通信まわりの例外でアプリごと落ちないよう、すべてここで受け止める
                         try { handle(client) } catch (e: Throwable) { runCatching { client.close() } }
+                        finally { release(ip) }
                     }
-                } catch (e: Throwable) { runCatching { client.close() } }
+                } catch (e: Throwable) { release(ip); runCatching { client.close() } }  // 待ち行列がいっぱいのときも、ここで切る
             }
         }
     }
@@ -222,6 +240,12 @@ object AdminServer {
 
     private class HttpError(val status: Int, message: String) : Exception(message)
 
+    /** 接続元の IP ごとの同時接続数を 1 つ減らす（0 になったら記録を消す） */
+    private fun release(ip: String) {
+        val c = connectionsByIp[ip] ?: return
+        if (c.decrementAndGet() <= 0) connectionsByIp.remove(ip, c)
+    }
+
     private fun handle(socket: Socket) {
         socket.use { s ->
             s.soTimeout = 60_000
@@ -229,7 +253,7 @@ object AdminServer {
             val out = BufferedOutputStream(s.getOutputStream())
             var cors: Map<String, String> = emptyMap()
             val response = try {
-                val req = readRequest(input) ?: return
+                val req = readRequest(s, input) ?: return
                 cors = corsHeaders(req)
                 // curl などは大きな送信の前に確認を求めるので、続けてよいと返す
                 if (req.headers["expect"]?.contains("100-continue", ignoreCase = true) == true) {
@@ -262,21 +286,27 @@ object AdminServer {
         }
     }
 
-    private fun readRequest(input: InputStream): Request? {
+    private fun readRequest(socket: Socket, input: InputStream): Request? {
         // ヘッダーを空行まで読む（最大 16KB）
         val buf = ByteArrayOutputStream()
         var last4 = 0
-        // 1 バイトずつ細々と送って接続を占有する攻撃（slowloris）を避けるため、ヘッダー全体に期限を設ける
+        // 1 バイトずつ細々と送って接続を占有する攻撃（slowloris）を避けるため、ヘッダー全体に期限を設ける。
+        // 何も送ってこない接続も、読み取りの待ち時間を残りの期限に合わせて、期限で切る
         val deadline = System.currentTimeMillis() + HEADER_TIMEOUT_MS
         while (true) {
-            if (System.currentTimeMillis() > deadline) throw HttpError(400, "リクエストの受信に時間がかかりすぎました")
-            val b = input.read()
+            val left = deadline - System.currentTimeMillis()
+            if (left <= 0) throw HttpError(400, "リクエストの受信に時間がかかりすぎました")
+            socket.soTimeout = left.toInt().coerceAtLeast(1)
+            val b = try { input.read() } catch (e: java.net.SocketTimeoutException) {
+                throw HttpError(400, "リクエストの受信に時間がかかりすぎました")
+            }
             if (b < 0) return null
             buf.write(b)
             last4 = (last4 shl 8) or b
             if (last4 == 0x0D0A0D0A) break
             if (buf.size() > 16 * 1024) throw HttpError(400, "ヘッダーが大きすぎます")
         }
+        socket.soTimeout = 60_000  // ヘッダーを受け終えた。本文（アップロードなど）は、読み取りごとの待ち時間で見る
         val lines = buf.toString("UTF-8").split("\r\n")
         val parts = lines.first().split(" ")
         if (parts.size < 2) throw HttpError(400, "不正なリクエスト")

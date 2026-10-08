@@ -24,6 +24,9 @@ object Peers {
     private const val BEACON_INTERVAL_MS = 5_000L
     private const val BEACON_EXPIRE_MS = 20_000L
     private const val MAX_PEERS = 500
+    /** 「一覧に出さない端末」の記録の上限（偽の知らせで増やされないように）と、UDP 由来の記録の有効期間 */
+    private const val MAX_HIDDEN = 200
+    private const val HIDDEN_TTL_MS = 60_000L
 
     data class Peer(
         val id: String,
@@ -46,9 +49,22 @@ object Peers {
     private val peers = ConcurrentHashMap<String, Peer>()
 
     /** 見つかったが、グループが違うため、一覧に出さない端末（id → 名前と理由）。なぜ見えないかを、管理画面で案内するため */
-    class Hidden(val name: String, val reason: String)
+    class Hidden(val name: String, val reason: String, val beacon: Boolean = false, val at: Long = System.currentTimeMillis())
     private val hidden = ConcurrentHashMap<String, Hidden>()
-    fun listHidden(): List<Hidden> = hidden.values.sortedBy { it.name }
+    fun listHidden(): List<Hidden> { pruneHidden(); return hidden.values.sortedBy { it.name } }
+
+    /** UDP の知らせから作った記録は、一定時間で消す */
+    private fun pruneHidden() {
+        val now = System.currentTimeMillis()
+        hidden.entries.removeIf { it.value.beacon && now - it.value.at > HIDDEN_TTL_MS }
+    }
+
+    /** 「一覧に出さない端末」を記録する。件数に上限があり、いっぱいのときは新しい id を記録しない */
+    private fun hide(id: String, name: String, reason: String, beacon: Boolean) {
+        pruneHidden()
+        if (!hidden.containsKey(id) && hidden.size >= MAX_HIDDEN) return
+        hidden[id] = Hidden(name, reason, beacon)
+    }
     /** mDNS のサービス名 → 端末 ID（見えなくなったときに消すため） */
     private val serviceIds = ConcurrentHashMap<String, String>()
     private var selfId = ""
@@ -251,8 +267,9 @@ object Peers {
         if (grp != selfGroup) {
             val reason = if (selfGroup.isEmpty()) "グループを設定している端末（この端末は未設定）"
             else if (grp.isEmpty()) "グループ未設定、または、古い版" else "別のグループ"
-            hidden[id] = Hidden(name, reason)
-            peers.remove(id)
+            // 署名の無い知らせで、本物の端末を一覧から消せないよう、ここでは peers を触らない
+            // （グループを変えた端末は、知らせが途絶えて、20 秒ほどで一覧から外れる）
+            if (!peers.containsKey(id)) hide(id, name, reason, beacon = true)
             return
         }
         // グループがあるときは、同じコードで署名された知らせだけを信じる。
@@ -263,7 +280,7 @@ object Peers {
             val ok = code.isNotEmpty() && signedIp == fromIp &&
                 java.security.MessageDigest.isEqual(j.optString("sig").toByteArray(), GroupCode.sign(code, id, port, signedIp).toByteArray())
             if (!ok) {
-                if (!peers.containsKey(id)) hidden[id] = Hidden(name, "古い版、または、署名が合わない知らせ")
+                if (!peers.containsKey(id)) hide(id, name, "古い版、または、署名が合わない知らせ", beacon = true)
                 return
             }
         }
@@ -282,7 +299,7 @@ object Peers {
             val reason = if (selfGroup.isEmpty()) "グループを設定している端末（この端末は未設定）"
             else if (attr("grp").isEmpty()) "グループ未設定、または、古い版" else "別のグループ"
             serviceIds[info.serviceName] = id
-            hidden[id] = Hidden(attr("name").ifEmpty { info.serviceName }, reason)
+            hide(id, attr("name").ifEmpty { info.serviceName }, reason, beacon = false)
             return
         }
         // mDNS の登録は署名できず、同じ LAN の誰でも「同じグループ」を名乗れる。

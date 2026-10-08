@@ -17,6 +17,9 @@ SERVICE_TYPE = "_signage._tcp.local."
 BEACON_PORT = 48080
 BEACON_INTERVAL = 5
 BEACON_EXPIRE = 20
+# 「一覧に出さない端末」の記録は、偽の知らせで増やされないよう、件数と期間に上限を設ける
+HIDDEN_MAX = 200
+HIDDEN_TTL = 60
 
 
 class Peers:
@@ -106,14 +109,16 @@ class Peers:
                 ok = str(j.get("ip") or "") == ip and hmac.compare_digest(sig.encode(), group.sign(code, pid, port, ip).encode())
                 if not ok:
                     if pid not in self.peers:
-                        self.hidden[pid] = {"name": name, "reason": "古い版、または、署名が合わない知らせ"}
+                        self._hide(pid, name, "古い版、または、署名が合わない知らせ", beacon=True)
                     return
             if len(self.peers) >= 500 and pid not in self.peers:
                 return
             if grp != own:
                 reason = ("グループ未設定、または、古い版" if not grp else "別のグループ") if own else "グループを設定している端末（この端末は未設定）"
-                self.hidden[pid] = {"name": name, "reason": reason}
-                self.peers.pop(pid, None)
+                # 署名の無い知らせで、本物の端末を一覧から消せないよう、ここでは peers を触らない
+                # （グループを変えた端末は、知らせが途絶えて、20 秒ほどで一覧から外れる）
+                if pid not in self.peers:
+                    self._hide(pid, name, reason, beacon=True)
                 return
             self.hidden.pop(pid, None)
             self.peers[pid] = {"id": pid, "name": name, "url": f"http://{ip}:{port}", "version": str(j.get("ver") or "")[:20],
@@ -224,7 +229,7 @@ class Peers:
             reason = ("グループ未設定、または、古い版" if not props.get("grp") else "別のグループ") if own else "グループを設定している端末（この端末は未設定）"
             with self.lock:
                 self.names[name] = pid
-                self.hidden[pid] = {"name": props.get("name") or name.split(".")[0], "reason": reason}
+                self._hide(pid, props.get("name") or name.split(".")[0], reason, beacon=False)
             return
         addrs = info.parsed_addresses(IPVersion.V4Only)
         if not addrs:
@@ -239,9 +244,21 @@ class Peers:
                 "lastSeen": time.time(),
             }
 
+    def _hide(self, pid, name, reason, beacon):
+        """一覧に出さない端末として記録する（self.lock を持った状態で呼ぶ）。件数と、UDP 由来の記録の期間に上限がある"""
+        now = time.time()
+        for k in [k for k, v in self.hidden.items() if v.get("beacon") and now - v["at"] > HIDDEN_TTL]:
+            del self.hidden[k]
+        if pid not in self.hidden and len(self.hidden) >= HIDDEN_MAX:
+            return
+        self.hidden[pid] = {"name": name, "reason": reason, "at": now, "beacon": beacon}
+
     def list_hidden(self):
+        now = time.time()
         with self.lock:
-            return sorted(self.hidden.values(), key=lambda p: p["name"])
+            for k in [k for k, v in self.hidden.items() if v.get("beacon") and now - v["at"] > HIDDEN_TTL]:
+                del self.hidden[k]
+            return sorted(({"name": v["name"], "reason": v["reason"]} for v in self.hidden.values()), key=lambda p: p["name"])
 
     def list(self):
         now = time.time()
