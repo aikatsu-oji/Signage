@@ -187,11 +187,6 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("adminEnabled", false)
         set(v) = sp.edit().putBoolean("adminEnabled", v).apply()
 
-    /** 管理画面から送られた APK でのアプリ更新を許可するか（初期状態は許可しない） */
-    var allowRemoteUpdate: Boolean
-        get() = sp.getBoolean("allowRemoteUpdate", false)
-        set(v) = sp.edit().putBoolean("allowRemoteUpdate", v).apply()
-
     /** グループ（組織）コード。空ならグループなし */
     var groupCode: String
         get() = sp.getString("groupCode", "") ?: ""

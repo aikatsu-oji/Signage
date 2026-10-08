@@ -360,7 +360,6 @@ object AdminServer {
         return when ("${req.method} ${req.path}") {
             "GET /api/state" -> json(200, state(prefs).put("access", accessInfo(prefs, from)).put("group", groupInfo(prefs)))
             "GET /api/status" -> json(200, status(prefs))
-            "PUT /api/apk" -> receiveApk(prefs, req)
             "GET /api/weather/offices" -> {
                 val arr = org.json.JSONArray()
                 Weather.offices(app).forEach { o ->
@@ -559,44 +558,6 @@ object AdminServer {
             .put("ticker", JSONObject().put("standing", Ticker.standing(app) != null).put("queued", 0))
             .put("disk", disk ?: JSONObject.NULL)
             .put("platform", "android")
-            .put("update", JSONObject().put("allowed", prefs.allowRemoteUpdate).put("canInstall", AppUpdater.canInstall(app))
-                .put("phase", AppUpdater.state.phase).put("message", AppUpdater.state.message).put("at", AppUpdater.state.at))
-    }
-
-    /** 管理画面から送られた APK を受け取り、更新を始める */
-    private fun receiveApk(prefs: Prefs, req: Request): Response {
-        if (!prefs.allowRemoteUpdate) {
-            throw HttpError(403, "この端末は、管理画面からのアプリ更新を許可していません。端末の設定画面で「管理画面からのアプリ更新を許可」を ON にしてください")
-        }
-        val len = req.contentLength
-        if (len <= 0) throw HttpError(400, "ファイルが空です")
-        if (len > AppUpdater.MAX_BYTES) throw HttpError(413, "ファイルが大きすぎます")
-        val f = AppUpdater.apkFile(app)
-        f.delete()
-        try {
-            f.outputStream().use { out ->
-                val buf = ByteArray(64 * 1024)
-                var left = len
-                while (left > 0) {
-                    val n = req.body.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
-                    if (n < 0) throw HttpError(400, "ファイルを最後まで受け取れませんでした")
-                    out.write(buf, 0, n)
-                    left -= n
-                }
-            }
-        } catch (e: IOException) {
-            f.delete()
-            throw HttpError(400, "ファイルを受け取れませんでした")
-        }
-        AppUpdater.state = AppUpdater.State("received", "APK を受け取りました。確認中…")
-        val why = AppUpdater.validate(app, f)
-        if (why != null) {
-            f.delete()
-            AppUpdater.state = AppUpdater.State("failed", why)
-            throw HttpError(400, why)
-        }
-        AppUpdater.install(app, f)
-        return json(200, JSONObject().put("ok", true).put("phase", AppUpdater.state.phase).put("message", AppUpdater.state.message))
     }
 
     private fun accessInfo(prefs: Prefs, from: InetAddress): JSONObject {
