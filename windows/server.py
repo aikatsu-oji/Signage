@@ -112,6 +112,9 @@ def local_addresses() -> list:
     return result
 
 
+rss.own_addresses = local_addresses
+
+
 class _HTTPServer(ThreadingHTTPServer):
     """
     使用中のポートには重ねて待ち受けない（Windows では「アドレスの再利用」を有効にすると
@@ -601,7 +604,8 @@ class Server:
                     pass
                 except Exception as e:  # noqa
                     try:
-                        self.json({"error": str(e) or e.__class__.__name__}, 500)
+                        # 例外の文言には、この PC のパスなどが入ることがあるので、種類だけを返す
+                        self.json({"error": f"内部エラーが起きました（{e.__class__.__name__}）"}, 500)
                     except Exception:
                         pass
 
@@ -1056,9 +1060,15 @@ class Server:
     def local_settings(self, j: dict):
         s = self.store
         u = {}
-        for k in ("weatherOffice", "weatherArea", "weatherAreaName", "weatherCity", "weatherCityName"):
+        for k in ("weatherOffice", "weatherArea", "weatherCity"):
             if k in j:
-                u[k] = j[k] or None
+                v = j[k]
+                if v and not re.fullmatch(r"\d{1,10}", str(v)):  # 気象庁のコード（数字のみ）。キャッシュのファイル名にも使うので、検証する
+                    raise HttpError(400, "天気予報の地域が正しくありません")
+                u[k] = str(v) if v else None
+        for k in ("weatherAreaName", "weatherCityName"):
+            if k in j:
+                u[k] = str(j[k])[:40] if j[k] else None
         if "deviceName" in j and str(j["deviceName"]).strip():
             u["deviceName"] = str(j["deviceName"]).strip()[:40]
         if "adminPin" in j:

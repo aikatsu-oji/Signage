@@ -9,3 +9,14 @@ __pycache__/
 *.pyc
 .idea/
 .vscode/
+
+# 署名の鍵・証明書・秘密情報は、リポジトリに入れない
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+.env
+.env.*
+keystore.properties

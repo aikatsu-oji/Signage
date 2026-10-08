@@ -946,6 +946,7 @@
         : '';
     } catch (e) {}
     for (const url of store.get('signage-manual', [])) {
+      if (!isLanUrl(url)) continue;
       if (![...devices.values()].some((d) => d.url === url)) addDevice({ key: url, url, name: url.replace(/^https?:\/\//, ''), manual: true });
     }
     renderDevices();
@@ -1188,7 +1189,11 @@
     } catch (e) {
       dev.mon = { ok: false, error: e.message, http: e.status, at: Date.now(), lastOk: prev?.lastOk || 0 };
     }
-    const v = verdict(dev);
+    let v;
+    try { v = verdict(dev); } catch (e) {   // 端末が、想定外の形の応答を返したとき（古い版・偽の端末など）
+      dev.mon = { ok: false, error: '応答の形式が正しくありません', at: Date.now(), lastOk: prev?.lastOk || 0 };
+      v = verdict(dev);
+    }
     if (dev.monLevel && dev.monLevel !== v.level) {
       const why = [...v.bad, ...v.warn][0] || '';
       logMon(`${dev.name}：${monLevelText[dev.monLevel]} → ${monLevelText[v.level]}${why ? `（${why}）` : ''}`);
@@ -1433,12 +1438,20 @@
     renderDetail();
   }
 
+  // 手動で追加する端末は、LAN 内のアドレスだけ。保存した PIN・グループコードを、LAN の外のホストへ送ってしまわないため
+  function isLanUrl(url) {
+    try {
+      const h = new URL(url).hostname.replace(/^\[|\]$/g, '').toLowerCase();
+      return /^(10\.|192\.168\.|127\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h) || h === 'localhost' || h.endsWith('.local') || /^(fe80:|f[cd][0-9a-f]{2}:|::1$)/.test(h);
+    } catch (e) { return false; }
+  }
   $('#addDeviceBtn').addEventListener('click', async () => {
     const input = prompt('追加する端末の IP アドレスを入力してください（例：192.168.68.53）\n※ 端末の設定画面の「ブラウザで開くアドレス」に表示されています');
     if (!input) return;
     let url = input.trim().replace(/\/+$/, '');
     if (!/^https?:\/\//.test(url)) url = 'http://' + url;
     if (!/:\d+$/.test(url)) url += ':8080';
+    if (!isLanUrl(url)) { toast('LAN 内のアドレス（192.168.x.x や 10.x.x.x など）だけ追加できます'); return; }
     const manual = store.get('signage-manual', []);
     if (!manual.includes(url)) { manual.push(url); store.set('signage-manual', manual); }
     const dev = { key: url, url, name: url.replace(/^http:\/\//, ''), manual: true };
@@ -3613,7 +3626,7 @@
   $('#impApply').addEventListener('click', async () => {
     const list = $$('#impTargets input:checked').map((c) => devices.get(c.value)).filter(Boolean);
     const parts = [
-      $('#impSettings').checked && importData.hasSettings && '設定',
+      $('#impSettings').checked && importData.hasSettings && `設定${importData.settings.timeServer ? `（時刻サーバー：${String(importData.settings.timeServer).slice(0, 80)}）` : ''}`,
       $('#impSchedules').checked && `予約テロップ ${importData.schedules.length} 件`,
       $('#impRules').checked && importData.hasRules && '再生条件',
     ].filter(Boolean);

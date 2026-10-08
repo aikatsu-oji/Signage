@@ -12,6 +12,7 @@
 | pystray | LGPL-3.0 | 下記「LGPL の義務」参照 |
 | Pillow | MIT-CMU (HPND) | 著作権表示を保持 |
 | PyInstaller | GPL-2.0 + 例外 | ブートローダーは出力物にGPLを及ぼさない例外付き |
+| tzdata | Apache-2.0 | タイムゾーンのデータ（IANA） |
 
 ### LGPL の義務（zeroconf / pystray）
 - ライセンス全文と著作権表示を同梱する。

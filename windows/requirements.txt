@@ -1,5 +1,14 @@
-zeroconf
-pystray
-pillow
-pyinstaller
-tzdata
+# 版を固定している（ビルドのたびに、最新の版が入って、同じソースから同じ exe が作れなくならないように）。
+# 更新するときは、新しい版でビルド・動作確認をしたうえで、この版を書き換える。
+zeroconf==0.151.5
+ifaddr==0.2.0
+pystray==0.19.5
+six==1.17.0
+pillow==12.3.0
+tzdata==2026.5
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.7
+altgraph==0.17.5
+packaging==26.3
+pefile==2024.8.26
+pywin32-ctypes==0.2.3
