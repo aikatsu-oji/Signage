@@ -41,6 +41,7 @@ import kotlin.concurrent.thread
 object AdminServer {
     const val DEFAULT_PORT = 8080
     private const val HEADER_TIMEOUT_MS = 10_000L
+    private val SECURITY_HEADERS = mapOf("X-Frame-Options" to "DENY", "X-Content-Type-Options" to "nosniff", "Referrer-Policy" to "no-referrer")
     /** 処理するスレッドの数と、待たせる接続の数の上限。接続元の IP ごとの同時接続数にも上限を設ける（遅い接続を大量に張って、管理画面を止められないように） */
     private const val WORKER_THREADS = 16
     private const val QUEUE_SIZE = 32
@@ -278,6 +279,9 @@ object AdminServer {
                     .append("Cache-Control: no-store\r\n")
                     .append("Connection: close\r\n")
                 (response.extraHeaders + cors).forEach { (k, v) -> head.append("$k: $v\r\n") }
+                // どの応答にも、足りないセキュリティヘッダーを補う
+                val sent = (response.extraHeaders + cors).keys.map { it.lowercase() }.toSet()
+                SECURITY_HEADERS.forEach { (k, v) -> if (k.lowercase() !in sent) head.append("$k: $v\r\n") }
                 head.append("\r\n")
                 out.write(head.toString().toByteArray(Charsets.UTF_8))
                 response.write(out)
