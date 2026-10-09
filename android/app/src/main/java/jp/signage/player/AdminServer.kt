@@ -37,6 +37,7 @@ import kotlin.concurrent.thread
 object AdminServer {
     const val DEFAULT_PORT = 8080
     private const val HEADER_TIMEOUT_MS = 10_000L
+    private val SECURITY_HEADERS = mapOf("X-Frame-Options" to "DENY", "X-Content-Type-Options" to "nosniff", "Referrer-Policy" to "no-referrer")
     private const val MAX_TRACKED_IPS = 256
     private const val MAX_UPLOAD_BYTES = 4L * 1024 * 1024 * 1024
     private const val DISK_RESERVE_BYTES = 200L * 1024 * 1024
@@ -229,7 +230,7 @@ object AdminServer {
             val out = BufferedOutputStream(s.getOutputStream())
             var cors: Map<String, String> = emptyMap()
             val response = try {
-                val req = readRequest(input) ?: return
+                val req = readRequest(input, s) ?: return
                 cors = corsHeaders(req)
                 // curl などは大きな送信の前に確認を求めるので、続けてよいと返す
                 if (req.headers["expect"]?.contains("100-continue", ignoreCase = true) == true) {
@@ -253,7 +254,10 @@ object AdminServer {
                     .append("Content-Length: ${response.length}\r\n")
                     .append("Cache-Control: no-store\r\n")
                     .append("Connection: close\r\n")
-                (response.extraHeaders + cors).forEach { (k, v) -> head.append("$k: $v\r\n") }
+                val sent = response.extraHeaders + cors
+                // 応答には、すべて、次のヘッダーを付ける（クリックジャッキング・型の誤認・参照元の漏れを防ぐ）
+                SECURITY_HEADERS.forEach { (k, v) -> if (sent.keys.none { it.equals(k, ignoreCase = true) }) head.append("$k: $v\r\n") }
+                sent.forEach { (k, v) -> head.append("$k: $v\r\n") }
                 head.append("\r\n")
                 out.write(head.toString().toByteArray(Charsets.UTF_8))
                 response.write(out)
@@ -262,21 +266,27 @@ object AdminServer {
         }
     }
 
-    private fun readRequest(input: InputStream): Request? {
+    private fun readRequest(input: InputStream, socket: Socket): Request? {
         // ヘッダーを空行まで読む（最大 16KB）
         val buf = ByteArrayOutputStream()
         var last4 = 0
         // 1 バイトずつ細々と送って接続を占有する攻撃（slowloris）を避けるため、ヘッダー全体に期限を設ける
         val deadline = System.currentTimeMillis() + HEADER_TIMEOUT_MS
         while (true) {
-            if (System.currentTimeMillis() > deadline) throw HttpError(400, "リクエストの受信に時間がかかりすぎました")
-            val b = input.read()
+            val remain = deadline - System.currentTimeMillis()
+            if (remain <= 0) throw HttpError(400, "リクエストの受信に時間がかかりすぎました")
+            // 1 回の読み取りが、期限より長く待たないようにする（無言の接続が、期限を過ぎても居座らないように）
+            socket.soTimeout = remain.coerceAtMost(60_000L).toInt()
+            val b = try { input.read() } catch (e: java.net.SocketTimeoutException) {
+                throw HttpError(400, "リクエストの受信に時間がかかりすぎました")
+            }
             if (b < 0) return null
             buf.write(b)
             last4 = (last4 shl 8) or b
             if (last4 == 0x0D0A0D0A) break
             if (buf.size() > 16 * 1024) throw HttpError(400, "ヘッダーが大きすぎます")
         }
+        socket.soTimeout = 60_000   // ヘッダーを読み終えたら、本文（大きなファイルなど）の読み取り用に戻す
         val lines = buf.toString("UTF-8").split("\r\n")
         val parts = lines.first().split(" ")
         if (parts.size < 2) throw HttpError(400, "不正なリクエスト")

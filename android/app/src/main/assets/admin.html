@@ -2677,12 +2677,33 @@
     return job;
   }
 
+  // 新しいタブで開く種類。種類は、ファイル名の拡張子で決める（サーバーの応答の Content-Type は信用しない）
+  const OPEN_TYPES = {
+    jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp',
+    avif: 'image/avif', heic: 'image/heic', heif: 'image/heif', svg: 'image/svg+xml',
+    mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mkv: 'video/x-matroska', '3gp': 'video/3gpp', mov: 'video/quicktime', ts: 'video/mp2t',
+  };
+
   async function openFile(dev, zone, name) {
     const w = window.open('', '_blank');
     try {
+      const ext = (name.split('.').pop() || '').toLowerCase();
+      const type = OPEN_TYPES[ext];
+      if (!type) throw new Error('この種類のファイルは、ブラウザでは開けません');
       const blob = await (await api(dev, fileUrl(zone, name), {}, 120000)).blob();
-      const u = URL.createObjectURL(blob);
-      if (w) w.location = u; else location.href = u;
+      const u = URL.createObjectURL(new Blob([blob], { type }));
+      if (ext === 'svg') {
+        // SVG は、スクリプトを含められる。blob のページとして開くと、この管理画面と同じオリジンで動き、保存してある PIN などを読まれてしまう。
+        // <img> の中では、スクリプトは動かないので、画像として表示する
+        if (!w) throw new Error('新しいタブを開けませんでした（ポップアップを許可してください）');
+        w.document.title = name;
+        const img = w.document.createElement('img');
+        img.src = u;
+        img.alt = name;
+        img.style.cssText = 'max-width:100%; max-height:100vh; background:#fff';
+        w.document.body.style.margin = '0';
+        w.document.body.append(img);
+      } else if (w) w.location = u; else location.href = u;
     } catch (e) { if (w) w.close(); toast(e.message); }
   }
 

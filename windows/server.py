@@ -9,6 +9,7 @@ Windows 版の Web サーバー。
 
 import base64
 import hmac
+import io
 import ipaddress
 import json
 import mimetypes
@@ -41,7 +42,7 @@ mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
 LOCAL_PORT = 18080  # HTTPS のとき、この PC 自身が使う HTTP のポート
-VERSION = "1.17.3"
+VERSION = "1.17.4"
 
 
 def resource_dir() -> Path:
@@ -76,6 +77,32 @@ LOCAL_PROTECTED = {"GET /local/settings", "POST /local/settings", "POST /local/a
                    "POST /local/open-folder"}
 
 MAX_UPLOAD_BYTES = 4 * 1024 ** 3     # 1 ファイルの上限
+HEADER_DEADLINE = 20                  # リクエストのヘッダーを全部受け取るまでの期限（秒）。少しずつ送って接続を占有する攻撃を避ける
+SECURITY_HEADERS = (                  # すべての応答に付けるヘッダー
+    ("X-Content-Type-Options", "nosniff"),
+    ("X-Frame-Options", "DENY"),          # 他のページに埋め込まれて操作されるのを防ぐ
+    ("Referrer-Policy", "no-referrer"),
+)
+
+
+class _DeadlineRaw(io.RawIOBase):
+    """ソケットの読み取り。deadline（time.monotonic() の値）があるときは、1 回の待ちも、その期限を超えない"""
+
+    def __init__(self, sock, timeout):
+        self.sock, self.base, self.deadline = sock, timeout, None
+
+    def readable(self):
+        return True
+
+    def readinto(self, b):
+        t = self.base
+        if self.deadline is not None:
+            rem = self.deadline - time.monotonic()
+            if rem <= 0:
+                raise socket.timeout("ヘッダーの受信が期限を過ぎました")
+            t = min(t, rem)
+        self.sock.settimeout(t)
+        return self.sock.recv_into(b)
 DISK_RESERVE_BYTES = 200 * 1024 ** 2   # 空き容量を、これだけは残す
 
 IPV4 = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
@@ -403,6 +430,39 @@ class Server:
         class Handler(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
             timeout = 30  # 1 バイトずつ細々と送って接続を占有する攻撃（slowloris）を避ける
+
+            def setup(self):
+                super().setup()
+                # ヘッダー全体に期限を設ける（1 回の読み取りごとの期限だけだと、少しずつ送って接続を占有できる）
+                old = self.rfile
+                self.rfile = io.BufferedReader(_DeadlineRaw(self.connection, self.timeout))
+                old.close()
+
+            def handle_one_request(self):
+                self.rfile.raw.deadline = time.monotonic() + HEADER_DEADLINE
+                super().handle_one_request()
+
+            def parse_request(self):
+                ok = super().parse_request()
+                # ヘッダーを読み終えたら、本文（大きなファイルなど）の読み取り用に期限をなくす
+                self.rfile.raw.deadline = None
+                return ok
+
+            # -------- すべての応答に、セキュリティヘッダーを付ける（個別の send_* で付け忘れても、ここで補う）
+
+            def send_response(self, code, message=None):
+                self._sent_headers = set()
+                super().send_response(code, message)
+
+            def send_header(self, keyword, value):
+                self._sent_headers.add(keyword.lower())
+                super().send_header(keyword, value)
+
+            def end_headers(self):
+                for k, v in SECURITY_HEADERS:
+                    if k.lower() not in self._sent_headers:
+                        super().send_header(k, v)
+                super().end_headers()
 
             def content_length(self):
                 n = int(self.headers.get("Content-Length") or 0)
