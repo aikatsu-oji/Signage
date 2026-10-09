@@ -41,7 +41,7 @@ mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
 LOCAL_PORT = 18080  # HTTPS のとき、この PC 自身が使う HTTP のポート
-VERSION = "1.20.0"
+VERSION = "1.20.1"
 
 
 def resource_dir() -> Path:
@@ -460,6 +460,29 @@ class Server:
                     super().handle_one_request()
                 finally:
                     timer.cancel()
+
+            SECURITY_HEADERS = (
+                ("X-Content-Type-Options", "nosniff"),
+                ("X-Frame-Options", "DENY"),   # 他のページに埋め込まれて操作されるのを防ぐ
+                ("Referrer-Policy", "no-referrer"),
+            )
+
+            def send_response(self, code, message=None):
+                self._sent_names = set()
+                super().send_response(code, message)
+
+            def send_header(self, keyword, value):
+                self._sent_names = getattr(self, "_sent_names", set())
+                self._sent_names.add(keyword.lower())
+                super().send_header(keyword, value)
+
+            def end_headers(self):
+                # どの応答（エラー・ファイル・SSE・416 を含む）にも、足りないセキュリティヘッダーを補う
+                sent = getattr(self, "_sent_names", set())
+                for k, v in self.SECURITY_HEADERS:
+                    if k.lower() not in sent:
+                        super().send_header(k, v)
+                super().end_headers()
 
             def _header_timeout(self):
                 try:
