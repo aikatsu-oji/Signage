@@ -436,7 +436,7 @@ class MainActivity : Activity() {
     /** グループ（組織）コードを決める・解除する。同じコードを持つ端末・管理画面だけが操作できる */
     private fun editGroupCode() {
         val input = EditText(this).apply {
-            hint = if (prefs.groupCode.isEmpty()) "英数字と - _ の 8〜32 文字" else "新しいコード（空にすると解除）"
+            hint = if (prefs.groupCode.isEmpty()) "英数字と - _ の 12〜32 文字" else "新しいコード（空にすると解除）"
             setSingleLine()
             filters = arrayOf(android.text.InputFilter.LengthFilter(32))
         }
@@ -447,7 +447,7 @@ class MainActivity : Activity() {
             .setPositiveButton("決定") { _, _ ->
                 val code = input.text.toString().trim()
                 if (code.isNotEmpty() && !GroupCode.valid(code)) {
-                    Toast.makeText(this, "英数字と - _ だけの 8〜32 文字にしてください", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "英数字と - _ だけの 12〜32 文字にしてください", Toast.LENGTH_LONG).show()
                 } else {
                     prefs.groupCode = code
                     AdminServer.restart(this) // 見つけ合いの識別子を変える
