@@ -189,12 +189,25 @@ class RssZone(private val activity: Activity, private val prefs: Prefs, private 
         var conn: HttpURLConnection
         var hops = 0
         while (true) {
-            requirePublicHost(target)
-            conn = (URL(target).openConnection() as HttpURLConnection).apply {
+            val tu = URL(target)
+            // 名前は 1 回だけ引いて確かめ、その IP へ直接つなぐ（確認のあとに別の IP へ引き直されて、端末自身へ向けられるのを防ぐ）
+            val addr = resolvePublic(tu.host)
+            val literal = addr.hostAddress!!.substringBefore('%').let { if (addr is java.net.Inet6Address) "[$it]" else it }
+            val port = if (tu.port == -1) tu.defaultPort else tu.port
+            conn = (URL(tu.protocol, literal, port, tu.file).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 10_000
                 readTimeout = 10_000
                 instanceFollowRedirects = false
+                setRequestProperty("Host", if (tu.port == -1) tu.host else "${tu.host}:${tu.port}")
                 setRequestProperty("User-Agent", "SignagePlayer/1.0")
+                if (this is javax.net.ssl.HttpsURLConnection) {
+                    // 証明書と SNI は、IP ではなく、もとのホスト名で確かめる
+                    val realHost = tu.host
+                    sslSocketFactory = NamedHostSocketFactory(javax.net.ssl.HttpsURLConnection.getDefaultSSLSocketFactory(), realHost)
+                    hostnameVerifier = javax.net.ssl.HostnameVerifier { _, session ->
+                        javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier().verify(realHost, session)
+                    }
+                }
             }
             val code = conn.responseCode
             if (code !in 300..399) break
@@ -227,12 +240,24 @@ class RssZone(private val activity: Activity, private val prefs: Prefs, private 
         }
     }
 
-    /** この端末自身（127.x・::1）、リンクローカル（169.254.x.x など）、未指定アドレスへは取りに行かない */
-    private fun requirePublicHost(url: String) {
-        val host = URL(url).host
-        for (a in java.net.InetAddress.getAllByName(host)) {
+    /** 名前を引き、この端末自身（127.x・::1）、リンクローカル（169.254.x.x など）、未指定アドレスが 1 つでもあれば拒否する。使う IP を返す */
+    private fun resolvePublic(host: String): java.net.InetAddress {
+        val all = java.net.InetAddress.getAllByName(host)
+        for (a in all) {
             require(!(a.isLoopbackAddress || a.isLinkLocalAddress || a.isAnyLocalAddress || a.isMulticastAddress)) { "この端末自身の URL は指定できません" }
         }
+        return all.first()
+    }
+
+    /** IP でつなぎながら、TLS の相手の名前（SNI）はもとのホスト名にする */
+    private class NamedHostSocketFactory(private val d: javax.net.ssl.SSLSocketFactory, private val name: String) : javax.net.ssl.SSLSocketFactory() {
+        override fun getDefaultCipherSuites(): Array<String> = d.defaultCipherSuites
+        override fun getSupportedCipherSuites(): Array<String> = d.supportedCipherSuites
+        override fun createSocket(s: java.net.Socket, host: String?, port: Int, autoClose: Boolean): java.net.Socket = d.createSocket(s, name, port, autoClose)
+        override fun createSocket(host: String?, port: Int): java.net.Socket = d.createSocket(host, port)
+        override fun createSocket(host: String?, port: Int, la: java.net.InetAddress?, lp: Int): java.net.Socket = d.createSocket(host, port, la, lp)
+        override fun createSocket(a: java.net.InetAddress?, port: Int): java.net.Socket = d.createSocket(a, port)
+        override fun createSocket(a: java.net.InetAddress?, port: Int, la: java.net.InetAddress?, lp: Int): java.net.Socket = d.createSocket(a, port, la, lp)
     }
 
     private fun java.io.InputStream.readNBytesLimited(limit: Int): ByteArray {
