@@ -1,14 +1,14 @@
-# サイネージ Android 1.21.1 / Windows 1.20.1
+# サイネージ Android 1.21.2 / Windows 1.20.1
 
 | ファイル | 内容 | バージョン |
 |---|---|---|
-| `Signage-android-1.21.1.apk` | Android / Fire TV 用アプリ | 1.21.1 |
+| `Signage-android-1.21.2.apk` | Android / Fire TV 用アプリ | 1.21.2 |
 | `Signage-windows-1.20.1.exe` | Windows 用アプリ（インストール不要・単体で動作） | 1.20.1 |
 | `SHA256SUMS` | ファイルの改ざん・破損を確かめるチェックサム | |
 | `LICENSE` / `THIRD_PARTY_NOTICES.md` | 本ソフトウェア（MIT）と、利用している部品のライセンス | |
 
 ## 今回の変更
-すべての応答（API・エラー・ファイル・ストリームを含む）に、X-Frame-Options などのセキュリティヘッダーを付けるように。
+Android：RSS の取得で、確認した IP へ直接つなぐように（DNS を引き直されて、端末自身へ向けられるのを防ぐ）。
 
 ## 確認方法
 ```
