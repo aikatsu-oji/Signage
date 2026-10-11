@@ -41,7 +41,7 @@ mimetypes.add_type("image/avif", ".avif")
 
 DEFAULT_PORT = 8080
 LOCAL_PORT = 18080  # HTTPS のとき、この PC 自身が使う HTTP のポート
-VERSION = "1.20.1"
+VERSION = "1.20.2"
 
 
 def resource_dir() -> Path:
@@ -333,7 +333,7 @@ class Server:
         """グループコードを決める・解除する（呼び出した端末は、新しいコードに切り替える）"""
         code = str(j.get("code") or "").strip()
         if code and not group.valid(code):
-            raise HttpError(400, "グループコードは、英数字と - _ だけの 8〜32 文字にしてください")
+            raise HttpError(400, "グループコードは、英数字と - _ だけの 12〜32 文字にしてください")
         self.store.update({"groupCode": code})
         if self.peers:
             # 見つけ合いの識別子を変える。一覧は、新しいグループで作り直す（少し時間がかかる）
