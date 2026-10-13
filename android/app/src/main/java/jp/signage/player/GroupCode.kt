@@ -4,10 +4,10 @@ import java.security.MessageDigest
 
 /**
  * グループ（組織）コード。同じコードを持つ端末・管理画面だけが、サイネージを操作できる（Windows 版の group.py と同じ）。
- * 英数字と - _ の 8〜32 文字。空ならグループなし（PIN だけで操作できる）。
+ * 英数字と - _ の 12〜32 文字。空ならグループなし（PIN だけで操作できる）。
  */
 object GroupCode {
-    private val VALID = Regex("^[A-Za-z0-9_-]{8,32}$")
+    private val VALID = Regex("^[A-Za-z0-9_-]{12,32}$")
 
     fun valid(code: String) = VALID.matches(code)
 

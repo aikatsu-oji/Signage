@@ -412,7 +412,7 @@ object AdminServer {
             }
             "POST /api/group" -> {
                 val code = req.json().optString("code", "").trim()
-                if (code.isNotEmpty() && !GroupCode.valid(code)) throw HttpError(400, "グループコードは、英数字と - _ だけの 8〜32 文字にしてください")
+                if (code.isNotEmpty() && !GroupCode.valid(code)) throw HttpError(400, "グループコードは、英数字と - _ だけの 12〜32 文字にしてください")
                 prefs.groupCode = code
                 Peers.start(app, port) // 見つけ合いの識別子を変えて、一覧を新しいグループで作り直す
                 json(200, groupInfo(prefs))
