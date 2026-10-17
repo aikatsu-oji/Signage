@@ -194,6 +194,9 @@ class Server:
         # PIN・グループコードの失敗は、接続元の IP ごとに数える（{ip: [失敗回数, 連続ロック回数, ロック解除の時刻, 最後の時刻]}）
         self.strikes = {}
         self.peers = None  # Peers（端末の検出）
+        # 配置の追加を、再送しても二重にしないための記録（reqId → (配置の id, 時刻)）。件数と期間に上限がある
+        self._recent_adds = {}
+        self._adds_lock = threading.Lock()
         self.event_queues = []
         self.started = time.time()
         # この PC の設定画面だけが使う合言葉（起動のたびに作り直す）。127.0.0.1 から来る別のプロセス・
@@ -286,6 +289,8 @@ class Server:
             "device": "Windows " + socket.gethostname(),
             "screen": self.screen_size(),
             "version": VERSION,
+            # この端末が使える機能（管理画面が、古い端末と見分けるため）。placementReqId：配置の追加を、同じ reqId で再送しても二重にならない
+            "caps": ["placementReqId"],
             "zones": zones,
             "settings": settings,
         }
@@ -683,7 +688,21 @@ class Server:
                         zone = self.zone_of(j.get("zone"))
                         name = str(j.get("name", ""))
                         s.find_library_file(name)
-                        pid = s.add_placement(zone, name, j.get("rule"), bool(j.get("exclusive")), j.get("seconds"))
+                        # 応答が届かず、管理画面が同じ操作（同じ reqId）をやり直したときは、二重に登録せず、最初の結果を返す
+                        req_id = str(j.get("reqId") or "")[:64]
+                        with server._adds_lock:
+                            now = time.time()
+                            for k in [k for k, v in server._recent_adds.items() if now - v[1] > 600]:
+                                del server._recent_adds[k]
+                            prev = server._recent_adds.get(req_id) if req_id else None
+                            if prev and any(p.get("id") == prev[0] for p in s.placement_list()):
+                                pid = prev[0]
+                            else:
+                                pid = s.add_placement(zone, name, j.get("rule"), bool(j.get("exclusive")), j.get("seconds"))
+                                if req_id:
+                                    if len(server._recent_adds) >= 200:
+                                        server._recent_adds.pop(next(iter(server._recent_adds)))
+                                    server._recent_adds[req_id] = (pid, now)
                         s.notify("content")
                         return {"ok": True, "id": pid}
                     if op == "update":
