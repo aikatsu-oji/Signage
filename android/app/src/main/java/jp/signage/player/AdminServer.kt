@@ -41,11 +41,16 @@ import kotlin.concurrent.thread
 object AdminServer {
     const val DEFAULT_PORT = 8080
     private const val HEADER_TIMEOUT_MS = 10_000L
+    /** 配置の追加を、再送しても二重にしないための記録（reqId → 配置の id と、時刻）。件数と期間に上限がある */
+    private const val ADD_MEMORY_MS = 10 * 60_000L
+    private val recentAdds = object : LinkedHashMap<String, Pair<String, Long>>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<String, Long>>?) = size > 200
+    }
     private val SECURITY_HEADERS = mapOf("X-Frame-Options" to "DENY", "X-Content-Type-Options" to "nosniff", "Referrer-Policy" to "no-referrer")
     /** 処理するスレッドの数と、待たせる接続の数の上限。接続元の IP ごとの同時接続数にも上限を設ける（遅い接続を大量に張って、管理画面を止められないように） */
     private const val WORKER_THREADS = 16
     private const val QUEUE_SIZE = 32
-    private const val MAX_CONNECTIONS_PER_IP = 6
+    private const val MAX_CONNECTIONS_PER_IP = 12   // ブラウザは、同じ宛先へ最大 6 本つなぐ。前の接続の後片付けが終わる前に次が来ても、切らない余裕を持たせる
     private const val MAX_TRACKED_IPS = 256
     private const val MAX_UPLOAD_BYTES = 4L * 1024 * 1024 * 1024
     private const val DISK_RESERVE_BYTES = 200L * 1024 * 1024
@@ -702,7 +707,20 @@ object AdminServer {
                     try { Library.libraryFile(app, name) } catch (e: IOException) { throw HttpError(404, e.message ?: "ファイルが見つかりません") }
                     val rule = FileRule.normalize(j.optJSONObject("rule"))
                     val seconds = if (j.has("seconds") && !j.isNull("seconds")) j.optInt("seconds", 0).takeIf { it > 0 }?.coerceIn(1, 3600) else null
-                    val id = Library.addPlacement(app, zone, name, rule, j.optBoolean("exclusive", false), seconds)
+                    // 応答が届かず、管理画面が同じ操作（同じ reqId）をやり直したときは、二重に登録せず、最初の結果を返す
+                    val reqId = j.optString("reqId").take(64)
+                    val id = synchronized(recentAdds) {
+                        val now = System.currentTimeMillis()
+                        recentAdds.entries.removeAll { now - it.value.second > ADD_MEMORY_MS }
+                        val prev = if (reqId.isNotEmpty()) recentAdds[reqId] else null
+                        if (prev != null && Library.placementExists(app, prev.first)) {
+                            prev.first
+                        } else {
+                            val added = Library.addPlacement(app, zone, name, rule, j.optBoolean("exclusive", false), seconds)
+                            if (reqId.isNotEmpty()) recentAdds[reqId] = added to now
+                            added
+                        }
+                    }
                     notify(EVENT_CONTENT)
                     return json(200, JSONObject().put("ok", true).put("id", id))
                 }
@@ -818,6 +836,8 @@ object AdminServer {
             .put("device", android.os.Build.MODEL)
             .put("screen", screenSize())
             .put("version", version ?: "")
+            // この端末が使える機能（管理画面が、古い端末と見分けるため）。placementReqId：配置の追加を、同じ reqId で再送しても二重にならない
+            .put("caps", JSONArray().put("placementReqId"))
             .put("zones", zones)
             .put("settings", settings)
     }

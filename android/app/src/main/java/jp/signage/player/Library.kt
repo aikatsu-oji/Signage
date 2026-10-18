@@ -95,6 +95,10 @@ object Library {
 
     // ---------------------------------------------------------------- 配置の操作
 
+    /** その ID の配置が、いまもあるか */
+    @Synchronized
+    fun placementExists(context: Context, id: String): Boolean = Prefs(context).placements().any { it.id == id }
+
     /** 配置を追加して ID を返す。条件のない同じ配置があれば、それを返す（重複させない） */
     @Synchronized
     fun addPlacement(

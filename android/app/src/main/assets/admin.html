@@ -888,6 +888,8 @@
     return type.includes('json') ? res.json() : res;
   }
   const post = (dev, path, body) => api(dev, path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const newReqId = () => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
 
   // ------------------------------------------------------------ ログイン・端末の検出
 
@@ -969,7 +971,15 @@
   async function check(dev) {
     dev.pin = (dev.id && pins[dev.id]) || dev.pin || defaultPin;
     try {
-      dev.state = await api(dev, '/api/state', {}, 6000);
+      let st;
+      try { st = await api(dev, '/api/state', {}, 6000); }
+      catch (e) {
+        if (e.status !== 0) throw e;
+        await sleep(700);   // 一瞬の通信の乱れ（接続が切られた・返事が遅れた）かもしれないので、もう一度試す
+        st = await api(dev, '/api/state', {}, 6000);
+      }
+      dev.state = st;
+      dev.failures = 0;
       dev.status = 'ok';
       dev.error = '';
       // 手動追加の端末は、ID が分かった時点で ID で管理する
@@ -988,6 +998,9 @@
       pins[dev.id] = dev.pin;
       savePins();
     } catch (e) {
+      // これまで正常だった端末が、1 回続けて応答しなかっただけでは、「応答なし」にしない（次の確認でも応答がなければ、そうする）
+      if (e.status === 0 && dev.status === 'ok' && !dev.failures) { dev.failures = 1; return dev; }
+      dev.failures = (dev.failures || 0) + (e.status === 0 ? 1 : 0);
       dev.status = e.status === 401 || e.status === 429 ? 'pin' : e.status === 403 ? 'denied' : 'offline';
       dev.error = e.message;
     }
@@ -1184,10 +1197,23 @@
   async function pollOne(dev) {
     const prev = dev.mon;
     try {
-      const data = await api(dev, '/api/status', {}, 4000);
+      let data;
+      try { data = await api(dev, '/api/status', {}, 4000); }
+      catch (e) {
+        if (e.status !== 0) throw e;
+        await sleep(500);   // 一瞬の通信の乱れかもしれないので、もう一度試す
+        data = await api(dev, '/api/status', {}, 4000);
+      }
+      dev.monFail = 0;
       dev.mon = { ok: true, data, at: Date.now(), lastOk: Date.now() };
     } catch (e) {
-      dev.mon = { ok: false, error: e.message, http: e.status, at: Date.now(), lastOk: prev?.lastOk || 0 };
+      if (e.status === 0 && prev?.ok && !dev.monFail) {
+        dev.monFail = 1;   // 1 回だけの応答なしは、前の状態のまま様子を見る（続けて応答がなければ、「応答がありません」にする）
+        dev.mon = { ...prev, at: Date.now() };
+      } else {
+        dev.monFail = (dev.monFail || 0) + 1;
+        dev.mon = { ok: false, error: e.message, http: e.status, at: Date.now(), lastOk: prev?.lastOk || 0 };
+      }
     }
     let v;
     try { v = verdict(dev); } catch (e) {   // 端末が、想定外の形の応答を返したとき（古い版・偽の端末など）
@@ -1765,6 +1791,42 @@
   const nameColor = (name) => { let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360; return `hsl(${h} 65% 78%)`; };
   const placementsOf = (dev) => dev.state?.placements || [];
 
+  /**
+   * 配置を追加する。応答が届かなかった（遅れた・切れた）とき、端末の側では登録できていることがあるので、
+   * 同じ操作には同じ reqId を付けて、やり直しても二重に登録されないようにする。
+   * ・reqId に対応した端末：同じ reqId で、自動でやり直す（端末が、最初の結果を返す）。失敗しても、あとで同じ操作をやり直せば二重にならない
+   * ・古い端末：やり直さず、端末の状態を読み直して、登録されたかを確かめる
+   */
+  const addIntents = new Map();   // 操作の内容 → { id, at }。成功するまで（最長 2 分）、同じ操作には同じ reqId を使う
+  async function addPlacement(dev, body) {
+    const sig = dev.key + '|' + JSON.stringify([body.zone ?? null, body.name, body.rule ?? null, !!body.exclusive, body.seconds ?? null]);
+    let intent = addIntents.get(sig);
+    if (!intent || Date.now() - intent.at > 120000) { intent = { id: newReqId(), at: Date.now() }; addIntents.set(sig, intent); }
+    const can = !!dev.state?.caps?.includes('placementReqId');
+    const before = new Set(placementsOf(dev).map((p) => p.id));
+    let last;
+    for (let i = 0; i < (can ? 3 : 1); i++) {
+      try {
+        const r = await post(dev, '/api/placement', { op: 'add', ...body, ...(can ? { reqId: intent.id } : {}) });
+        addIntents.delete(sig);
+        return r;
+      } catch (e) {
+        if (e.status !== 0) { addIntents.delete(sig); throw e; }   // 端末から返事があって断られた：登録されていないので、やり直しても二重にならない
+        last = e;
+        if (can && i < 2) await sleep(900 * (i + 1));
+      }
+    }
+    if (!can) {
+      await sleep(800);
+      await check(dev);
+      const found = placementsOf(dev).find((p) => !before.has(p.id) && p.name === body.name && (body.zone == null || p.zone === body.zone));
+      if (found) { addIntents.delete(sig); return { ok: true, id: found.id, recovered: true }; }
+    }
+    throw new ApiError(can
+      ? '端末から応答がありませんでした。登録できたかどうか分からないため、少し待ってから、もう一度同じ操作をしてください（二重には登録されません）'
+      : '端末から応答がありませんでした。登録されていないことを確かめました。通信が戻ってから、もう一度操作してください', 0);
+  }
+
   // ライブラリ画面の、画面上の状態（端末を切り替えても、検索・選択は保つ）
   const lib = { q: '', mode: 'all', sel: new Set(), autoZone: String(store.get('signage-lib-auto', 'none')) };
 
@@ -1935,7 +1997,7 @@
     $('#selPlace').addEventListener('click', async () => {
       const zone = Number($('#selZone').value);
       try {
-        for (const name of lib.sel) await post(dev, '/api/placement', { op: 'add', zone, name });
+        for (const name of lib.sel) await addPlacement(dev, { zone, name });
         toast(`${lib.sel.size} 件を${zoneLabel(dev, zone)}に配置しました`);
         lib.sel.clear();
         await refreshDevice(dev);
@@ -1989,7 +2051,7 @@
 
   /** 外した配置を、同じ内容・同じ位置に戻す */
   async function restorePlacement(dev, p, order) {
-    const r = await post(dev, '/api/placement', { op: 'add', zone: p.zone, name: p.name, ...plFields(p) });
+    const r = await addPlacement(dev, { zone: p.zone, name: p.name, ...plFields(p) });
     await post(dev, '/api/placement', { op: 'reorder', zone: p.zone, ids: order.map((i) => (i === p.id ? r.id : i)) });
     await refreshDevice(dev);
   }
@@ -2040,9 +2102,16 @@
     return used.length ? { slots: used } : null;
   }
 
+  let ruleBusy = false;
   $('#ruleForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const t = plTarget; if (!t) return;
+    if (ruleBusy) return;   // 保存の途中で、もう一度押されても、二重に登録しない
+    ruleBusy = true;
+    const submitter = e.submitter; if (submitter) submitter.disabled = true;
+    try { await submitRule(t); } finally { ruleBusy = false; if (submitter) submitter.disabled = false; }
+  });
+  async function submitRule(t) {
     const body = { rule: collectRule(), exclusive: $('#plExclusive').checked, seconds: $('#plSeconds').value ? Number($('#plSeconds').value) : null, zone: Number($('#plZone').value) };
     try {
       if (t.mode === 'edit') {
@@ -2051,13 +2120,13 @@
         $('#ruleDialog').close();
         toast('保存しました', { label: '元に戻す', run: () => post(t.dev, '/api/placement', { op: 'update', id: t.placement.id, ...before }).then(() => { toast('元に戻しました'); return refreshDevice(t.dev); }).catch((e) => toast(e.message)) });
       } else {
-        const r = await post(t.dev, '/api/placement', { op: 'add', name: t.name, ...body });
+        const r = await addPlacement(t.dev, { name: t.name, ...body });
         $('#ruleDialog').close();
         toast('配置しました', { label: '元に戻す', run: () => post(t.dev, '/api/placement', { op: 'remove', id: r.id }).then(() => { toast('元に戻しました'); return refreshDevice(t.dev); }).catch((e) => toast(e.message)) });
       }
       refreshDevice(t.dev);
     } catch (err) { toast(err.message); }
-  });
+  }
   // ドロップした日だけにする：最初の条件の曜日を外し、期間をその日にする
   $('#plOnlyDay').addEventListener('click', () => {
     const t = plTarget; const el = $('#ruleSlots').firstElementChild;
@@ -2073,7 +2142,7 @@
     const t = plTarget; if (!t || t.mode !== 'edit') return;
     const body = { rule: collectRule(), exclusive: $('#plExclusive').checked, seconds: $('#plSeconds').value ? Number($('#plSeconds').value) : null, zone: Number($('#plCopyZone').value) };
     try {
-      await post(t.dev, '/api/placement', { op: 'add', name: t.placement.name, ...body });
+      await addPlacement(t.dev, { name: t.placement.name, ...body });
       toast(`${zoneLabel(t.dev, body.zone)}にも配置しました`);
       refreshDevice(t.dev);
     } catch (err) { toast(err.message); }
@@ -2466,7 +2535,7 @@
       ul.innerHTML = '<li style="display:block"><div class="sub">配置されている画像・動画がありません。表の空きをクリック（またはドラッグ）して時間帯を選ぶか、右のライブラリからドラッグして配置してください。</div>' +
         (n ? `<button type="button" class="primary" id="placeAll" style="margin-top:8px">ライブラリの ${n} 件すべてを、この区画に常時で配置する</button>` : '') + '</li>';
       $('#placeAll')?.addEventListener('click', async () => {
-        try { for (const f of dev.state.library) await post(dev, '/api/placement', { op: 'add', zone, name: f.name }); toast(`${n} 件を配置しました`); await refreshDevice(dev); } catch (e) { toast(e.message); }
+        try { for (const f of dev.state.library) await addPlacement(dev, { zone, name: f.name }); toast(`${n} 件を配置しました`); await refreshDevice(dev); } catch (e) { toast(e.message); }
       });
       return;
     }
