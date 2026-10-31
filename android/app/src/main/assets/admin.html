@@ -638,6 +638,7 @@
               <h2>スケジュール<span class="sub" id="schedDevName"></span></h2>
               <p class="sub">区画ごとに、どの画像・動画を、いつ流すかを決めます。表の横軸は、今日からの日付です。表の空きをクリック（またはドラッグ）して時間帯を選び、流すファイルを選んで配置します。右のライブラリから、表にドラッグしても配置できます（条件を付けない配置は「常時」）。</p>
             </div>
+            <button class="small" id="syncSchedules2" title="この端末のスケジュール（配置）と予約テロップを、チェックした端末にも同じ内容にそろえる。端末にないファイルは送る">チェックした端末に同期</button>
           </div>
           <div class="warn" id="schedWarn" hidden></div>
           <div id="schedBody"></div>
@@ -651,6 +652,7 @@
             <p class="sub">決まった時刻に自動で流します（例：閉店30分前のご案内）。予約は端末に保存され、管理画面を閉じていても流れます。</p>
           </div>
           <button class="small" id="copySchedules" title="この端末の予約を、チェックした端末にも同じ内容で設定する">チェックした端末にコピー</button>
+          <button class="small" id="syncSchedules" title="この端末のスケジュール（配置）と予約テロップを、チェックした端末にも同じ内容にそろえる。端末にないファイルは送る">スケジュールを同期</button>
         </div>
         <table class="sched"><thead><tr><th>時刻</th><th>曜日</th><th>内容</th><th>有効</th><th></th></tr></thead><tbody id="schedList"></tbody></table>
         <fieldset style="margin-top:12px">
@@ -4129,6 +4131,78 @@
     }
     toast(`予約をコピーしました：${ok} / ${list.length} 台`);
   });
+
+  // ------------------------------------------------------------ スケジュールの同期
+  // この端末のスケジュール（区画ごとの配置）と予約テロップを、チェックした端末にそろえる。
+  // 端末に同じ名前のファイルがなければ、画像・動画も、この端末から送る（同じ名前があれば送らない）。
+  let syncing = false;
+  async function syncSchedules() {
+    if (syncing) return;
+    const src = selected();
+    const list = targets().filter((d) => d.key !== src.key);
+    if (!list.length) { toast('同期先の端末を、端末一覧でチェックしてください'); return; }
+    syncing = true;
+    const btns = ['#syncSchedules', '#syncSchedules2'].map((q) => $(q)).filter(Boolean);
+    btns.forEach((b) => { b.disabled = true; });
+    try {
+      for (const d of [src, ...list]) { try { await check(d); } catch (e) {} }
+      const bad = [src, ...list].filter((d) => d.status !== 'ok' || !libSupported(d));
+      if (bad.length) { toast(`接続できない、または古い版の端末があります：${bad.map((d) => d.name).join('、')}`); return; }
+      const have = (d) => new Set(d.state.library.map((f) => f.name.toLowerCase()));
+      const srcPl = placementsOf(src).filter((p) => src.state.library.some((f) => f.name === p.name));
+      const need = new Map();   // ファイル名 → 送る先
+      for (const d of list) {
+        const h = have(d);
+        for (const f of src.state.library) if (!h.has(f.name.toLowerCase())) { if (!need.has(f.name)) need.set(f.name, []); need.get(f.name).push(d); }
+      }
+      const total = [...need.keys()].reduce((n, k) => n + (src.state.library.find((f) => f.name === k)?.size || 0), 0);
+      if (!confirm(`「${src.name}」のスケジュールを、${list.map((d) => d.name).join('、')} にそろえます。\n\n`
+        + `・区画の配置：${srcPl.length} 件（同期先の配置は、置き換わります）\n`
+        + `・予約テロップ：${schedules.length} 件（同期先の予約は、置き換わります）\n`
+        + `・送るファイル：${need.size} 件（${fmtSize(total)}）。同じ名前のファイルがある端末には、送りません。`)) return;
+      const fail = [];
+      // 1) ファイル：1 回だけ取り出して、足りない端末へ送る
+      let n = 0;
+      for (const [name, dests] of need) {
+        n++;
+        toast(`ファイルを送っています（${n} / ${need.size}）：${name}`);
+        let blob;
+        try { blob = await (await api(src, `/api/file?name=${encodeURIComponent(name)}`, {}, 600000)).blob(); }
+        catch (e) { fail.push(`${name}：${e.message}`); continue; }
+        const file = new File([blob], name);
+        for (const d of dests) {
+          const r = await sendFile(d, -1, file, () => {});
+          if (!r.ok) fail.push(`${d.name}：${name}（${r.error}）`);
+        }
+      }
+      // 2) 配置と予約テロップ
+      for (const d of list) {
+        try {
+          await check(d);
+          const zoneType = (dev, z) => dev.state.zones?.find((x) => x.index === z)?.type;
+          const names = have(d);
+          for (const p of placementsOf(d)) await post(d, '/api/placement', { op: 'remove', id: p.id });
+          let added = 0;
+          for (const p of srcPl) {
+            if (zoneType(d, p.zone) === undefined || zoneType(d, p.zone) !== zoneType(src, p.zone)) continue;   // 同期先にない区画・種類が違う区画は、飛ばす
+            if (!names.has(p.name.toLowerCase())) continue;   // ファイルを送れなかった
+            await addPlacement(d, { name: p.name, zone: p.zone, ...plFields(p) });
+            added++;
+          }
+          await post(d, '/api/ticker/schedules', { schedules: schedules.map(({ id, ...rest }) => rest) });
+          if (added < srcPl.length) fail.push(`${d.name}：配置 ${srcPl.length - added} 件は、そろえられませんでした（区画がない・種類が違う・ファイルがない）`);
+        } catch (e) { fail.push(`${d.name}：${e.message}`); }
+      }
+      for (const d of list) refreshDevice(d);
+      toast(fail.length ? `同期しました（問題 ${fail.length} 件）：${fail.slice(0, 3).join(' / ')}` : `${list.length} 台に同期しました`);
+      if (fail.length) console.warn('sync', fail);
+    } finally {
+      syncing = false;
+      btns.forEach((b) => { b.disabled = false; });
+    }
+  }
+  $('#syncSchedules')?.addEventListener('click', syncSchedules);
+  $('#syncSchedules2')?.addEventListener('click', syncSchedules);
 
   // 端末の状態をときどき確認する
   setInterval(async () => {
