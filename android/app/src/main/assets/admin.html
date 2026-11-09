@@ -2249,6 +2249,11 @@
           <h3 style="margin:16px 0 4px">この区画の再生順（上から順に流れます）</h3>
           <div class="nowinfo" id="nowInfo"></div>
           <ul class="playlist" id="plList"></ul>
+          <details class="expired" id="expiredBox" style="margin-top:16px"><summary id="expiredSum" style="cursor:pointer;font-weight:bold"></summary>
+            <p class="sub" style="margin:6px 0">期間（終了日）が過ぎて、もう流れない配置です。全部の区画の分を表示します。「編集」で期間を延ばせば、また流れます。</p>
+            <div class="dlgrow" style="margin:6px 0"><button type="button" class="small" id="expiredClear">すべての配置を外す</button></div>
+            <ul class="playlist" id="expiredList"></ul>
+          </details>
         </div>
         <div class="palette"><strong style="font-size:13px">ライブラリ</strong><div class="sub" style="margin:2px 0 6px">日付の表にドラッグして配置</div><div id="palList"></div></div>
       </div>`;
@@ -2386,8 +2391,59 @@
     const blocked = plist.some((p) => stat.get(p.id) === 'blocked');
     $('#nowInfo').textContent = `いま（${nowT.getMonth() + 1}/${nowT.getDate()} ${hhmm(nowT.getHours() * 60 + nowT.getMinutes())}）流れる配置：${onNow.length} 件` + (blocked ? '　※ 専用の配置が有効なため、通常の配置は止まっています' : '') + (!onNow.length && plist.length ? '　※ 流れるものがありません（黒い画面になります）' : '');
     renderPlaylist(dev, plist, zone, stat);
+    renderExpired(dev, nowT);
     document.querySelectorAll('.thumb[data-name]').forEach((el) => thumbs.observe(el));
   }
+
+  /** 終了日が過ぎて、もう流れない配置（条件の枠がすべて、終了日が今日より前）。全区画ぶん */
+  function expiredPlacements(dev, now) {
+    const today = isoDate(now);
+    return placementsOf(dev).filter((p) => {
+      const sl = slotsOf(p.rule);
+      return sl.length && sl.every((x) => x.to && x.to < today) && dev.state.library.some((f) => f.name === p.name);
+    });
+  }
+
+  function renderExpired(dev, now) {
+    const list = expiredPlacements(dev, now).sort((a, b) => {
+      const end = (p) => slotsOf(p.rule).reduce((m, x) => (x.to > m ? x.to : m), '');
+      return end(b).localeCompare(end(a));
+    });
+    $('#expiredSum').textContent = `終了したコンテンツ（${list.length} 件）`;
+    $('#expiredBox').hidden = !list.length;
+    const ul = $('#expiredList');
+    ul.replaceChildren();
+    for (const p of list) {
+      const f = dev.state.library.find((x) => x.name === p.name);
+      const li = document.createElement('li');
+      li.innerHTML = '<div class="thumb"><div class="timg"></div></div><div class="pm"><div class="pn"></div><div class="pr"></div></div><div class="pact"></div>';
+      li.style.gridTemplateColumns = '64px 1fr auto';
+      $('.pn', li).textContent = p.name;
+      const end = slotsOf(p.rule).reduce((m, x) => (x.to > m ? x.to : m), '').replace(/-/g, '/');
+      $('.pr', li).textContent = `${zoneLabel(dev, p.zone)}　${describeRule(p.rule)}　（${end} に終了）`;
+      const th = $('.thumb', li); th.dataset.zone = -1; th.dataset.name = p.name; th.dataset.dev = dev.key;
+      if (f?.video) { th.dataset.video = '1'; th.dataset.size = f.size || 0; th.classList.add('vid'); }
+      const act = $('.pact', li);
+      const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'small'; edit.textContent = '編集';
+      edit.addEventListener('click', () => openPlacementDialog({ dev, mode: 'edit', placement: p }));
+      const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'small'; rm.textContent = '配置を外す';
+      rm.addEventListener('click', () => removePlacement(dev, p));
+      act.append(edit, rm);
+      ul.append(li);
+    }
+  }
+
+  document.addEventListener('click', async (ev) => {
+    if (!ev.target.closest?.('#expiredClear')) return;
+    const dev = selected();
+    const list = expiredPlacements(dev, deviceNow(dev));
+    if (!list.length || !confirm(`終了した配置 ${list.length} 件を、すべて外します。\n（ファイルは、コンテンツに残ります）`)) return;
+    let n = 0;
+    for (const p of list) { try { await post(dev, '/api/placement', { op: 'remove', id: p.id }); n++; } catch (e) {} }
+    toast(`${n} 件の配置を外しました`);
+    if ($('#autoReload').checked) await post(dev, '/api/reload', {}).catch(() => {});
+    await refreshDevice(dev);
+  });
 
   let dragName = null;
 
